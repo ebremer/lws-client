@@ -1,0 +1,38 @@
+{
+  "description": "did:key encoding vectors. did = 'did:key:' + multibase(base58btc, multicodec-varint-prefix + public key); P-256 uses the 33-byte compressed point. kid = did + '#' + multibase.",
+  "vectors": [
+    {
+      "name": "did-key-spec-p256",
+      "source": "did:key method specification test vector",
+      "publicJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "fyNYMN0976ci7xqiSdag3buk-ZCwgXU4kz9XNkBlNUI",
+        "y": "hW2ojTNfH7Jbi8--CJUo3OCbH3y5n91g-IMA9MLMbTU"
+      },
+      "did": "did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169",
+      "kid": "did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169#zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169"
+    },
+    {
+      "name": "fixture-p256",
+      "publicJwk": {
+        "kty": "EC",
+        "x": "_O6Y_fCfzYgxA6682sy2BM-b7GEKgd-pBrTyuJ9Mnuw",
+        "y": "Q3CR2ATbUtYcxMoSCzbALHajMl0MMJaS-TIkRBj5omI",
+        "crv": "P-256"
+      },
+      "did": "did:key:zDnaehTJoXS7cwzvsxTDVXay6oxY8UnpAF5K8f9VMrfBMXuib",
+      "kid": "did:key:zDnaehTJoXS7cwzvsxTDVXay6oxY8UnpAF5K8f9VMrfBMXuib#zDnaehTJoXS7cwzvsxTDVXay6oxY8UnpAF5K8f9VMrfBMXuib"
+    },
+    {
+      "name": "fixture-ed25519",
+      "publicJwk": {
+        "crv": "Ed25519",
+        "x": "ZTTveAK6nZDAz42gF2IlpdCkjOfZ_80ZPJ2pJjwd8AY",
+        "kty": "OKP"
+      },
+      "did": "did:key:z6MkmGL3EVpAK7icdxgqGsHyx59p7h91ydjR67ZKMAwiWzgM",
+      "kid": "did:key:z6MkmGL3EVpAK7icdxgqGsHyx59p7h91ydjR67ZKMAwiWzgM#z6MkmGL3EVpAK7icdxgqGsHyx59p7h91ydjR67ZKMAwiWzgM"
+    }
+  ]
+}

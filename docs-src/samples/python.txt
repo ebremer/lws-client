@@ -1,0 +1,427 @@
+@@@ install bash
+# From PyPI (once published)
+pip install "lws-client[crypto]"
+
+# From GitHub today
+pip install "lws-client[crypto] @ git+https://github.com/ebremer/lws-client#subdirectory=python"
+
+# The crypto extra (cryptography) enables self-signed identities and webhook verification.
+@@@ first-program
+from lws_client import LwsClient, SelfSignedCredentials, SigningKey, TokenExchangeAuthenticator
+
+credentials = SelfSignedCredentials.did_key(SigningKey.generate("ES256"))
+print("agent:  ", credentials.agent)
+
+with LwsClient(authenticator=TokenExchangeAuthenticator(credentials)) as client:
+    storage = client.discover_storage("http://localhost:8787/root/")
+    print("storage:", storage.id, " root:", storage.storage_root())
+
+    folder = client.create_container(storage.storage_root(), slug="hello-world")
+    file = client.create_text(folder.location, "Hello, LWS!", slug="hello.txt")
+    print("created:", file.location)
+
+    resource = client.read(file.location)
+    print(resource.text, f" (etag {resource.etag}, parent {resource.parent})")
+@@@ hero
+credentials = SelfSignedCredentials.did_key(SigningKey.generate())
+with LwsClient(authenticator=TokenExchangeAuthenticator(credentials)) as client:
+    storage = client.discover_storage("https://storage.example/root/")
+    todo = client.create_json(storage.storage_root(), {"task": "write docs", "done": False})
+    client.patch(todo.location, JsonPatch().replace("/done", True))
+
+    for item in client.list_container(storage.storage_root()):
+        print(item.id, item.format)
+@@@ client-config
+credentials = SelfSignedCredentials.did_key(SigningKey.generate())
+client = LwsClient(
+    authenticator=TokenExchangeAuthenticator(credentials),
+    user_agent="my-app/1.0",                    # default "lws-client-python/0.1.0"
+    default_headers={"Accept-Language": "en"},  # added to every request
+    timeout=20.0,
+    # http_client=httpx.Client(...),            # bring your own (proxies, HTTP/2, mounts)
+)
+with client:                                    # closes the underlying httpx client
+    page = client.read_container(container, headers={"X-Trace": "1"})   # per-call headers
+    print(page.total_items)
+@@@ discover
+# Any URL inside the storage is a valid starting point.
+storage = client.discover_storage("https://storage.example/root/notes/")
+print(storage.id, storage.types)
+
+root = storage.storage_root()                            # the required StorageRoot service
+notifications = storage.service("NotificationService")   # Service | None
+if notifications is not None:
+    print(root, notifications.service_endpoint, notifications.subscription_types)
+
+for service in storage.services:
+    print(service.types, "→", service.service_endpoint)
+patch_support = storage.capability("https://feature.example/PatchSupport")
+if patch_support is not None:
+    print(patch_support.get("format"))
+
+print(storage.type_search_service())    # endpoint shortcuts return the URL or None
+
+# When you already know the storage URL:
+same = client.get_storage_description(storage.id)
+@@@ create
+# A container (POST with Link: <https://www.w3.org/ns/lws#Container>; rel="type")
+notes = client.create_container(container, slug="notes").location
+
+# Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+shopping = client.create_text(notes, "milk\neggs\n", slug="shopping.txt")
+todo = client.create_json(
+    notes,
+    {"task": "write docs"},
+    slug="todo.json",
+    types=["https://schema.org/Action"],                            # extra rel="type"
+    links=[Link("https://example.org/shapes/todo", "describedby")],  # user metadata
+)
+png = b"\x89PNG\r\n\x1a\n"                                           # your image bytes
+photo = client.create(notes, png, "image/png", slug="photo.png")
+
+print(shopping.location, todo.metadata.linkset, photo.metadata.parent)
+@@@ read
+resource = client.read(url)
+print(resource.status, resource.content_type, resource.etag, resource.last_modified)
+print(resource.types, resource.is_data_resource, resource.parent, resource.linkset)
+
+text = resource.text           # decoded using the Content-Type charset
+data = resource.content        # raw bytes
+print(len(text), len(data))
+profile = client.read_json(url)   # GET with Accept: application/json, parsed
+
+# Headers and links only
+meta = client.head(url)
+print(meta.content_length, meta.allow, meta.accept_patch, meta.links_for("describedby"))
+@@@ stream
+from collections.abc import Iterator
+
+received = 0
+with client.stream(url) as response:      # nothing is buffered
+    for chunk in response.iter_bytes():
+        received += len(chunk)
+print(f"received {received} bytes")
+
+
+# Upload from an iterator: the client obtains a token first (HEAD), because a
+# generator cannot be replayed after a 401.
+def chunks() -> Iterator[bytes]:
+    yield b"large file "
+    yield b"contents"
+
+
+client.create(container, chunks(), "application/octet-stream", slug="big.bin")
+@@@ conditional
+first = client.read(url)
+
+# Revalidate: 304 Not Modified is a normal result, not an error.
+again = client.read(url, if_none_match=first.etag)
+if again.not_modified:
+    print("cached copy is still fresh")
+
+# Optimistic concurrency: only overwrite the version you read.
+try:
+    client.update(url, "new content", "text/plain", if_match=first.etag)
+except PreconditionFailedError:
+    pass   # someone else changed it (412): re-read, merge, retry
+@@@ range
+start = client.read(url, range=(0, 1023))        # first KiB
+print(start.is_partial, start.content_range)     # True "bytes 0-1023/52311"
+
+rest = client.read(url, range=(1024, None))      # from byte 1024 to the end
+tail = client.read(url, range="bytes=-512")      # raw Range value: the last 512 bytes
+print(len(rest.content), len(tail.content))
+@@@ update
+# PUT replaces the whole representation.
+client.update(url, '{"name": "Alice", "age": 31}', "application/json", if_match=etag)
+
+# Replace content and user-managed links atomically (Prefer: set-linkset).
+client.update(
+    url,
+    "v2",
+    "text/plain",
+    set_linkset=True,
+    links=[Link("https://creativecommons.org/licenses/by/4.0/", "license")],
+)
+@@@ patch
+# JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+client.patch(
+    url,
+    JsonPatch().test("/version", 3).replace("/status", "done").add("/tags/-", "urgent").remove("/draft"),
+    if_match=etag,
+)
+
+# Other formats only when the server advertises them in Accept-Patch.
+if "application/sparql-update" in client.head(url).accept_patch:
+    client.patch(
+        url,
+        'INSERT DATA { <#me> <http://xmlns.com/foaf/0.1/name> "Alice" }',
+        content_type="application/sparql-update",
+    )
+@@@ delete
+client.delete(url, if_match=etag)
+
+try:
+    client.delete(container)                  # 409 Conflict when not empty
+except ConflictError:
+    client.delete(container, recursive=True)  # Depth: infinity
+@@@ read-container
+page = client.read_container(container)
+print(page.id, page.total_items, page.metadata.etag)
+for item in page.items:
+    kind = "container" if item.is_container else item.format
+    print(item.id, kind, item.size, item.modified)
+if page.next:
+    next_page = client.read_container(page.next)   # opaque, server-issued URL
+    print(len(next_page.items))
+@@@ list-container
+# Lazily follows rel="next": pages are fetched only as you iterate.
+for item in client.list_container(container):
+    if item.has_type("https://schema.org/Person"):
+        print(item.id)
+
+ids = [item.id for item in client.list_container(container)]
+# AsyncLwsClient: async for item in client.list_container(container): ...
+@@@ read-linkset
+doc = client.read_linkset(url)          # HEAD for rel="linkset", then GET
+print(doc.url, doc.etag, doc.allow, doc.accept_patch)
+
+for link in doc.linkset.links():
+    print(link.rel, "→", link.href)
+shapes = doc.linkset.targets("describedby")   # list of hrefs
+@@@ patch-linkset
+doc = client.read_linkset(url)
+rel = "https://example.org/rel/reviewer"      # extension relation types are URIs
+reviewer = {"href": "https://id.example/bob"}
+
+# JsonPointer escapes "/" in the relation URI as "~1".
+# "add" on an existing member replaces it, so append with "/-" when the relation exists.
+if doc.linkset.targets(rel):
+    patch = JsonPatch().add(JsonPointer.from_segments("linkset", 0, rel, "-"), reviewer)
+else:
+    patch = JsonPatch().add(JsonPointer.from_segments("linkset", 0, rel), [reviewer])
+client.patch_linkset(doc.url, patch, if_match=doc.etag)
+@@@ put-linkset
+doc = client.read_linkset(url)
+if "PUT" in doc.allow:
+    linkset = doc.linkset.copy()
+    linkset.add(url, "license", "https://creativecommons.org/licenses/by/4.0/")
+    client.update_linkset(doc.url, linkset, if_match=doc.etag)
+@@@ auth-didkey
+# A did:key agent: the identifier is derived from the public key, nothing to host.
+key = SigningKey.generate("ES256")             # or "EdDSA" (Ed25519)
+credentials = SelfSignedCredentials.did_key(key)
+print(credentials.agent)                        # did:key:zDn…
+
+client = LwsClient(authenticator=TokenExchangeAuthenticator(credentials))
+client.head(url)   # 401 → AS metadata → token exchange → retried with a Bearer token
+@@@ auth-cid
+import json
+
+# An HTTPS agent publishes a controlled identifier document listing its key…
+key = SigningKey.generate("ES256")
+agent = "https://bot.example/agent"
+cid = controlled_identifier_document(agent, key.public_jwk(), "key-1")
+print(json.dumps(cid))     # serve this at https://bot.example/agent
+
+# …and signs credentials with the matching private key.
+credentials = SelfSignedCredentials.for_agent(agent, key, "key-1")
+client = LwsClient(authenticator=TokenExchangeAuthenticator(credentials))
+@@@ keys
+key = SigningKey.generate("ES256")
+private_jwk = key.private_jwk()                # store securely (or key.to_pem())
+restored = SigningKey.from_jwk(private_jwk)
+credentials = SelfSignedCredentials.did_key(restored)
+
+# did:key <-> JWK
+did = restored.did_key()                       # did:key:z…
+kid = did_key_kid(did)                         # did:key:z…#z…
+public_jwk = did_key_to_jwk(did)
+print(credentials.agent == did, kid, public_jwk["crv"])
+@@@ auth-openid
+# The ID token from your OpenID Connect login (any OIDC library). Pass a callable instead of a
+# string to supply a fresh token whenever a new access token is needed.
+credentials = OpenIdCredentials(id_token)
+client = LwsClient(
+    authenticator=TokenExchangeAuthenticator(
+        credentials,
+        # ID tokens are not always audience-restricted: only send them to servers you trust.
+        authorization_server_filter=lambda as_uri, realm: as_uri == "https://auth.example",
+    )
+)
+@@@ auth-saml
+# A signed SAML 2.0 assertion from your identity provider (raw XML is base64url-encoded for you).
+credentials = SamlCredentials(saml_assertion_xml)
+client = LwsClient(authenticator=TokenExchangeAuthenticator(credentials))
+@@@ auth-bearer
+# An access token you obtained yourself; it is only sent to URLs inside the realm.
+client = LwsClient(
+    authenticator=BearerTokenAuthenticator(access_token, realm="https://storage.example/")
+)
+@@@ auth-options
+trusted = {"https://auth.example"}
+authenticator = TokenExchangeAuthenticator(
+    credentials,
+    allow_insecure_http=False,                  # plain-http AS only on loopback (default)
+    authorization_server_filter=lambda as_uri, realm: as_uri in trusted,
+    refresh_skew=30.0,                          # refresh 30 s before expiry (default)
+)
+client = LwsClient(authenticator=authenticator)
+@@@ custom-authenticator
+import httpx
+
+
+# Any scheme (API keys, cookies, DPoP…) plugs in by subclassing Authenticator.
+class ApiKeyAuthenticator(Authenticator):
+    def __init__(self, key: str) -> None:
+        self.key = key
+
+    def authorize(self, request: httpx.Request) -> None:
+        if request.url.host == "storage.example":
+            request.headers["x-api-key"] = self.key
+
+
+# handle_challenge() returns False by default, so a 401 surfaces as UnauthorizedError.
+client = LwsClient(authenticator=ApiKeyAuthenticator(api_key))
+@@@ subscribe
+from datetime import datetime, timedelta, timezone
+
+service = storage.service("NotificationService")
+if service is None or "WebhookSubscription" not in service.subscription_types:
+    raise RuntimeError("this storage has no webhook notifications")
+
+subscription = client.subscribe(
+    service,
+    [container],                                  # a container topic is recursive
+    "https://my-app.example/hooks/lws",
+    expires=datetime.now(timezone.utc) + timedelta(days=1),
+)
+print(subscription.subscription, subscription.expires)
+
+for s in client.list_subscriptions(service):
+    print(s.id)
+current = client.get_subscription(subscription.subscription)
+print(current.type)
+client.unsubscribe(subscription)
+@@@ webhook
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from lws_client import LwsClient, SignatureVerificationError, WebhookVerifier
+
+INBOX = "https://my-app.example/hooks/lws"   # the registered URL (your public URL behind a proxy)
+verifier = WebhookVerifier(client=LwsClient(), trusted_storages=["https://storage.example/"])
+
+
+class Inbox(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        try:
+            verified = verifier.verify("POST", INBOX, list(self.headers.items()), body)
+        except SignatureVerificationError as exc:
+            print("rejected:", exc)
+            self.send_response(401)
+        else:
+            for activity in verified.notification.activities:
+                print(activity.types, activity.object.id, activity.published)
+            self.send_response(204)
+        self.end_headers()
+
+
+ThreadingHTTPServer(("0.0.0.0", 8080), Inbox).serve_forever()
+# ASGI apps: await AsyncWebhookVerifier(...).verify_asgi(scope, receive, INBOX)
+@@@ access-request
+from datetime import datetime, timezone
+
+policy = AccessPolicy(
+    actions=["read", "create"],
+    assignee="https://id.example/agent",
+    target=AccessTarget("StorageResource", [container]),
+    constraints=[
+        Constraint.purpose("https://purpose.example/collaboration"),
+        Constraint.not_after(datetime(2026, 12, 31, 23, 59, 59, tzinfo=timezone.utc)),
+    ],
+)
+request = AccessRequest(storage=storage.id, inbox="https://id.example/agent/inbox/", access=[policy])
+
+requests = storage.access_request_service()
+assert requests is not None
+request_url = client.request_access(requests, request)
+
+for r in client.list_access_requests(requests):
+    print(r.id)
+pending = client.get_access_request(request_url)
+print(pending.access[0].actions)
+client.cancel_access_request(request_url)
+@@@ access-grant
+# A storage controller approves a request by recording a grant with the same policy model.
+pending = client.get_access_request(request_url)
+grants = storage.access_grant_service()
+assert grants is not None
+grant_url = client.grant_access(grants, AccessGrant(storage=pending.storage, access=list(pending.access)))
+
+for g in client.list_access_grants(grants):
+    print(g.id)
+client.revoke_access_grant(grant_url)   # the server withdraws the underlying permissions
+@@@ list-types
+index = storage.type_index_service()
+if index is not None:
+    for type_iri in client.list_types(index):
+        print(type_iri)    # e.g. https://schema.org/Person
+@@@ search
+search = storage.type_search_service()
+assert search is not None
+
+# (schema:Person OR foaf:Person) AND lws:DataResource
+query = (
+    TypeQuery()
+    .any_of("https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person")
+    .all_of("https://www.w3.org/ns/lws#DataResource")
+)
+first_page = client.search_types(search, query)          # HTTP QUERY
+print(first_page.total_items, first_page.next)
+
+for hit in client.search_all(search, TypeQuery.of_types("https://schema.org/Event")):
+    print(hit.id, hit.types)
+
+# Indexed descriptive relations use the same grammar.
+shaped = TypeQuery().relation("describedby").all_of("https://example.org/shapes/person")
+print(len(client.search_types(search, shaped).items))
+
+print(client.accepted_query_formats(search))             # ['application/lws-query+json', …]
+@@@ errors
+try:
+    client.read(url)
+except NotFoundError:
+    print("no such resource")
+except UnauthorizedError as exc:
+    print("not authenticated", exc.challenges)
+except HttpError as exc:
+    print(exc.status, exc.problem.title if exc.problem else exc)
+except AuthenticationError as exc:
+    print("token exchange failed:", exc.error, exc.error_description)
+@@@ problem
+try:
+    client.delete(container)
+except ConflictError as exc:
+    if exc.problem is not None:
+        p = exc.problem
+        print(p.type, p.title, p.detail, p.instance, p.extensions.get("itemCount"))
+@@@ async-usage
+import asyncio
+
+from lws_client import AsyncLwsClient, SelfSignedCredentials, SigningKey, TokenExchangeAuthenticator
+
+
+async def main() -> None:
+    credentials = SelfSignedCredentials.did_key(SigningKey.generate())
+    async with AsyncLwsClient(authenticator=TokenExchangeAuthenticator(credentials)) as client:
+        storage = await client.discover_storage("http://localhost:8787/root/")
+        root = storage.storage_root()
+        # Concurrent requests share a single token exchange.
+        pages = await asyncio.gather(*(client.read_container(root) for _ in range(5)))
+        print([page.total_items for page in pages])
+        async for item in client.list_container(root):
+            print(item.id)
+
+
+asyncio.run(main())

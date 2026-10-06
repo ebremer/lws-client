@@ -1,0 +1,59 @@
+{
+  "description": "GET of a storage description (application/lws+cid). Based on the lws10-core Discovery example.",
+  "url": "https://storage.example/",
+  "status": 200,
+  "headers": { "content-type": "application/lws+cid", "etag": "\"sd-1\"" },
+  "body": {
+    "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+    "id": "https://storage.example/",
+    "type": "Storage",
+    "capability": [
+      {
+        "type": "https://feature.example/PatchSupport",
+        "format": {
+          "text/turtle": ["application/sparql-update"],
+          "application/linkset+json": ["application/json-patch+json"]
+        }
+      },
+      { "type": "https://feature.example/ResumableUploads" }
+    ],
+    "service": [
+      { "type": "StorageRoot", "serviceEndpoint": "https://storage.example/root/" },
+      { "type": "NotificationService", "serviceEndpoint": "https://storage.example/notification/api", "subscriptionType": ["WebhookSubscription"] },
+      { "type": "TypeIndexService", "serviceEndpoint": "https://storage.example/types/index" },
+      { "type": "TypeSearchService", "serviceEndpoint": "https://storage.example/types/search" },
+      { "type": "AccessRequestService", "serviceEndpoint": "https://access.example/request/", "conformsTo": ["https://www.w3.org/ns/lws#AccessProfile"] },
+      { "type": ["AccessGrantService"], "serviceEndpoint": "https://access.example/grant/", "conformsTo": ["https://www.w3.org/ns/lws#AccessProfile"] },
+      { "id": "https://storage.example/#sharing", "type": "DataSharingService", "serviceEndpoint": "https://storage.example/sharing/api" }
+    ]
+  },
+  "expected": {
+    "id": "https://storage.example/",
+    "types": ["Storage"],
+    "storageRoot": "https://storage.example/root/",
+    "notificationService": "https://storage.example/notification/api",
+    "notificationSubscriptionTypes": ["WebhookSubscription"],
+    "typeIndexService": "https://storage.example/types/index",
+    "typeSearchService": "https://storage.example/types/search",
+    "accessRequestService": "https://access.example/request/",
+    "accessGrantService": "https://access.example/grant/",
+    "serviceCount": 7,
+    "capabilityTypes": ["https://feature.example/PatchSupport", "https://feature.example/ResumableUploads"],
+    "customService": { "type": "DataSharingService", "id": "https://storage.example/#sharing", "serviceEndpoint": "https://storage.example/sharing/api" }
+  },
+  "invalid": {
+    "description": "notStorage must be rejected (type is not Storage); for noRoot, storageRoot() must fail with a ProtocolError.",
+    "notStorage": {
+      "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+      "id": "https://storage.example/",
+      "type": "Thing",
+      "service": [{ "type": "StorageRoot", "serviceEndpoint": "https://storage.example/root/" }]
+    },
+    "noRoot": {
+      "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+      "id": "https://storage.example/",
+      "type": ["Storage"],
+      "service": [{ "type": "TypeIndexService", "serviceEndpoint": "https://storage.example/types/index" }]
+    }
+  }
+}

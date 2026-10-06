@@ -1,0 +1,65 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/cid/v1",
+    "https://www.w3.org/ns/lws/v1"
+  ],
+  "id": "https://storage.example/",
+  "type": "Storage",
+  "verificationMethod": [
+    {
+      "id": "https://storage.example/#key-p256",
+      "type": "JsonWebKey",
+      "controller": "https://storage.example/",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "x": "_O6Y_fCfzYgxA6682sy2BM-b7GEKgd-pBrTyuJ9Mnuw",
+        "y": "Q3CR2ATbUtYcxMoSCzbALHajMl0MMJaS-TIkRBj5omI",
+        "crv": "P-256",
+        "kid": "key-p256",
+        "alg": "ES256"
+      }
+    },
+    {
+      "id": "#key-ed25519",
+      "type": "JsonWebKey",
+      "controller": "https://storage.example/",
+      "publicKeyJwk": {
+        "crv": "Ed25519",
+        "x": "ZTTveAK6nZDAz42gF2IlpdCkjOfZ_80ZPJ2pJjwd8AY",
+        "kty": "OKP",
+        "kid": "key-ed25519",
+        "alg": "EdDSA"
+      }
+    },
+    {
+      "id": "https://storage.example/#key-unlisted",
+      "type": "JsonWebKey",
+      "controller": "https://storage.example/",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "x": "pJv8MAiMsl_0MrvjPS8WvDEPffd6EFjN-N1CeCbLB_4",
+        "y": "dhxmxZ08xHJVY6GFhHN1uZnAV8D3x-UnUgWSIRIse7E",
+        "crv": "P-256",
+        "kid": "key-unlisted",
+        "alg": "ES256"
+      }
+    }
+  ],
+  "authentication": [
+    "https://storage.example/#key-p256",
+    "#key-ed25519"
+  ],
+  "service": [
+    {
+      "type": "StorageRoot",
+      "serviceEndpoint": "https://storage.example/root/"
+    },
+    {
+      "type": "NotificationService",
+      "serviceEndpoint": "https://storage.example/notifications/",
+      "subscriptionType": [
+        "WebhookSubscription"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "description": "TypeQuery builder cases (application/lws-query+json, conjunctive normal form). 'steps' are builder calls applied in order: {\"key\": \"type\" | <relation>, \"allOf\": [...]} adds each IRI as its own AND group; {\"key\": …, \"anyOf\": [...]} adds one OR group. 'json' is the expected serialization (compare as JSON values). A one-element anyOf group MAY be serialized either as [\"iri\"] or as \"iri\" — the expected value uses the plain string. Cases with \"error\": true must be rejected client-side.",
+  "cases": [
+    {
+      "name": "empty-matches-all",
+      "steps": [],
+      "json": {}
+    },
+    {
+      "name": "single-type",
+      "steps": [{ "key": "type", "allOf": ["https://schema.org/Person"] }],
+      "json": { "type": ["https://schema.org/Person"] }
+    },
+    {
+      "name": "and-of-two",
+      "steps": [{ "key": "type", "allOf": ["https://schema.org/Person", "https://www.w3.org/ns/lws#DataResource"] }],
+      "json": { "type": ["https://schema.org/Person", "https://www.w3.org/ns/lws#DataResource"] }
+    },
+    {
+      "name": "or-group-and-type",
+      "steps": [
+        { "key": "type", "anyOf": ["https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person"] },
+        { "key": "type", "allOf": ["https://www.w3.org/ns/lws#DataResource"] }
+      ],
+      "json": { "type": [["https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person"], "https://www.w3.org/ns/lws#DataResource"] }
+    },
+    {
+      "name": "single-element-or-group",
+      "steps": [{ "key": "type", "anyOf": ["https://schema.org/Event"] }],
+      "json": { "type": ["https://schema.org/Event"] }
+    },
+    {
+      "name": "relation-filter",
+      "steps": [
+        { "key": "type", "allOf": ["https://schema.org/Person"] },
+        { "key": "describedby", "anyOf": ["https://example.org/shapes/person", "https://example.org/shapes/agent"] }
+      ],
+      "json": { "type": ["https://schema.org/Person"], "describedby": [["https://example.org/shapes/person", "https://example.org/shapes/agent"]] }
+    },
+    {
+      "name": "error-relative-iri",
+      "steps": [{ "key": "type", "allOf": ["Person"] }],
+      "error": true
+    },
+    {
+      "name": "error-empty-or-group",
+      "steps": [{ "key": "type", "anyOf": [] }],
+      "error": true
+    }
+  ]
+}

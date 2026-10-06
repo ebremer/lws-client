@@ -1,0 +1,26 @@
+{
+  "description": "Webhook subscription request built by subscribe() and the server's response (lws10-notifications-webhook).",
+  "input": {
+    "topics": ["https://storage.example/alice/notes/", "https://storage.example/alice/profile"],
+    "inbox": "https://receiver.example/hooks/lws",
+    "expires": "2026-06-09T12:00:00Z"
+  },
+  "expectedRequestBody": {
+    "@context": ["https://www.w3.org/ns/lws/v1"],
+    "type": "WebhookSubscription",
+    "topic": ["https://storage.example/alice/notes/", "https://storage.example/alice/profile"],
+    "inbox": "https://receiver.example/hooks/lws",
+    "expires": "2026-06-09T12:00:00Z"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/lws+json", "location": "https://notification.example/subscriptions/9e8d7c6b5a4f" },
+    "body": {
+      "@context": ["https://www.w3.org/ns/lws/v1"],
+      "type": "WebhookSubscription",
+      "subscription": "https://notification.example/subscriptions/9e8d7c6b5a4f",
+      "expires": "2026-06-09T12:00:00Z"
+    }
+  },
+  "expected": { "type": "WebhookSubscription", "subscription": "https://notification.example/subscriptions/9e8d7c6b5a4f", "expires": "2026-06-09T12:00:00Z" }
+}

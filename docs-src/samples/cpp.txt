@@ -1,0 +1,421 @@
+@@@ install cmake
+# CMakeLists.txt: fetch and build the library with your project
+include(FetchContent)
+FetchContent_Declare(lws_client
+    GIT_REPOSITORY https://github.com/ebremer/lws-client.git
+    GIT_TAG        main
+    SOURCE_SUBDIR  cpp)
+FetchContent_MakeAvailable(lws_client)
+target_link_libraries(app PRIVATE lws::client)
+
+# Or, after `cmake --install`: find_package(lws-client 0.1 CONFIG REQUIRED)
+# Dependencies: nlohmann/json (required); libcurl and OpenSSL 3 (optional, see
+# LWS_WITH_CURL / LWS_WITH_OPENSSL). vcpkg users get all of them from cpp/vcpkg.json.
+@@@ first-program
+#include <iostream>
+#include <lws/lws.hpp>
+
+int main() {
+    auto credentials = lws::SelfSignedCredentials::did_key(lws::PrivateKey::generate(lws::KeyAlgorithm::ES256));
+    lws::ClientOptions options;
+    options.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(credentials);
+    lws::Client client(options);
+    std::cout << "agent:   " << credentials->agent_id() << "\n";
+
+    auto storage = client.discover_storage("http://localhost:8787/root/");
+    std::cout << "storage: " << storage.id << "  root: " << storage.storage_root() << "\n";
+
+    auto folder = client.create_container(storage.storage_root(), {.slug = "hello-world"});
+    auto file = client.create(folder.location, "Hello, LWS!", "text/plain", {.slug = "hello.txt"});
+    std::cout << "created: " << file.location << "\n";
+
+    auto resource = client.read(file.location);
+    std::cout << resource.text() << "  (etag " << resource.etag.value_or("-")
+              << ", parent " << resource.parent.value_or("-") << ")\n";
+}
+@@@ hero
+lws::ClientOptions options;
+options.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(
+    lws::SelfSignedCredentials::did_key(lws::PrivateKey::generate(lws::KeyAlgorithm::ES256)));
+lws::Client client(options);
+
+auto storage = client.discover_storage("https://storage.example/root/");
+auto todo = client.create_json(storage.storage_root(), {{"task", "write docs"}, {"done", false}});
+client.patch(todo.location, lws::JsonPatch{}.replace("/done", true));
+
+for (const auto& item : client.list_container(storage.storage_root())) {
+    std::cout << item.id << ' ' << item.format.value_or("container") << '\n';
+}
+@@@ client-config
+lws::ClientOptions options;
+options.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(credentials);
+options.user_agent = "my-app/1.0";                       // default "lws-client-cpp/0.1.0"
+options.default_headers.set("Accept-Language", "en");    // added to every request
+options.timeout = std::chrono::seconds(20);
+options.max_redirects = 5;                                // credentials are re-checked on every hop
+// options.transport = std::make_shared<MyTransport>();  // any lws::HttpTransport (Beast, Qt, …)
+lws::Client client(options);                              // immutable, cheap to copy, thread-safe
+
+// Per-call headers
+lws::RequestOptions call;
+call.headers.set("X-Trace", "1");
+auto page = client.read_container(container, call);
+std::cout << page.total_items.value_or(-1) << '\n';
+@@@ discover
+// Any URL inside the storage is a valid starting point.
+auto storage = client.discover_storage("https://storage.example/root/notes/");
+std::string root = storage.storage_root();     // the required StorageRoot service
+std::cout << storage.id << ' ' << root << '\n';
+
+if (const lws::Service* svc = storage.notification_service()) {
+    for (const auto& type : svc->strings("subscriptionType")) std::cout << type << '\n';
+    std::cout << svc->service_endpoint << '\n';
+}
+for (const lws::Service& svc : storage.services) {
+    std::cout << svc.service_endpoint << '\n';
+}
+if (const lws::Capability* capability = storage.capability("https://feature.example/PatchSupport")) {
+    std::cout << capability->raw.value("format", nlohmann::json::object()).dump() << '\n';
+}
+
+// When you already know the storage URL:
+auto same = client.get_storage_description(storage.id);
+@@@ create
+// A container (POST with Link: <https://www.w3.org/ns/lws#Container>; rel="type")
+std::string notes = client.create_container(container, {.slug = "notes"}).location;
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+auto list = client.create(notes, "milk\neggs\n", "text/plain", {.slug = "shopping.txt"});
+
+lws::CreateOptions todo_options;
+todo_options.slug = "todo.json";
+todo_options.types = {"https://schema.org/Action"};                                            // extra rel="type"
+todo_options.links = {lws::Link{.href = "https://example.org/shapes/todo", .rel = "describedby"}};  // user metadata
+auto todo = client.create_json(notes, {{"task", "write docs"}}, todo_options);
+
+std::string png = "\x89PNG";                     // your image bytes
+auto photo = client.create(notes, png, "image/png", {.slug = "photo.png"});
+
+std::cout << list.location << ' ' << todo.metadata.linkset.value_or("") << ' '
+          << photo.metadata.parent.value_or("") << '\n';
+@@@ read
+lws::Resource resource = client.read(url);
+std::cout << resource.status << ' ' << resource.content_type.value_or("") << ' '
+          << resource.etag.value_or("") << ' ' << resource.last_modified.value_or("") << '\n';
+std::cout << resource.is_data_resource() << ' ' << resource.parent.value_or("") << ' '
+          << resource.linkset.value_or("") << '\n';
+
+const std::string& bytes = resource.body;        // raw bytes (resource.text() is the same buffer)
+std::cout << bytes.size() << " bytes\n";
+nlohmann::json json = client.read(url, {.accept = "application/json"}).json();
+
+// Headers and links only
+lws::ResourceMetadata meta = client.head(url);
+std::cout << meta.content_length.value_or(0) << ' ' << meta.allow.size() << ' '
+          << meta.accept_patch.size() << ' ' << meta.links_with("describedby").size() << '\n';
+@@@ stream
+// Bodies are buffered std::strings. Process large resources piecewise with range requests:
+const std::uint64_t total = client.head(url).content_length.value_or(0);
+constexpr std::uint64_t chunk = 1 << 20;
+for (std::uint64_t offset = 0; offset < total; offset += chunk) {
+    auto part = client.read(url, {.range = lws::byte_range(offset, std::min(total, offset + chunk) - 1)});
+    std::cout << "received " << part.body.size() << " bytes\n";
+}
+@@@ conditional
+lws::Resource first = client.read(url);
+
+// Revalidate: 304 Not Modified is a normal result, not an exception.
+lws::Resource again = client.read(url, {.if_none_match = first.etag});
+if (again.not_modified) std::cout << "cached copy is still fresh\n";
+
+// Optimistic concurrency: only overwrite the version you read.
+try {
+    client.update(url, "new content", "text/plain", {.if_match = first.etag});
+} catch (const lws::PreconditionFailedError&) {
+    // Someone else changed it (412): re-read, merge, retry.
+}
+@@@ range
+auto start = client.read(url, {.range = lws::byte_range(0, 1023)});    // first KiB
+std::cout << start.status << ' ' << start.content_range.value_or("") << '\n';   // 206 bytes 0-1023/52311
+
+auto rest = client.read(url, {.range = lws::byte_range(1024)});         // to the end
+auto tail = client.read(url, {.range = "bytes=-512"});                  // raw Range value: last 512 bytes
+std::cout << rest.body.size() << ' ' << tail.body.size() << '\n';
+@@@ update
+// PUT replaces the whole representation.
+client.update(url, R"({"name":"Alice","age":31})", "application/json", {.if_match = etag});
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+lws::UpdateOptions options;
+options.set_linkset = true;
+options.links = {lws::Link{.href = "https://creativecommons.org/licenses/by/4.0/", .rel = "license"}};
+client.update(url, "v2", "text/plain", options);
+@@@ patch
+// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+auto patch = lws::JsonPatch{}.test("/version", 3).replace("/status", "done").add("/tags/-", "urgent").remove("/draft");
+client.patch(url, patch, {.if_match = etag});
+
+// Other formats only when the server advertises them in Accept-Patch.
+auto meta = client.head(url);
+if (std::ranges::find(meta.accept_patch, "application/sparql-update") != meta.accept_patch.end()) {
+    client.patch(url, R"(INSERT DATA { <#me> <http://xmlns.com/foaf/0.1/name> "Alice" })",
+                 "application/sparql-update");
+}
+@@@ delete
+client.remove(url, {.if_match = etag});           // `delete` is a C++ keyword
+
+try {
+    client.remove(container);                      // 409 Conflict when not empty
+} catch (const lws::ConflictError&) {
+    client.remove(container, {.recursive = true}); // Depth: infinity
+}
+@@@ read-container
+lws::ContainerPage page = client.read_container(container);
+std::cout << page.id << ' ' << page.total_items.value_or(-1) << ' ' << page.metadata.etag.value_or("") << '\n';
+for (const lws::ContainedResource& item : page.items) {
+    std::cout << item.id << ' ' << (item.is_container() ? "container" : item.format.value_or("?")) << ' '
+              << item.size.value_or(-1) << ' ' << item.modified_raw.value_or("") << '\n';
+}
+if (page.next) {
+    auto next_page = client.read_container(*page.next);   // opaque, server-issued URL
+    std::cout << next_page.items.size() << '\n';
+}
+@@@ list-container
+// A lazy input range: pages are fetched only as you iterate.
+for (const lws::ContainedResource& item : client.list_container(container)) {
+    if (item.has_type("https://schema.org/Person")) std::cout << item.id << '\n';
+}
+
+std::vector<lws::ContainedResource> all = client.list_container(container).to_vector();
+@@@ read-linkset
+lws::LinksetDocument doc = client.read_linkset(url);     // HEAD for rel="linkset", then GET
+std::cout << doc.url << ' ' << doc.etag.value_or("") << ' ' << doc.allow.size() << '\n';
+
+for (const lws::Link& link : doc.linkset.links()) std::cout << link.rel << " -> " << link.href << '\n';
+std::vector<std::string> shapes = doc.linkset.targets("describedby");
+@@@ patch-linkset
+lws::LinksetDocument doc = client.read_linkset(url);
+const std::string rel = "https://example.org/rel/reviewer";     // extension relation types are URIs
+const nlohmann::json reviewer = {{"href", "https://id.example/bob"}};
+
+// JsonPointer escapes "/" in the relation URI as "~1".
+// "add" on an existing member replaces it, so append with "/-" when the relation exists.
+lws::JsonPatch patch;
+if (doc.linkset.targets(rel).empty())
+    patch.add(lws::JsonPointer::from_segments({"linkset", "0", rel}), nlohmann::json::array({reviewer}));
+else
+    patch.add(lws::JsonPointer::from_segments({"linkset", "0", rel, "-"}), reviewer);
+client.patch_linkset(doc.url, patch, {.if_match = doc.etag});
+@@@ put-linkset
+lws::LinksetDocument doc = client.read_linkset(url);
+if (std::ranges::find(doc.allow, "PUT") != doc.allow.end()) {
+    doc.linkset.add(url, "license", "https://creativecommons.org/licenses/by/4.0/");
+    client.update_linkset(doc.url, doc.linkset, {.if_match = doc.etag});
+}
+@@@ auth-didkey
+// A did:key agent: the identifier is derived from the public key, nothing to host.
+auto key = lws::PrivateKey::generate(lws::KeyAlgorithm::ES256);   // or KeyAlgorithm::EdDSA
+auto credentials = lws::SelfSignedCredentials::did_key(key);
+std::cout << credentials->agent_id() << '\n';                       // did:key:zDn…
+
+lws::ClientOptions options;
+options.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(credentials);
+lws::Client client(options);
+client.head(url);   // 401 → AS metadata → token exchange → retried with a Bearer token
+@@@ auth-cid
+// An HTTPS agent publishes a controlled identifier document listing its key…
+auto key = lws::PrivateKey::generate(lws::KeyAlgorithm::ES256);
+const std::string agent = "https://bot.example/agent";
+nlohmann::json cid = lws::controlled_identifier_document(agent, key.public_jwk(), "key-1");
+std::cout << cid.dump(2) << '\n';    // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key.
+auto credentials = lws::SelfSignedCredentials::for_agent(agent, key, "key-1");
+lws::ClientOptions options;
+options.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(credentials);
+lws::Client client(options);
+@@@ keys
+auto key = lws::PrivateKey::generate(lws::KeyAlgorithm::ES256);
+nlohmann::json private_jwk = key.private_jwk();          // includes "d": store securely
+std::string pem = key.to_pem();                          // or PKCS#8 PEM
+auto restored = lws::PrivateKey::from_jwk(private_jwk);  // or lws::PrivateKey::from_pem(pem)
+auto credentials = lws::SelfSignedCredentials::did_key(restored);
+
+// did:key from a public JWK
+lws::DidKey did = lws::did_key_from_public_jwk(key.public_jwk());
+std::cout << (credentials->agent_id() == did.did) << ' ' << did.kid << '\n';
+@@@ auth-openid
+// The ID token from your OpenID Connect login (any OIDC library). Construct OpenIdCredentials
+// with a supplier instead to provide a fresh token whenever a new access token is needed.
+lws::TokenExchangeOptions exchange;
+// ID tokens are not always audience-restricted: only send them to servers you trust.
+exchange.authorization_server_filter = [](std::string_view as_uri, std::string_view) {
+    return as_uri == "https://auth.example";
+};
+lws::ClientOptions options;
+options.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(
+    std::make_shared<lws::OpenIdCredentials>(id_token), exchange);
+lws::Client client(options);
+@@@ auth-saml
+// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+auto saml = std::make_shared<lws::SamlCredentials>(lws::SamlCredentials::from_xml(saml_assertion_xml));
+lws::ClientOptions options;
+options.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(saml);
+lws::Client client(options);
+@@@ auth-bearer
+// An access token you obtained yourself; it is only sent to URLs inside the realm.
+lws::ClientOptions options;
+options.authenticator = std::make_shared<lws::BearerTokenAuthenticator>(access_token, "https://storage.example/");
+lws::Client client(options);
+@@@ auth-options
+const std::set<std::string, std::less<>> trusted = {"https://auth.example"};
+lws::TokenExchangeOptions exchange;
+exchange.allow_insecure_http = false;                 // plain-http AS only on loopback (default)
+exchange.authorization_server_filter = [trusted](std::string_view as_uri, std::string_view) {
+    return trusted.contains(as_uri);
+};
+exchange.refresh_skew = std::chrono::seconds(30);    // refresh 30 s before expiry (default)
+lws::ClientOptions options;
+options.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(credentials, exchange);
+lws::Client client(options);
+@@@ custom-authenticator
+// Any scheme (API keys, cookies, DPoP…) plugs in by implementing lws::Authenticator.
+class ApiKeyAuthenticator final : public lws::Authenticator {
+public:
+    explicit ApiKeyAuthenticator(std::string key) : key_(std::move(key)) {}
+
+    void authorize(lws::HttpRequest& request) override {
+        if (request.url.starts_with("https://storage.example/")) request.headers.set("X-Api-Key", key_);
+    }
+
+    bool handle_challenge(const lws::HttpRequest&, const lws::HttpResponse&, lws::HttpTransport&) override {
+        return false;   // nothing to refresh: the 401 surfaces as lws::UnauthorizedError
+    }
+
+private:
+    std::string key_;
+};
+
+lws::Client make_api_key_client(std::string api_key) {
+    lws::ClientOptions options;
+    options.authenticator = std::make_shared<ApiKeyAuthenticator>(std::move(api_key));
+    return lws::Client(options);
+}
+@@@ subscribe
+lws::WebhookSubscriptionRequest request{
+    .topics = {container},                       // a container topic is recursive
+    .inbox = "https://my-app.example/hooks/lws",
+    .expires = "2026-12-31T00:00:00Z",           // RFC 3339
+};
+// subscribe(StorageDescription, …) checks that the NotificationService supports webhooks.
+lws::Subscription subscription = client.subscribe(storage, request);
+std::cout << subscription.subscription << ' ' << subscription.expires.value_or("") << '\n';
+
+const std::string service = storage.notification_service()->service_endpoint;
+for (const auto& s : client.list_subscriptions(service)) std::cout << s.id << '\n';
+auto current = client.get_subscription(subscription.subscription);
+std::cout << current.type << '\n';
+client.unsubscribe(subscription.subscription);
+@@@ webhook
+#include <iostream>
+#include <lws/lws.hpp>
+
+// Call from your HTTP server (Boost.Beast, Drogon, cpp-httplib, …) with the raw request.
+int handle_delivery(lws::WebhookVerifier& verifier, std::string_view method,
+                    const lws::HttpHeaders& headers, std::string_view body) {
+    // The URL you registered (your public URL when behind a proxy), not the Host header.
+    constexpr std::string_view inbox = "https://my-app.example/hooks/lws";
+    try {
+        lws::VerifiedNotification verified = verifier.verify(method, inbox, headers, body);
+        for (const lws::Activity& a : verified.notification.activities) {
+            std::cout << a.object.id << (a.is_update() ? " updated" : "") << '\n';
+        }
+        return 204;
+    } catch (const lws::SignatureVerificationError& e) {
+        std::cerr << "rejected: " << e.what() << '\n';
+        return 401;
+    }
+}
+
+int main() {
+    lws::WebhookVerifierOptions options;
+    options.trusted_storages = {"https://storage.example/"};   // only this storage's signatures
+    lws::WebhookVerifier verifier(lws::Client{}, options);     // the client fetches storage descriptions
+    // … route POST requests for the inbox path to handle_delivery(verifier, …) …
+}
+@@@ access-request
+lws::AccessPolicy policy{
+    .actions = {"read", "create"},
+    .assignee = "https://id.example/agent",
+    .target = lws::AccessTarget{.type = "StorageResource", .values = {container}},
+    .constraints = {
+        lws::Constraint::purpose("https://purpose.example/collaboration"),
+        lws::Constraint::not_after("2026-12-31T23:59:59Z"),
+    },
+};
+lws::AccessRequest request{
+    .storage = storage.id,
+    .inbox = "https://id.example/agent/inbox/",
+    .access = {policy},
+};
+const std::string requests = storage.access_request_service()->service_endpoint;
+std::string request_url = client.request_access(requests, request);
+
+for (const auto& r : client.list_access_requests(requests)) std::cout << r.id << '\n';
+lws::AccessRequest pending = client.get_access_request(request_url);
+std::cout << pending.access.at(0).actions.size() << '\n';
+client.cancel_access_request(request_url);
+@@@ access-grant
+// A storage controller approves a request by recording a grant with the same policy model.
+lws::AccessRequest pending = client.get_access_request(request_url);
+const std::string grants = storage.access_grant_service()->service_endpoint;
+std::string grant_url = client.grant_access(grants, {.storage = pending.storage, .access = pending.access});
+
+for (const auto& g : client.list_access_grants(grants)) std::cout << g.id << '\n';
+client.revoke_access_grant(grant_url);   // the server withdraws the underlying permissions
+@@@ list-types
+if (const lws::Service* index = storage.type_index_service()) {
+    for (const std::string& type : client.list_types(index->service_endpoint)) {
+        std::cout << type << '\n';   // e.g. https://schema.org/Person
+    }
+}
+@@@ search
+const std::string search = storage.type_search_service()->service_endpoint;
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+lws::TypeQuery query;
+query.any_of({"https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person"})
+     .all_of({"https://www.w3.org/ns/lws#DataResource"});
+lws::SearchPage first = client.search_types(search, query);     // HTTP QUERY
+std::cout << first.total_items.value_or(-1) << ' ' << first.next.value_or("") << '\n';
+
+auto events = lws::TypeQuery::of_types({"https://schema.org/Event"});
+for (const auto& hit : client.search_all(search, events)) std::cout << hit.id << '\n';
+
+// Indexed descriptive relations use the same grammar.
+lws::TypeQuery shaped;
+shaped.relation_all_of("describedby", {"https://example.org/shapes/person"});
+std::cout << client.search_types(search, shaped).items.size() << '\n';
+
+for (const auto& format : client.accepted_query_formats(search)) std::cout << format << '\n';
+@@@ errors
+try {
+    client.read(url);
+} catch (const lws::NotFoundError&) {
+    std::cout << "no such resource\n";
+} catch (const lws::UnauthorizedError& e) {
+    std::cout << "not authenticated (" << e.challenges().size() << " challenges)\n";
+} catch (const lws::HttpError& e) {
+    std::cout << e.status() << ' ' << (e.problem() && e.problem()->title ? *e.problem()->title : e.what()) << '\n';
+} catch (const lws::AuthenticationError& e) {
+    std::cout << "token exchange failed: " << e.oauth_error().value_or("?") << '\n';
+}
+@@@ problem
+try {
+    client.remove(container);
+} catch (const lws::ConflictError& e) {
+    if (const auto& p = e.problem()) {
+        std::cout << p->type.value_or("") << ' ' << p->title.value_or("") << ' ' << p->detail.value_or("") << ' '
+                  << p->instance.value_or("") << ' ' << p->extensions.value("itemCount", 0) << '\n';
+    }
+}

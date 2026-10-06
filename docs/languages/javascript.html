@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JavaScript / TypeScript · LWS Client</title>
+  <meta name="description" content="The zero-dependency LWS client for JavaScript and TypeScript: runs on Node.js, browsers, Deno and Bun with fetch and WebCrypto.">
+  <meta property="og:title" content="JavaScript / TypeScript · LWS Client">
+  <meta property="og:description" content="The zero-dependency LWS client for JavaScript and TypeScript: runs on Node.js, browsers, Deno and Bun with fetch and WebCrypto.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="../getting-started.html">Get started</a>
+        <a href="../concepts.html">Concepts</a>
+        <a href="../authentication.html">Auth</a>
+        <a href="../api-reference.html">API</a>
+        <a href="../spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="../index.html">Overview</a></li><li><a href="../getting-started.html">Getting started</a></li><li><a href="../api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1><span class="lang-badge lang-js">TS</span> JavaScript / TypeScript</h1>
+<div class="badges">
+  <span class="badge accent">lws-client 0.1.0</span>
+  <span class="badge">ESM + .d.ts</span>
+  <span class="badge">Node 20+ · browsers · Deno · Bun</span>
+  <span class="badge">zero runtime dependencies</span>
+</div>
+<p class="lead">Written in strict TypeScript and compiled to ES modules. The library core only uses web platform
+APIs (<code>fetch</code>, WebCrypto, <code>URL</code>, streams), so the same package runs on servers, in browsers and on edge runtimes.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="install">Install</h2>
+<pre data-lang="bash"><code class="language-bash"># From npm (once published)
+npm install lws-client
+
+# From source today: build a tarball and install it into your project
+git clone https://github.com/ebremer/lws-client.git
+cd lws-client/js &amp;&amp; npm install &amp;&amp; npm run build &amp;&amp; npm pack
+npm install /path/to/lws-client/js/lws-client-0.1.0.tgz</code></pre>
+
+<h2 id="first">First program</h2>
+<pre data-lang="ts"><code class="language-ts">import { LwsClient, TokenExchangeAuthenticator, SelfSignedCredentials, generateKeyPair } from &quot;lws-client&quot;;
+
+const credentials = SelfSignedCredentials.didKey(await generateKeyPair(&quot;ES256&quot;));
+const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });
+console.log(&quot;agent:  &quot;, credentials.agent);
+
+const storage = await client.discoverStorage(&quot;http://localhost:8787/root/&quot;);
+console.log(&quot;storage:&quot;, storage.id, &quot; root:&quot;, storage.storageRoot());
+
+const folder = await client.createContainer(storage.storageRoot(), { slug: &quot;hello-world&quot; });
+const file = await client.createText(folder.location, &quot;Hello, LWS!&quot;, { slug: &quot;hello.txt&quot; });
+console.log(&quot;created:&quot;, file.location);
+
+const resource = await client.read(file.location);
+console.log(await resource.text(), ` (etag ${resource.etag}, parent ${resource.parent})`);</code></pre>
+
+<h2 id="configure">Configure the client</h2>
+<pre data-lang="ts"><code class="language-ts">const credentials = SelfSignedCredentials.didKey(await generateKeyPair());
+const client = new LwsClient({
+  authenticator: new TokenExchangeAuthenticator(credentials),
+  userAgent: &quot;my-app/1.0&quot;,               // default &quot;lws-client-js/0.1.0&quot; (not sent by browsers)
+  headers: { &quot;Accept-Language&quot;: &quot;en&quot; },  // added to every request
+  timeoutMs: 20_000,
+  // fetch: myFetch,                     // inject your own fetch (proxies, tests, instrumentation)
+});
+
+// Every operation also takes { headers, signal } for per-call headers and cancellation.
+const controller = new AbortController();
+const page = await client.readContainer(container, { signal: controller.signal });
+console.log(page.totalItems);</code></pre>
+
+<h2 id="idioms">TypeScript idioms</h2>
+<div class="table-wrap"><table><thead><tr><th>Aspect</th><th>How the JS/TS client does it</th></tr></thead><tbody>
+<tr><td>Calls</td><td><code>async</code> methods returning <code>Promise</code>s; every operation accepts <code>{ headers, signal }</code> for cancellation with <code>AbortSignal</code></td></tr>
+<tr><td>Pagination</td><td><code>AsyncGenerator</code>s: <code>for await (const item of client.listContainer(url))</code></td></tr>
+<tr><td>Options</td><td>Plain option objects (<code>{ slug, types, links }</code>, <code>{ ifMatch }</code>, <code>{ recursive }</code>)</td></tr>
+<tr><td>Bodies</td><td>Any <code>BodyInit</code>: string, <code>Uint8Array</code>, <code>Blob</code>, <code>ReadableStream</code>; <code>createJson</code>, <code>createText</code>, <code>updateJson</code> helpers</td></tr>
+<tr><td>Responses</td><td><code>Resource</code> exposes <code>text()</code>, <code>json()</code>, <code>bytes()</code> and <code>blob()</code> (buffered once, re-readable), plus the raw <code>body</code> stream</td></tr>
+<tr><td>Errors</td><td><code>Error</code> subclasses: <code>LwsError</code> → <code>HttpError</code> (with <code>status</code>, <code>problem</code>, <code>headers</code>) → <code>NotFoundError</code>, …</td></tr>
+<tr><td>Escape hatch</td><td><code>client.fetch(url, init)</code> sends any request through the authenticator without throwing on error statuses</td></tr>
+</tbody></table></div>
+
+<h2 id="runtimes">Runtimes and entry points</h2>
+<div class="table-wrap"><table><thead><tr><th>Entry point</th><th>Use</th></tr></thead><tbody>
+<tr><td><code>lws-client</code></td><td>Everything: client, models, auth, crypto, webhook verification. No <code>node:</code> imports</td></tr>
+<tr><td><code>lws-client/node</code></td><td>Node helpers: <code>createWebhookHandler</code>, <code>webhookRequestFromIncomingMessage</code>, <code>readBody</code></td></tr>
+</tbody></table></div>
+<ul>
+  <li><strong>Browsers:</strong> calls to another origin need CORS on the storage and authorization server. The
+  default <code>User-Agent</code> is not set in browsers, to avoid extra preflights. See <code>examples/browser.html</code>.</li>
+  <li><strong>Custom <code>fetch</code>:</strong> pass <code>{ fetch }</code> to add proxies, retries or instrumentation, or to test without a network.</li>
+  <li><strong>Ed25519</strong> needs a WebCrypto implementation with Ed25519 support: Node 22+ and current browsers have it.</li>
+</ul>
+
+<h2 id="notes">Notes and deviations</h2>
+<ul>
+  <li><code>links(rel?)</code>, <code>services(type?)</code> and <code>capabilities(type?)</code> are methods, not fields.</li>
+  <li>The <code>Linkset</code> model keeps anchors and hrefs exactly as received, so a read-modify-write round trip is lossless.</li>
+  <li><code>WebhookVerifier</code> takes a <code>resolveStorageDescription</code> callback (usually
+  <code>(id) =&gt; client.getStorageDescription(id)</code>) rather than a client.</li>
+  <li>Invalid builder input such as a relative IRI in a <code>TypeQuery</code> throws <code>TypeError</code>.</li>
+  <li>Streaming upload bodies trigger a <code>HEAD</code> to obtain a token first, because streams cannot be replayed.</li>
+</ul>
+
+<h2 id="build">Build, test and examples</h2>
+<pre data-lang="bash"><code class="language-bash">cd js
+npm install
+npm run build          # dist/ (ESM + .d.ts)
+npm run typecheck
+npm test               # unit, fixture and in-process HTTP tests (Node 22+)
+node ../testing/mock-server/server.mjs --port 8787 &amp;
+LWS_TEST_SERVER=http://localhost:8787 npm run test:interop
+
+# Examples: quickstart.mjs, self-signed-auth.mjs, webhook-receiver.mjs, browser.html
+LWS_SERVER=http://localhost:8787 node examples/quickstart.mjs</code></pre>
+<div class="callout"><p><strong>Source</strong> <a href="https://github.com/ebremer/lws-client/tree/main/js">js/</a> in the repository, with its own <a href="https://github.com/ebremer/lws-client/blob/main/js/README.md">README</a>.</p></div>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

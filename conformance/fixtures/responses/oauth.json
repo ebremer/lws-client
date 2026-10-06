@@ -1,0 +1,41 @@
+{
+  "description": "Authorization server metadata (/.well-known/lws-configuration), metadata URL derivation (RFC 8414 section 3.1), token responses and realm containment checks.",
+  "metadata": {
+    "issuer": "https://authorization.example",
+    "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+    "token_endpoint": "https://authorization.example/token",
+    "jwks_uri": "https://authorization.example/jwks",
+    "claims_supported": ["sub", "iss", "client_id", "aud"],
+    "response_types_supported": ["token"],
+    "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token"],
+    "subject_identifier_types_supported": ["did:web", "did:key", "https"]
+  },
+  "metadataUrls": [
+    { "issuer": "https://authorization.example", "url": "https://authorization.example/.well-known/lws-configuration" },
+    { "issuer": "https://authorization.example/", "url": "https://authorization.example/.well-known/lws-configuration" },
+    { "issuer": "https://as.example/tenant/one", "url": "https://as.example/.well-known/lws-configuration/tenant/one" },
+    { "issuer": "http://localhost:8787", "url": "http://localhost:8787/.well-known/lws-configuration" }
+  ],
+  "tokenResponse": {
+    "body": { "access_token": "eyJ0eXAiOiJhcytqd3QiLCJhbGciOiJFUzI1NiJ9.eyJleHAiOjE3MzU2ODYzMDB9.c2ln", "token_type": "Bearer", "expires_in": 3600 },
+    "expectedExpiresIn": 3600
+  },
+  "tokenResponseNoExpiry": {
+    "description": "No expires_in: the expiry comes from the access token's JWT 'exp' claim (1735686300).",
+    "body": { "access_token": "eyJ0eXAiOiJhcytqd3QiLCJhbGciOiJFUzI1NiJ9.eyJleHAiOjE3MzU2ODYzMDB9.c2ln", "token_type": "bearer" },
+    "expectedExp": 1735686300
+  },
+  "errorResponse": { "status": 400, "body": { "error": "invalid_request", "error_description": "resource is not a known storage" } },
+  "realmChecks": [
+    { "realm": "https://storage.example/storage_1", "url": "https://storage.example/storage_1", "contained": true },
+    { "realm": "https://storage.example/storage_1", "url": "https://storage.example/storage_1/notes/a.txt", "contained": true },
+    { "realm": "https://storage.example/storage_1/", "url": "https://storage.example/storage_1/notes/", "contained": true },
+    { "realm": "https://storage.example/storage_1", "url": "https://storage.example/storage_10/x", "contained": false },
+    { "realm": "https://storage.example/", "url": "https://storage.example/anything", "contained": true },
+    { "realm": "https://storage.example/", "url": "http://storage.example/anything", "contained": false },
+    { "realm": "https://storage.example/", "url": "https://storage.example:8443/anything", "contained": false },
+    { "realm": "https://storage.example/", "url": "https://evil.example/", "contained": false },
+    { "realm": "https://storage.example", "url": "https://storage.example/a", "contained": true },
+    { "realm": "https://STORAGE.example/a/", "url": "https://storage.example:443/a/b", "contained": true }
+  ]
+}

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Python · LWS Client</title>
+  <meta name="description" content="The typed Python LWS client: synchronous and asyncio clients over one sans-I/O core, httpx, frozen dataclasses and an optional cryptography extra.">
+  <meta property="og:title" content="Python · LWS Client">
+  <meta property="og:description" content="The typed Python LWS client: synchronous and asyncio clients over one sans-I/O core, httpx, frozen dataclasses and an optional cryptography extra.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="../getting-started.html">Get started</a>
+        <a href="../concepts.html">Concepts</a>
+        <a href="../authentication.html">Auth</a>
+        <a href="../api-reference.html">API</a>
+        <a href="../spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="../index.html">Overview</a></li><li><a href="../getting-started.html">Getting started</a></li><li><a href="../api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1><span class="lang-badge lang-python">PY</span> Python</h1>
+<div class="badges">
+  <span class="badge accent">lws-client 0.1.0</span>
+  <span class="badge">Python 3.10+</span>
+  <span class="badge">httpx · optional cryptography</span>
+  <span class="badge">fully typed (py.typed, mypy --strict)</span>
+</div>
+<p class="lead"><code>LwsClient</code> (synchronous) and <code>AsyncLwsClient</code> (asyncio) share a sans-I/O core. Every
+operation, redirect rule and step of the token exchange is written once, so the two clients behave identically.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="install">Install</h2>
+<pre data-lang="bash"><code class="language-bash"># From PyPI (once published)
+pip install &quot;lws-client[crypto]&quot;
+
+# From GitHub today
+pip install &quot;lws-client[crypto] @ git+https://github.com/ebremer/lws-client#subdirectory=python&quot;
+
+# The crypto extra (cryptography) enables self-signed identities and webhook verification.</code></pre>
+
+<h2 id="first">First program</h2>
+<pre data-lang="python"><code class="language-python">from lws_client import LwsClient, SelfSignedCredentials, SigningKey, TokenExchangeAuthenticator
+
+credentials = SelfSignedCredentials.did_key(SigningKey.generate(&quot;ES256&quot;))
+print(&quot;agent:  &quot;, credentials.agent)
+
+with LwsClient(authenticator=TokenExchangeAuthenticator(credentials)) as client:
+    storage = client.discover_storage(&quot;http://localhost:8787/root/&quot;)
+    print(&quot;storage:&quot;, storage.id, &quot; root:&quot;, storage.storage_root())
+
+    folder = client.create_container(storage.storage_root(), slug=&quot;hello-world&quot;)
+    file = client.create_text(folder.location, &quot;Hello, LWS!&quot;, slug=&quot;hello.txt&quot;)
+    print(&quot;created:&quot;, file.location)
+
+    resource = client.read(file.location)
+    print(resource.text, f&quot; (etag {resource.etag}, parent {resource.parent})&quot;)</code></pre>
+
+<h2 id="configure">Configure the client</h2>
+<pre data-lang="python"><code class="language-python">credentials = SelfSignedCredentials.did_key(SigningKey.generate())
+client = LwsClient(
+    authenticator=TokenExchangeAuthenticator(credentials),
+    user_agent=&quot;my-app/1.0&quot;,                    # default &quot;lws-client-python/0.1.0&quot;
+    default_headers={&quot;Accept-Language&quot;: &quot;en&quot;},  # added to every request
+    timeout=20.0,
+    # http_client=httpx.Client(...),            # bring your own (proxies, HTTP/2, mounts)
+)
+with client:                                    # closes the underlying httpx client
+    page = client.read_container(container, headers={&quot;X-Trace&quot;: &quot;1&quot;})   # per-call headers
+    print(page.total_items)</code></pre>
+
+<h2 id="async">Async usage</h2>
+<pre data-lang="python"><code class="language-python">import asyncio
+
+from lws_client import AsyncLwsClient, SelfSignedCredentials, SigningKey, TokenExchangeAuthenticator
+
+
+async def main() -&gt; None:
+    credentials = SelfSignedCredentials.did_key(SigningKey.generate())
+    async with AsyncLwsClient(authenticator=TokenExchangeAuthenticator(credentials)) as client:
+        storage = await client.discover_storage(&quot;http://localhost:8787/root/&quot;)
+        root = storage.storage_root()
+        # Concurrent requests share a single token exchange.
+        pages = await asyncio.gather(*(client.read_container(root) for _ in range(5)))
+        print([page.total_items for page in pages])
+        async for item in client.list_container(root):
+            print(item.id)
+
+
+asyncio.run(main())</code></pre>
+
+<h2 id="idioms">Python idioms</h2>
+<div class="table-wrap"><table><thead><tr><th>Aspect</th><th>How the Python client does it</th></tr></thead><tbody>
+<tr><td>Calls</td><td><code>LwsClient</code> and <code>AsyncLwsClient</code> with identical method names; both are context managers that close their httpx client</td></tr>
+<tr><td>Pagination</td><td>Generators: <code>list_container</code>, <code>list_types</code>, <code>search_all</code>…; async generators on <code>AsyncLwsClient</code>; <code>container_pages</code> / <code>search_pages</code> yield whole pages</td></tr>
+<tr><td>Options</td><td>Keyword arguments: <code>slug=</code>, <code>types=</code>, <code>links=</code>, <code>if_match=</code>, <code>if_none_match=</code>, <code>range=(start, end)</code>, <code>recursive=</code>, <code>set_linkset=</code></td></tr>
+<tr><td>Bodies</td><td><code>bytes</code>, <code>str</code> or an iterable of bytes; <code>create_json</code>, <code>create_text</code>, <code>read_json</code>; <code>stream(url)</code> for unbuffered reads</td></tr>
+<tr><td>Models</td><td>Frozen, slotted dataclasses; <code>is_container</code>/<code>is_data_resource</code>/<code>not_modified</code> are properties; datetimes are aware <code>datetime</code>s plus raw strings</td></tr>
+<tr><td>Errors</td><td><code>LwsError</code> → <code>HttpError</code> (<code>status</code>, <code>problem</code>, <code>headers</code>, <code>body_text</code>) → <code>NotFoundError</code>, …; <code>TransportError</code> wraps httpx failures</td></tr>
+<tr><td>Crypto</td><td>The <code>[crypto]</code> extra (cryptography) is imported lazily, with a clear error if it is missing; ES256, EdDSA and ES384</td></tr>
+</tbody></table></div>
+
+<h2 id="modules">Modules</h2>
+<p>Everything is importable from the package root (<code>from lws_client import …</code>). Submodules:
+<code>client</code>, <code>models</code>, <code>linkset</code>, <code>auth</code>, <code>crypto</code>, <code>webhook</code>, <code>notifications</code>,
+<code>access</code>, <code>type_index</code>, <code>json_patch</code>, <code>headers</code>, <code>structured_fields</code>,
+<code>errors</code> and <code>constants</code>.</p>
+
+<h2 id="notes">Notes and deviations</h2>
+<ul>
+  <li><code>NotImplementedByServerError</code> (501) avoids shadowing the built-in <code>NotImplementedError</code>.
+  <code>GoneError</code> subclasses <code>NotFoundError</code>, since expired page links may answer either status.</li>
+  <li><code>links_for(rel)</code> and <code>find_services(type)</code> are the lookups, because <code>links</code> and <code>services</code> are fields.</li>
+  <li><code>subscribe(service, topics, inbox, expires=…)</code> takes arguments rather than a request object.</li>
+  <li>Invalid builder input raises <code>ValueError</code>. A malformed notification body during webhook verification raises
+  <code>SignatureVerificationError</code>, so a handler only needs to catch one exception type.</li>
+  <li>Redirects are followed manually, for <code>GET</code>/<code>HEAD</code>/<code>OPTIONS</code>/<code>QUERY</code> only, with credentials re-evaluated per hop.</li>
+  <li>Extras: <code>authenticate(url)</code> to obtain a token up front, <code>stream</code>, <code>read_linkset_at</code>, ES384, <code>verify_jwt</code> and <code>did_key_to_jwk</code>.</li>
+</ul>
+
+<h2 id="build">Build, test and examples</h2>
+<pre data-lang="bash"><code class="language-bash">cd python
+python -m venv .venv
+.venv/bin/pip install -e &quot;.[dev]&quot;            # Windows: .venv\Scripts\pip
+.venv/bin/pytest
+.venv/bin/mypy                               # strict
+.venv/bin/ruff check src tests examples
+node ../testing/mock-server/server.mjs --port 8787 &amp;
+LWS_TEST_SERVER=http://localhost:8787 .venv/bin/pytest tests/test_interop.py
+
+# Examples: quickstart.py, async_usage.py, self_signed_identity.py, webhook_receiver.py
+.venv/bin/python examples/quickstart.py http://localhost:8787/root/</code></pre>
+<div class="callout"><p><strong>Source</strong> <a href="https://github.com/ebremer/lws-client/tree/main/python">python/</a> in the repository, with its own <a href="https://github.com/ebremer/lws-client/blob/main/python/README.md">README</a>.</p></div>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

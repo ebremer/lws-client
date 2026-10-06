@@ -1,0 +1,39 @@
+{
+  "description": "Notification envelopes (lws10-core Notification Data Model). 'single' has one activity object, 'batch' an array. 'invalid' must be rejected (type is not Notification).",
+  "single": {
+    "@context": ["https://www.w3.org/ns/lws/v1", "https://www.w3.org/ns/activitystreams"],
+    "type": "Notification",
+    "storage": "https://storage.example/",
+    "activity": {
+      "id": "ec4dcc48-6581-4232-81c9-584525a98693",
+      "type": ["Delete"],
+      "object": { "id": "https://storage.example/alice/notes/shopping.txt", "type": ["DataResource"] },
+      "origin": "https://storage.example/alice/notes/",
+      "actor": "https://id.example/alice",
+      "published": "2026-03-26T10:30:00Z"
+    }
+  },
+  "singleExpected": {
+    "storage": "https://storage.example/",
+    "activities": [
+      { "id": "ec4dcc48-6581-4232-81c9-584525a98693", "types": ["Delete"], "isDelete": true, "objectId": "https://storage.example/alice/notes/shopping.txt", "objectTypes": ["DataResource"], "origin": "https://storage.example/alice/notes/", "actor": "https://id.example/alice", "published": "2026-03-26T10:30:00Z" }
+    ]
+  },
+  "batch": {
+    "@context": ["https://www.w3.org/ns/lws/v1", "https://www.w3.org/ns/activitystreams"],
+    "type": "Notification",
+    "storage": "https://storage.example/",
+    "activity": [
+      { "id": "a1b2c3d4-5678-9abc-def0-1234567890ab", "type": ["Create"], "object": { "id": "https://storage.example/alice/notes/meeting.txt", "type": ["DataResource"] }, "target": "https://storage.example/alice/notes/", "published": "2026-03-26T10:30:00Z" },
+      { "id": "b2c3d4e5-6789-abcd-ef01-234567890abc", "type": "Update", "object": { "id": "https://storage.example/alice/profile", "type": "DataResource" }, "published": "2026-03-26T10:30:01Z" }
+    ]
+  },
+  "batchExpected": {
+    "storage": "https://storage.example/",
+    "activities": [
+      { "id": "a1b2c3d4-5678-9abc-def0-1234567890ab", "types": ["Create"], "isCreate": true, "objectId": "https://storage.example/alice/notes/meeting.txt", "target": "https://storage.example/alice/notes/" },
+      { "id": "b2c3d4e5-6789-abcd-ef01-234567890abc", "types": ["Update"], "isUpdate": true, "objectId": "https://storage.example/alice/profile", "objectTypes": ["DataResource"] }
+    ]
+  },
+  "invalid": { "type": "Activity", "storage": "https://storage.example/", "activity": [] }
+}

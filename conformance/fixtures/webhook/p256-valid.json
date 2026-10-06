@@ -1,0 +1,37 @@
+{
+  "method": "POST",
+  "url": "https://receiver.example/hooks/lws?subscription=9e8d7c6b5a4f",
+  "now": 1790000030,
+  "name": "p256-valid",
+  "description": "ECDSA P-256 signature, sha-256 digest",
+  "headers": {
+    "content-type": "application/lws+json",
+    "content-digest": "sha-256=:SFIoZZtk6hHkYJdIo+3OwkB09MpOSEcVp3INJDtIw34=:",
+    "signature-input": "sig1=(\"@method\" \"@scheme\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790000000;keyid=\"https://storage.example/#key-p256\";alg=\"ecdsa-p256-sha256\"",
+    "signature": "sig1=:0j/bSU/4R0VegkYX5ypNFrZl6kFCQGXNjZjFN+HKdLtEMn5EWOYrFMf4PpRKpTDCJxiANBoCGrv88L/wJbvAVw==:"
+  },
+  "body": "{\"@context\":[\"https://www.w3.org/ns/lws/v1\",\"https://www.w3.org/ns/activitystreams\"],\"type\":\"Notification\",\"storage\":\"https://storage.example/\",\"activity\":[{\"id\":\"urn:uuid:a1b2c3d4-5678-4abc-8ef0-1234567890ab\",\"type\":[\"Create\"],\"object\":{\"id\":\"https://storage.example/root/notes/meeting.txt\",\"type\":[\"DataResource\"]},\"target\":\"https://storage.example/root/notes/\",\"published\":\"2026-09-21T11:33:20Z\"},{\"id\":\"urn:uuid:b2c3d4e5-6789-4bcd-9f01-234567890abc\",\"type\":[\"Update\"],\"object\":{\"id\":\"https://storage.example/root/profile\",\"type\":[\"DataResource\"]},\"published\":\"2026-09-21T11:33:21Z\"}]}",
+  "signatureBase": "\"@method\": POST\n\"@scheme\": https\n\"@authority\": receiver.example\n\"@path\": /hooks/lws\n\"content-type\": application/lws+json\n\"content-digest\": sha-256=:SFIoZZtk6hHkYJdIo+3OwkB09MpOSEcVp3INJDtIw34=:\n\"@signature-params\": (\"@method\" \"@scheme\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790000000;keyid=\"https://storage.example/#key-p256\";alg=\"ecdsa-p256-sha256\"",
+  "expected": {
+    "valid": true,
+    "keyid": "https://storage.example/#key-p256",
+    "notification": {
+      "storage": "https://storage.example/",
+      "activities": [
+        {
+          "types": [
+            "Create"
+          ],
+          "objectId": "https://storage.example/root/notes/meeting.txt",
+          "target": "https://storage.example/root/notes/"
+        },
+        {
+          "types": [
+            "Update"
+          ],
+          "objectId": "https://storage.example/root/profile"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,288 @@
+#!/usr/bin/env node
+// SPDX-License-Identifier: MIT
+//
+// Compiles / type-checks every code sample in docs-src/samples/<lang>.txt against the real
+// clients, so the documentation never shows an API that does not exist.
+//
+//   node docs-src/check-samples.mjs [java] [ts] [cpp] [rust] [go] [python]
+//
+// Each language is skipped (not failed) when its toolchain or build output is missing:
+//   ts      js/dist and js/node_modules (npm install && npm run build in js/)
+//   python  python/.venv with the dev extras (mypy)
+//   go      go on PATH
+//   java    java/target/classes (mvn compile) and mvn on PATH (for the Jackson classpath)
+//   rust    cargo on PATH
+//   cpp     g++ (or $CXX) plus nlohmann/json headers (cpp/vcpkg_installed/*/include, or system)
+//           and a generated lws/config.hpp (any cpp/build*/**/generated directory)
+//
+// Harness projects are written to <tmpdir>/lws-docs-check/<lang>.
+
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(here, "..").replace(/\\/g, "/");
+const WORK = join(tmpdir(), "lws-docs-check");
+const FULL = new Set(["first-program", "webhook"]);
+const SKIP = new Set(["install"]);
+// Samples that declare types/functions and therefore live at file scope, not inside a function.
+const TOP_LEVEL = new Set(["custom-authenticator"]);
+const isWin = process.platform === "win32";
+
+function book(lang) {
+  const text = readFileSync(join(here, "samples", `${lang}.txt`), "utf8").replace(/\r\n/g, "\n");
+  const out = {};
+  let cur = null;
+  for (const line of text.split("\n")) {
+    const m = /^@@@ (\S+)(?: (\S+))?\s*$/.exec(line);
+    if (m) { cur = out[m[1]] = { lines: [] }; continue; }
+    if (cur) cur.lines.push(line);
+  }
+  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.lines.join("\n").trimEnd()]));
+}
+const indent = (code, pad) => code.split("\n").map((l) => (l ? pad + l : l)).join("\n");
+const ident = (topic) => topic.replace(/-/g, "_");
+function fresh(name) {
+  const dir = join(WORK, name);
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+function run(cmd, args, opts = {}) {
+  const r = spawnSync(cmd, args, { encoding: "utf8", shell: isWin, ...opts });
+  return { ok: r.status === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
+}
+const has = (cmd) => run(cmd, ["--version"]).ok;
+function findDirs(start, predicate, depth = 6) {
+  if (!existsSync(start) || depth < 0) return [];
+  const found = predicate(start) ? [start] : [];
+  for (const n of readdirSync(start)) {
+    const p = join(start, n);
+    if (statSync(p).isDirectory()) found.push(...findDirs(p, predicate, depth - 1));
+  }
+  return found;
+}
+
+// ---------------------------------------------------------------------------- TypeScript
+function checkTs() {
+  const tsc = join(REPO, "js/node_modules/.bin", isWin ? "tsc.cmd" : "tsc");
+  if (!existsSync(join(REPO, "js/dist/index.d.ts")) || !existsSync(tsc)) return { skipped: "build js/ first (npm install && npm run build)" };
+  const dir = fresh("ts");
+  const dts = readFileSync(join(REPO, "js/dist/index.d.ts"), "utf8");
+  const names = new Set();
+  for (const m of dts.matchAll(/export\s*\{([^}]*)\}/g)) {
+    for (const part of m[1].split(",")) {
+      const p = part.trim().replace(/^type\s+/, "");
+      if (p) names.add(p.split(/\s+as\s+/).pop().trim());
+    }
+  }
+  for (const m of dts.matchAll(/export \* from "([^"]+)"/g)) {
+    const sub = readFileSync(join(REPO, "js/dist", m[1].replace(/\.js$/, ".d.ts")), "utf8");
+    for (const n of sub.matchAll(/export (?:declare )?(?:const|class|function|interface|type) ([A-Za-z_]\w*)/g)) names.add(n[1]);
+  }
+  let frag = `import { ${[...names].sort().join(", ")} } from "lws-client";
+declare const client: LwsClient; declare const storage: StorageDescription;
+declare const container: string; declare const url: string; declare const etag: string;
+declare const idToken: string; declare const samlAssertionXml: string; declare const accessToken: string;
+declare const apiKey: string; declare const requestUrl: string; declare const credentials: SelfSignedCredentials;
+`;
+  for (const [topic, code] of Object.entries(book("ts"))) {
+    if (SKIP.has(topic)) continue;
+    if (FULL.has(topic)) writeFileSync(join(dir, `${topic}.ts`), `${code}\nexport {};\n`);
+    else frag += `\nexport async function snippet_${ident(topic)}(): Promise<void> {\n${indent(code, "  ")}\n}\n`;
+  }
+  writeFileSync(join(dir, "fragments.ts"), frag);
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
+    compilerOptions: {
+      target: "es2022", module: "esnext", moduleResolution: "bundler", strict: true, noEmit: true, skipLibCheck: true,
+      lib: ["es2023", "dom", "dom.iterable"], types: ["node"], typeRoots: [`${REPO}/js/node_modules/@types`],
+      paths: { "lws-client": [`${REPO}/js/dist/index.d.ts`], "lws-client/node": [`${REPO}/js/dist/node.d.ts`] },
+    },
+    include: ["*.ts"],
+  }));
+  return run(tsc, ["-p", "tsconfig.json"], { cwd: dir });
+}
+
+// ---------------------------------------------------------------------------- Python
+function checkPython() {
+  const py = join(REPO, "python/.venv", isWin ? "Scripts/python.exe" : "bin/python");
+  if (!existsSync(py)) return { skipped: "create python/.venv with the dev extras" };
+  const dir = fresh("python");
+  let frag = `from __future__ import annotations
+from typing import cast
+from lws_client import *  # noqa: F403
+from lws_client import LwsClient, SelfSignedCredentials, StorageDescription
+client = cast(LwsClient, None)
+storage = cast(StorageDescription, None)
+container = url = etag = id_token = saml_assertion_xml = access_token = api_key = request_url = ""
+credentials = cast(SelfSignedCredentials, None)
+`;
+  for (const [topic, code] of Object.entries(book("python"))) {
+    if (SKIP.has(topic)) continue;
+    if (FULL.has(topic) || topic === "async-usage") writeFileSync(join(dir, `prog_${ident(topic)}.py`), `${code}\n`);
+    else frag += `\n\ndef snippet_${ident(topic)}() -> None:\n${indent(code, "    ")}\n`;
+  }
+  writeFileSync(join(dir, "fragments.py"), frag);
+  const files = readdirSync(dir).filter((f) => f.endsWith(".py"));
+  return run(py, ["-m", "mypy", "--check-untyped-defs", "--no-incremental", ...files], { cwd: dir, shell: false });
+}
+
+// ---------------------------------------------------------------------------- Go
+function checkGo() {
+  if (!run("go", ["version"]).ok) return { skipped: "go not on PATH" };
+  const dir = fresh("go");
+  writeFileSync(join(dir, "go.mod"), `module docscheck\n\ngo 1.23\n\nrequire github.com/ebremer/lws-client/go v0.0.0\n\nreplace github.com/ebremer/lws-client/go => ${REPO}/go\n`);
+  let top = "";
+  let fns = "";
+  for (const [topic, code] of Object.entries(book("go"))) {
+    if (SKIP.has(topic)) continue;
+    if (FULL.has(topic)) { mkdirSync(join(dir, ident(topic))); writeFileSync(join(dir, ident(topic), "main.go"), `${code}\n`); continue; }
+    if (TOP_LEVEL.has(topic)) top += `\n${code}\n`;
+    else fns += `\nfunc snippet_${ident(topic)}() error {\n${indent(code, "\t")}\n\treturn nil\n}\n`;
+  }
+  mkdirSync(join(dir, "fragments"));
+  writeFileSync(join(dir, "fragments", "fragments.go"), `package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"slices"
+	"strings"
+	"time"
+
+	lws "github.com/ebremer/lws-client/go"
+)
+
+var _, _, _, _, _, _, _, _, _ = bytes.NewReader, json.Marshal, errors.Is, fmt.Println, io.Copy, http.DefaultClient, os.Open, strings.NewReader, time.Now
+var _ = slices.Contains[[]string]
+
+var (
+	ctx                                                                  context.Context
+	client                                                               *lws.Client
+	storage                                                              *lws.StorageDescription
+	container, url, etag, idToken, accessToken, apiKey, requestURL      string
+	samlAssertionXML                                                     []byte
+	credentials                                                          *lws.SelfSignedCredentials
+)
+${top}${fns}
+func main() {}
+`);
+  return run("go", ["build", "./..."], { cwd: dir, env: { ...process.env, GOFLAGS: "-mod=mod" } });
+}
+
+// ---------------------------------------------------------------------------- Java
+function checkJava() {
+  if (!existsSync(join(REPO, "java/target/classes")) || !has("javac") || !has("mvn")) return { skipped: "run mvn compile in java/ (needs javac and mvn)" };
+  const dir = fresh("java");
+  const cpFile = join(dir, "cp.txt");
+  const cp = run("mvn", ["-q", "-f", join(REPO, "java/pom.xml"), "dependency:build-classpath", "-Dmdep.includeScope=runtime", `-Dmdep.outputFile=${cpFile}`]);
+  if (!cp.ok) return cp;
+  const classpath = [join(REPO, "java/target/classes"), readFileSync(cpFile, "utf8").trim()].join(delimiter);
+  let methods = "";
+  for (const [topic, code] of Object.entries(book("java"))) {
+    if (SKIP.has(topic)) continue;
+    if (FULL.has(topic)) writeFileSync(join(dir, `${/public class (\w+)/.exec(code)[1]}.java`), `${code}\n`);
+    else methods += `\n    static void snippet_${ident(topic)}() throws Exception {\n${indent(code, "        ")}\n    }\n`;
+  }
+  writeFileSync(join(dir, "Fragments.java"), `import com.ebremer.lws.*;
+import com.ebremer.lws.access.*;
+import com.ebremer.lws.auth.*;
+import com.ebremer.lws.auth.Authenticator;
+import com.ebremer.lws.http.*;
+import com.ebremer.lws.index.*;
+import com.ebremer.lws.notify.*;
+import com.ebremer.lws.patch.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.*;
+import java.net.URI;
+import java.nio.file.Path;
+import java.security.KeyPair;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.time.*;
+import java.util.*;
+
+@SuppressWarnings("unused")
+class Fragments {
+    static LwsClient client;
+    static StorageDescription storage;
+    static URI container, url, requestUrl;
+    static String etag, idToken, samlAssertionXml, accessToken, apiKey;
+    static SelfSignedCredentials credentials;
+${methods}}
+`);
+  const sources = readdirSync(dir).filter((f) => f.endsWith(".java"));
+  return run("javac", ["-Xlint:none", "-cp", classpath, "-d", join(dir, "out"), ...sources], { cwd: dir, shell: false });
+}
+
+// ---------------------------------------------------------------------------- Rust
+function checkRust() {
+  if (!has("cargo")) return { skipped: "cargo not on PATH" };
+  const dir = fresh("rust");
+  mkdirSync(join(dir, "src/bin"), { recursive: true });
+  writeFileSync(join(dir, "Cargo.toml"), `[package]\nname = "docs-check"\nversion = "0.0.0"\nedition = "2024"\npublish = false\n\n[dependencies]\nlws-client = { path = "${REPO}/rust" }\ntokio = { version = "1", features = ["macros", "rt-multi-thread"] }\nfutures-util = "0.3"\nserde_json = "1"\nhttp = "1"\n`);
+  const MODULES = new Set(["custom-authenticator", "webhook"]);
+  let mods = "";
+  let fns = "";
+  for (const [topic, code] of Object.entries(book("rust"))) {
+    if (SKIP.has(topic)) continue;
+    if (MODULES.has(topic)) mods += `\nmod m_${ident(topic)} {\n    #![allow(unused)]\n    use super::*;\n${indent(code, "    ")}\n}\n`;
+    else if (FULL.has(topic)) writeFileSync(join(dir, "src/bin", `${ident(topic)}.rs`), `${code}\n`);
+    else fns += `\nasync fn snippet_${ident(topic)}(client: &Client, storage: &StorageDescription, container: &Url, url: &Url, etag: &str, id_token: &str, saml_assertion_xml: &str, access_token: &str, api_key: &str, request_url: &Url, credentials: SelfSignedCredentials) -> lws_client::Result<()> {\n${indent(code, "    ")}\n    Ok(())\n}\n`;
+  }
+  writeFileSync(join(dir, "src/main.rs"), `#![allow(unused, unreachable_code, clippy::all)]\nuse std::time::{Duration, SystemTime};\nuse futures_util::TryStreamExt;\nuse lws_client::*;\nuse lws_client::crypto::*;\n${mods}${fns}\nfn main() {}\n`);
+  return run("cargo", ["check", "--bins", "--quiet"], { cwd: dir, env: { ...process.env, CARGO_TARGET_DIR: join(WORK, "rust-target") } });
+}
+
+// ---------------------------------------------------------------------------- C++
+function checkCpp() {
+  const cxx = process.env.CXX || "g++";
+  if (!has(cxx)) return { skipped: `${cxx} not found` };
+  // Prefer a build configured with OpenSSL so the crypto samples can be checked.
+  const configs = findDirs(join(REPO, "cpp"), (d) => d.endsWith("generated") && existsSync(join(d, "lws/config.hpp")), 4);
+  const config = configs.find((d) => /LWS_WITH_OPENSSL\s+1/.test(readFileSync(join(d, "lws/config.hpp"), "utf8")));
+  if (!config) return { skipped: "configure cpp/ with LWS_WITH_OPENSSL=ON once so lws/config.hpp is generated" };
+  const json = [...findDirs(join(REPO, "cpp/vcpkg_installed"), (d) => existsSync(join(d, "nlohmann/json.hpp")), 2)];
+  const dir = fresh("cpp");
+  let top = "";
+  let fns = "";
+  for (const [topic, code] of Object.entries(book("cpp"))) {
+    if (SKIP.has(topic)) continue;
+    if (FULL.has(topic)) writeFileSync(join(dir, `${ident(topic)}.cpp`), `${code}\n`);
+    else if (TOP_LEVEL.has(topic)) top += `\n${code}\n`;
+    else fns += `\nvoid snippet_${ident(topic)}() {\n${indent(code, "    ")}\n}\n`;
+  }
+  writeFileSync(join(dir, "fragments.cpp"), `#include <algorithm>\n#include <chrono>\n#include <cstdint>\n#include <iostream>\n#include <memory>\n#include <set>\n#include <string>\n#include <vector>\n#include <lws/lws.hpp>\n
+extern lws::Client client;
+extern lws::StorageDescription storage;
+extern std::string container, url, etag, id_token, saml_assertion_xml, access_token, api_key, request_url;
+extern std::shared_ptr<lws::SelfSignedCredentials> credentials;
+${top}${fns}`);
+  const includes = ["-I", join(REPO, "cpp/include"), "-I", config, ...json.flatMap((d) => ["-I", d])];
+  for (const f of readdirSync(dir).filter((x) => x.endsWith(".cpp"))) {
+    const r = run(cxx, ["-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", ...includes, f], { cwd: dir, shell: false });
+    if (!r.ok || r.out) return { ok: r.ok && !r.out, out: `${f}:\n${r.out}` };
+  }
+  return { ok: true, out: "" };
+}
+
+const CHECKS = { java: checkJava, ts: checkTs, cpp: checkCpp, rust: checkRust, go: checkGo, python: checkPython };
+const wanted = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(CHECKS);
+let failed = 0;
+for (const lang of wanted) {
+  const result = CHECKS[lang]();
+  if (result.skipped) console.log(`- ${lang.padEnd(6)} skipped: ${result.skipped}`);
+  else if (result.ok) console.log(`✓ ${lang.padEnd(6)} all samples compile`);
+  else { failed++; console.log(`✗ ${lang.padEnd(6)} failed\n${result.out}\n`); }
+}
+process.exit(failed ? 1 : 0);

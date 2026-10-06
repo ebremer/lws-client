@@ -1,0 +1,71 @@
+[package]
+name = "lws-client"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Client for the W3C Linked Web Storage (LWS) Protocol 1.0: discovery, CRUD, containers, linksets, OAuth token exchange, self-signed identities, webhook notifications, access requests and type search."
+repository = "https://github.com/ebremer/lws-client"
+homepage = "https://ebremer.github.io/lws-client/"
+documentation = "https://docs.rs/lws-client"
+readme = "README.md"
+keywords = ["lws", "linked-data", "solid", "storage", "w3c"]
+categories = ["web-programming::http-client", "api-bindings", "authentication"]
+
+[lib]
+name = "lws_client"
+
+[features]
+default = ["rustls", "crypto"]
+## TLS via rustls (reqwest's default TLS backend).
+rustls = ["reqwest/rustls"]
+## TLS via the platform's native TLS library.
+native-tls = ["reqwest/native-tls"]
+## Self-signed credentials (ES256 / EdDSA JWTs), did:key and JWK helpers, and the webhook verifier.
+crypto = ["dep:p256", "dep:ed25519-dalek", "dep:sha2", "dep:getrandom"]
+
+[dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["http2", "charset", "system-proxy"] }
+http = "1.3"
+bytes = "1.10"
+url = "2.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+tokio = { version = "1.45", default-features = false, features = ["sync"] }
+base64 = "0.23"
+httpdate = "1.0"
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"], optional = true }
+ed25519-dalek = { version = "3.0", optional = true }
+sha2 = { version = "0.11", optional = true }
+getrandom = { version = "0.4", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.45", features = ["macros", "rt-multi-thread", "net", "time", "io-util"] }
+wiremock = "0.6"
+
+[package.metadata.docs.rs]
+all-features = false
+features = ["rustls", "crypto"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[example]]
+name = "did_key_auth"
+required-features = ["crypto"]
+
+[[example]]
+name = "webhook_receiver"
+required-features = ["crypto"]
+
+[[test]]
+name = "fixtures"
+required-features = ["crypto"]
+
+[[test]]
+name = "http"
+required-features = ["crypto"]
+
+[[test]]
+name = "interop"
+required-features = ["crypto"]

@@ -1,0 +1,457 @@
+@@@ install toml
+# Cargo.toml
+[dependencies]
+lws-client = { git = "https://github.com/ebremer/lws-client" }   # crates.io (once published): "0.1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+futures-util = "0.3"   # TryStreamExt for the paginated streams
+
+# Features: default = ["rustls", "crypto"]; "native-tls" switches the TLS backend.
+@@@ first-program
+use lws_client::{Client, SelfSignedCredentials, TokenExchangeAuthenticator, Url, crypto::SigningKey};
+
+#[tokio::main]
+async fn main() -> lws_client::Result<()> {
+    let credentials = SelfSignedCredentials::did_key(SigningKey::generate_p256()?);
+    println!("agent:   {}", credentials.agent());
+    let client = Client::builder()
+        .authenticator(TokenExchangeAuthenticator::new(credentials))
+        .build()?;
+
+    let storage = client.discover_storage("http://localhost:8787/root/").await?;
+    let root = storage.storage_root()?.clone();
+    println!("storage: {}  root: {root}", storage.id);
+
+    let folder = client.create_container(&root).slug("hello-world").await?.location;
+    let file = client
+        .create(&folder, "Hello, LWS!", "text/plain")
+        .slug("hello.txt")
+        .await?
+        .location;
+    println!("created: {file}");
+
+    let resource = client.read(&file).await?;
+    let etag = resource.metadata.etag.as_deref().unwrap_or("-");
+    let parent = resource.metadata.parent().map(Url::as_str).unwrap_or("-");
+    println!("{}  (etag {etag}, parent {parent})", resource.text()?);
+    Ok(())
+}
+@@@ hero
+let credentials = SelfSignedCredentials::did_key(SigningKey::generate_p256()?);
+let client = Client::builder()
+    .authenticator(TokenExchangeAuthenticator::new(credentials))
+    .build()?;
+
+let storage = client.discover_storage("https://storage.example/root/").await?;
+let root = storage.storage_root()?.clone();
+let todo = client
+    .create_json(&root, &serde_json::json!({"task": "write docs", "done": false}))
+    .await?
+    .location;
+client.patch(&todo, &JsonPatch::new().replace("/done", true)).await?;
+
+let mut items = client.list_container(&root);
+while let Some(item) = items.try_next().await? {
+    println!("{} {:?}", item.id, item.format);
+}
+@@@ client-config
+let client = Client::builder()
+    .authenticator(TokenExchangeAuthenticator::new(credentials))
+    .user_agent("my-app/1.0")                    // default "lws-client-rust/0.1.0"
+    .default_header("Accept-Language", "en")     // added to every request
+    .timeout(Duration::from_secs(20))
+    // .http_client(my_reqwest_client)           // bring your own reqwest::Client
+    .build()?;
+
+// Request builders take per-call headers; dropping the future cancels the request.
+let resource = client.read(url).header("X-Trace", "1").await?;
+println!("{}", resource.metadata.status);
+@@@ discover
+// Any URL inside the storage is a valid starting point.
+let storage = client.discover_storage("https://storage.example/root/notes/").await?;
+let root = storage.storage_root()?;                    // the required StorageRoot service
+println!("{} {:?} {root}", storage.id, storage.types);
+
+if let Some(svc) = storage.notification_service() {
+    println!("{} {:?}", svc.service_endpoint, svc.subscription_types());
+}
+for svc in &storage.services {
+    println!("{:?} → {}", svc.types, svc.service_endpoint);
+}
+if let Some(capability) = storage.capability("https://feature.example/PatchSupport") {
+    println!("{:?}", capability.property("format"));
+}
+
+// When you already know the storage URL:
+let same = client.get_storage_description(storage.id.clone()).await?;
+@@@ create
+// A container (POST with Link: <https://www.w3.org/ns/lws#Container>; rel="type")
+let notes = client.create_container(container).slug("notes").await?.location;
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+let list = client.create(&notes, "milk\neggs\n", "text/plain").slug("shopping.txt").await?;
+let shape = Url::parse("https://example.org/shapes/todo").expect("valid URL");
+let todo = client
+    .create_json(&notes, &serde_json::json!({"task": "write docs"}))
+    .slug("todo.json")
+    .resource_type("https://schema.org/Action")      // extra rel="type"
+    .link(Link::new(shape, "describedby"))           // user metadata
+    .await?;
+let png: Vec<u8> = vec![0x89, b'P', b'N', b'G'];     // your image bytes
+let photo = client.create(&notes, png, "image/png").slug("photo.png").await?;
+
+println!("{} {:?} {:?}", list.location, todo.metadata.linkset(), photo.metadata.parent());
+@@@ read
+let resource = client.read(url).await?;
+let meta = &resource.metadata;
+println!("{} {:?} {:?} {:?}", meta.status, meta.content_type, meta.etag, meta.last_modified);
+println!("{:?} {} {:?} {:?}", meta.types(), meta.is_data_resource(), meta.parent(), meta.linkset());
+
+let text = resource.text()?;               // UTF-8
+let bytes = &resource.body;                 // bytes::Bytes
+println!("{} {}", text.len(), bytes.len());
+let profile: serde_json::Value = client.read(url).accept("application/json").await?.json()?;
+
+// Headers and links only
+let head = client.head(url).await?;
+println!("{:?} {:?} {:?} {:?}", head.content_length, head.allow, head.accept_patch, head.link("describedby"));
+@@@ stream
+let mut resource = client.read(url).send_streaming().await?;   // nothing is buffered
+let mut received = 0;
+while let Some(chunk) = resource.chunk().await? {
+    received += chunk.len();
+}
+println!("received {received} bytes");
+@@@ conditional
+let first = client.read(url).await?;
+let etag = first.metadata.etag.clone().unwrap_or_default();
+
+// Revalidate: 304 Not Modified is a normal result, not an error.
+let again = client.read(url).if_none_match(&etag).await?;
+if again.not_modified {
+    println!("cached copy is still fresh");
+}
+
+// Optimistic concurrency: only overwrite the version you read.
+match client.update(url, "new content", "text/plain").if_match(&etag).await {
+    Ok(_) => {}
+    Err(e) if e.is_precondition_failed() => { /* 412: re-read, merge, retry */ }
+    Err(e) => return Err(e),
+}
+@@@ range
+let start = client.read(url).range(0, Some(1023)).await?;   // first KiB
+println!("{} {:?}", start.is_partial(), start.metadata.content_range());   // true "bytes 0-1023/52311"
+
+let rest = client.read(url).range(1024, None).await?;       // to the end
+println!("{}", rest.body.len());
+@@@ update
+// PUT replaces the whole representation.
+client
+    .update(url, r#"{"name":"Alice","age":31}"#, "application/json")
+    .if_match(etag)
+    .await?;
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+let license = Url::parse("https://creativecommons.org/licenses/by/4.0/").expect("valid URL");
+client
+    .update(url, "v2", "text/plain")
+    .set_linkset(true)
+    .link(Link::new(license, "license"))
+    .await?;
+@@@ patch
+// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+let patch = JsonPatch::new()
+    .test("/version", 3)
+    .replace("/status", "done")
+    .add("/tags/-", "urgent")
+    .remove("/draft");
+client.patch(url, &patch).if_match(etag).await?;
+
+// Other formats only when the server advertises them in Accept-Patch.
+let meta = client.head(url).await?;
+if meta.accept_patch.iter().any(|t| t == "application/sparql-update") {
+    let sparql = r#"INSERT DATA { <#me> <http://xmlns.com/foaf/0.1/name> "Alice" }"#;
+    client.patch_with(url, sparql, "application/sparql-update").await?;
+}
+@@@ delete
+client.delete(url).if_match(etag).await?;
+
+match client.delete(container).await {
+    // 409 Conflict when not empty: delete recursively (Depth: infinity)
+    Err(e) if e.is_conflict() => client.delete(container).recursive(true).await?,
+    other => other?,
+}
+@@@ read-container
+let page = client.read_container(container).await?;
+println!("{} {:?} {:?}", page.id, page.total_items, page.metadata.etag);
+for item in &page.items {
+    println!("{} {} {:?} {:?} {:?}", item.id, item.is_container(), item.format, item.size, item.modified);
+}
+if let Some(next) = &page.next {
+    let next_page = client.read_container(next).await?;   // opaque, server-issued URL
+    println!("{}", next_page.items.len());
+}
+@@@ list-container
+// A lazy Stream: pages are fetched only as you poll it.
+let mut items = client.list_container(container);
+while let Some(item) = items.try_next().await? {
+    if item.has_type("https://schema.org/Person") {
+        println!("{}", item.id);
+    }
+}
+
+let all: Vec<ContainedResource> = client.list_container(container).try_collect().await?;
+@@@ read-linkset
+let doc = client.read_linkset(url).await?;      // HEAD for rel="linkset", then GET
+println!("{} {:?} {:?} {:?}", doc.url, doc.etag, doc.allow, doc.accept_patch);
+
+for link in doc.linkset.links() {
+    println!("{} → {}", link.rel, link.href);
+}
+let shapes: Vec<&str> = doc.linkset.targets("describedby");
+@@@ patch-linkset
+let doc = client.read_linkset(url).await?;
+let rel = "https://example.org/rel/reviewer";       // extension relation types are URIs
+let reviewer = serde_json::json!({"href": "https://id.example/bob"});
+
+// JsonPointer escapes "/" in the relation URI as "~1".
+// "add" on an existing member replaces it, so append with "/-" when the relation exists.
+let patch = if doc.linkset.targets(rel).is_empty() {
+    JsonPatch::new().add(JsonPointer::from_segments(["linkset", "0", rel]), serde_json::json!([reviewer]))
+} else {
+    JsonPatch::new().add(JsonPointer::from_segments(["linkset", "0", rel, "-"]), reviewer)
+};
+client
+    .patch_linkset(&doc.url, &patch)
+    .if_match(doc.etag.as_deref().unwrap_or("*"))
+    .await?;
+@@@ put-linkset
+let mut doc = client.read_linkset(url).await?;
+if doc.allow.iter().any(|m| m == "PUT") {
+    doc.linkset.add(url.as_str(), "license", "https://creativecommons.org/licenses/by/4.0/", None);
+    client
+        .update_linkset(&doc.url, &doc.linkset)
+        .if_match(doc.etag.as_deref().unwrap_or("*"))
+        .await?;
+}
+@@@ auth-didkey
+// A did:key agent: the identifier is derived from the public key, nothing to host.
+let key = SigningKey::generate_p256()?;            // or SigningKey::generate_ed25519()?
+let credentials = SelfSignedCredentials::did_key(key);
+println!("{}", credentials.agent());                // did:key:zDn…
+
+let client = Client::builder()
+    .authenticator(TokenExchangeAuthenticator::new(credentials))
+    .build()?;
+client.head(url).await?;   // 401 → AS metadata → token exchange → retried with a Bearer token
+@@@ auth-cid
+// An HTTPS agent publishes a controlled identifier document listing its key…
+let key = SigningKey::generate_p256()?;
+let agent = "https://bot.example/agent";
+let cid = controlled_identifier_document(agent, &key.public_jwk(), "key-1");
+println!("{}", serde_json::to_string_pretty(&cid)?);   // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key.
+let credentials = SelfSignedCredentials::for_agent(agent, key, "key-1");
+let client = Client::builder()
+    .authenticator(TokenExchangeAuthenticator::new(credentials))
+    .build()?;
+@@@ keys
+let key = SigningKey::generate_p256()?;
+let private_jwk = key.to_jwk().to_json();             // includes "d": store securely
+let restored = SigningKey::from_jwk(&Jwk::from_json(&private_jwk)?)?;
+let credentials = SelfSignedCredentials::did_key(restored);
+
+// did:key <-> public key
+let did = key.did_key();                               // DidKey { did, kid }
+let public = VerifyingKey::from_did_key(&did.did)?;
+println!("{} {} {:?}", credentials.agent() == did.did, did.kid, public.algorithm());
+@@@ auth-openid
+// The ID token from your OpenID Connect login (any OIDC library). OpenIdCredentials::from_fn
+// supplies a fresh token whenever a new access token is needed.
+let credentials = OpenIdCredentials::new(id_token);
+let authenticator = TokenExchangeAuthenticator::builder(credentials)
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    .authorization_server_filter(|as_uri, _realm| as_uri.host_str() == Some("auth.example"))
+    .build();
+let client = Client::builder().authenticator(authenticator).build()?;
+@@@ auth-saml
+// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+let credentials = SamlCredentials::from_xml(saml_assertion_xml);
+let client = Client::builder()
+    .authenticator(TokenExchangeAuthenticator::new(credentials))
+    .build()?;
+@@@ auth-bearer
+// An access token you obtained yourself; it is only sent to URLs inside the realm.
+let realm = Url::parse("https://storage.example/").expect("valid URL");
+let client = Client::builder()
+    .authenticator(BearerTokenAuthenticator::new(access_token).with_realm(realm))
+    .build()?;
+@@@ auth-options
+let authenticator = TokenExchangeAuthenticator::builder(credentials)
+    .allow_insecure_http(false)                            // plain-http AS only on loopback (default)
+    .authorization_server_filter(|as_uri, _realm| as_uri.host_str() == Some("auth.example"))
+    .refresh_margin(Duration::from_secs(30))               // refresh 30 s before expiry (default)
+    .build();
+let client = Client::builder().authenticator(authenticator).build()?;
+@@@ custom-authenticator
+use lws_client::auth::{Authenticator, BoxFuture, RequestParts, ResponseParts};
+
+// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator trait.
+struct ApiKeyAuthenticator {
+    key: String,
+}
+
+impl Authenticator for ApiKeyAuthenticator {
+    fn authorize<'a>(&'a self, request: &'a mut RequestParts) -> BoxFuture<'a, lws_client::Result<()>> {
+        Box::pin(async move {
+            if request.url.host_str() == Some("storage.example") {
+                request.headers.insert("x-api-key", self.key.parse().expect("valid header value"));
+            }
+            Ok(())
+        })
+    }
+
+    fn handle_challenge<'a>(
+        &'a self,
+        _request: &'a RequestParts,
+        _response: &'a ResponseParts,
+    ) -> BoxFuture<'a, lws_client::Result<bool>> {
+        Box::pin(async { Ok(false) }) // nothing to refresh: the 401 surfaces as Error::Unauthorized
+    }
+}
+
+fn api_key_client(key: &str) -> lws_client::Result<Client> {
+    Client::builder()
+        .authenticator(ApiKeyAuthenticator { key: key.to_owned() })
+        .build()
+}
+@@@ subscribe
+// subscribe_storage checks that the NotificationService supports WebhookSubscription.
+let inbox = Url::parse("https://my-app.example/hooks/lws").expect("valid URL");
+let request = WebhookSubscriptionRequest::new([container.clone()], inbox) // recursive for containers
+    .expires(SystemTime::now() + Duration::from_secs(24 * 3600));
+let subscription = client.subscribe_storage(storage, &request).await?;
+println!("{} {:?}", subscription.subscription, subscription.expires);
+
+let service = storage.notification_service().expect("NotificationService");
+let mut subs = client.list_subscriptions(&service.service_endpoint);
+while let Some(s) = subs.try_next().await? {
+    println!("{}", s.id);
+}
+let current = client.get_subscription(&subscription.subscription).await?;
+println!("{}", current.subscription_type);
+client.unsubscribe(&subscription.subscription).await?;
+@@@ webhook
+use lws_client::{Client, Result, Url, WebhookVerifier};
+
+/// Builds a verifier that only accepts deliveries signed by one storage.
+fn verifier() -> WebhookVerifier {
+    let storage = Url::parse("https://storage.example/").expect("valid URL");
+    WebhookVerifier::builder()
+        .client(Client::new())        // fetches storage descriptions (and their keys)
+        .trusted_storage(storage)     // only this storage's signatures
+        .build()
+}
+
+/// Call this from your web framework's handler with the raw request; returns the status to send.
+async fn handle(verifier: &WebhookVerifier, request: http::Request<Vec<u8>>) -> Result<u16> {
+    // The URL you registered (your public URL when behind a proxy), not the Host header.
+    let inbox = Url::parse("https://my-app.example/hooks/lws").expect("valid URL");
+    match verifier.verify_request(&inbox, &request).await {
+        Ok(verified) => {
+            for a in &verified.notification.activities {
+                println!("{:?} {} {:?}", a.types, a.object.id, a.published);
+            }
+            Ok(204)
+        }
+        Err(e) if e.is_signature_verification() => Ok(401),
+        Err(e) => Err(e),
+    }
+}
+@@@ access-request
+let policy = AccessPolicy::builder("https://id.example/agent")
+    .actions(["read", "create"])
+    .target_resources([container.as_str()])
+    .constraint(Constraint::purpose("https://purpose.example/collaboration"))
+    .constraint(Constraint::not_after("2026-12-31T23:59:59Z"))
+    .build()?;
+let request = AccessRequest::builder(storage.id.as_str())
+    .inbox("https://id.example/agent/inbox/")
+    .policy(policy)
+    .build()?;
+
+let requests = &storage.access_request_service().expect("AccessRequestService").service_endpoint;
+let request_url = client.request_access(requests, &request).await?;
+
+let mut listed = client.list_access_requests(requests);
+while let Some(r) = listed.try_next().await? {
+    println!("{}", r.id);
+}
+let pending = client.get_access_request(&request_url).await?;
+println!("{:?}", pending.access[0].actions);
+client.cancel_access_request(&request_url).await?;
+@@@ access-grant
+// A storage controller approves a request by recording a grant with the same policy model.
+let pending = client.get_access_request(request_url).await?;
+let mut grant = AccessGrant::builder(pending.storage.as_str());
+for policy in pending.access {
+    grant = grant.policy(policy);
+}
+let grants = &storage.access_grant_service().expect("AccessGrantService").service_endpoint;
+let grant_url = client.grant_access(grants, &grant.build()?).await?;
+
+let mut listed = client.list_access_grants(grants);
+while let Some(g) = listed.try_next().await? {
+    println!("{}", g.id);
+}
+client.revoke_access_grant(&grant_url).await?;   // the server withdraws the underlying permissions
+@@@ list-types
+if let Some(index) = storage.type_index_service() {
+    let mut types = client.list_types(&index.service_endpoint);
+    while let Some(type_iri) = types.try_next().await? {
+        println!("{type_iri}");   // e.g. https://schema.org/Person
+    }
+}
+@@@ search
+let search = &storage.type_search_service().expect("TypeSearchService").service_endpoint;
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+let query = TypeQuery::new()
+    .any_of(["https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person"])
+    .all_of(["https://www.w3.org/ns/lws#DataResource"]);
+let first = client.search_types(search, &query).await?;      // HTTP QUERY
+println!("{:?} {:?}", first.total_items, first.next);
+
+let events = TypeQuery::new().all_of(["https://schema.org/Event"]);
+let mut hits = client.search_all(search, &events);
+while let Some(hit) = hits.try_next().await? {
+    println!("{} {:?}", hit.id, hit.types);
+}
+
+// Indexed descriptive relations use the same grammar.
+let shaped = TypeQuery::new().relation("describedby").all_of(["https://example.org/shapes/person"]);
+println!("{}", client.search_types(search, &shaped).await?.items.len());
+
+println!("{:?}", client.accepted_query_formats(search).await?);   // ["application/lws-query+json", …]
+@@@ errors
+match client.read(url).await {
+    Ok(resource) => println!("{} bytes", resource.body.len()),
+    Err(e) if e.is_not_found() => println!("no such resource"),
+    Err(Error::Unauthorized(http)) => println!("not authenticated: {:?}", http.challenges),
+    Err(Error::Authentication { error, error_description, .. }) => {
+        println!("token exchange failed: {error:?} {error_description:?}")
+    }
+    Err(e) if e.status().is_some() => {
+        println!("{:?} {:?}", e.status(), e.problem().and_then(|p| p.title.clone()))
+    }
+    Err(e) => return Err(e),
+}
+@@@ problem
+if let Err(e) = client.delete(container).await {
+    if let (true, Some(p)) = (e.is_conflict(), e.problem()) {
+        println!(
+            "{:?} {:?} {:?} {:?} {:?}",
+            p.problem_type, p.title, p.detail, p.instance, p.extensions.get("itemCount")
+        );
+    }
+}

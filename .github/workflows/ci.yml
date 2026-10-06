@@ -1,0 +1,185 @@
+# SPDX-License-Identifier: MIT
+# Builds and tests every client, then runs the cross-language interop scenario
+# (conformance/scenario.md) against the mock LWS server.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LWS_TEST_SERVER: http://localhost:8787
+
+jobs:
+  mock-server:
+    name: Mock server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm test
+        working-directory: testing/mock-server
+
+  java:
+    name: Java ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [17, 21, 25]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - name: Start mock LWS server
+        run: bash .github/scripts/start-mock-server.sh
+      - run: mvn -B verify
+        working-directory: java
+
+  javascript:
+    name: JavaScript (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+      - name: Start mock LWS server
+        run: bash .github/scripts/start-mock-server.sh
+      - run: npm ci
+        working-directory: js
+      - run: npm run typecheck
+        working-directory: js
+      - run: npm run build
+        working-directory: js
+      - run: npm test
+        working-directory: js
+
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Start mock LWS server
+        run: bash .github/scripts/start-mock-server.sh
+      - run: pip install -e ".[dev]"
+        working-directory: python
+      - run: ruff check src tests examples
+        working-directory: python
+      - run: mypy
+        working-directory: python
+      - run: pytest
+        working-directory: python
+
+  go:
+    name: Go ${{ matrix.go }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.23", "stable"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: go/go.mod
+      - name: Start mock LWS server
+        run: bash .github/scripts/start-mock-server.sh
+      - run: test -z "$(gofmt -l .)"
+        working-directory: go
+      - run: go vet ./...
+        working-directory: go
+      - run: go test -race ./...
+        working-directory: go
+
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Start mock LWS server
+        run: bash .github/scripts/start-mock-server.sh
+      - run: cargo fmt --check
+        working-directory: rust
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: rust
+      - run: cargo test
+        working-directory: rust
+
+  cpp:
+    name: C++ (${{ matrix.config }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [full, minimal]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build nlohmann-json3-dev libgtest-dev libcurl4-openssl-dev libssl-dev
+      - name: Start mock LWS server
+        run: bash .github/scripts/start-mock-server.sh
+      - name: Configure
+        run: |
+          if [ "${{ matrix.config }}" = "minimal" ]; then EXTRA="-DLWS_WITH_CURL=OFF -DLWS_WITH_OPENSSL=OFF"; fi
+          cmake -S cpp -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug $EXTRA
+      - run: cmake --build build
+      - run: ctest --test-dir build --output-on-failure
+
+  docs:
+    name: Docs are up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node docs-src/build.mjs
+      - run: git diff --exit-code -- docs

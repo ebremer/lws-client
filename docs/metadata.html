@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Metadata &amp; linksets · LWS Client</title>
+  <meta name="description" content="Read, patch and replace Linked Web Storage metadata stored in RFC 9264 linkset resources, including JSON Pointer escaping for URI relation types.">
+  <meta property="og:title" content="Metadata &amp; linksets · LWS Client">
+  <meta property="og:description" content="Read, patch and replace Linked Web Storage metadata stored in RFC 9264 linkset resources, including JSON Pointer escaping for URI relation types.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="./assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="./getting-started.html">Get started</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./authentication.html">Auth</a>
+        <a href="./api-reference.html">API</a>
+        <a href="./spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="./index.html">Overview</a></li><li><a href="./getting-started.html">Getting started</a></li><li><a href="./api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1>Metadata &amp; linksets</h1>
+<p class="lead">LWS keeps a resource's metadata as typed links in a dedicated <em>linkset resource</em>
+(<code>application/linkset+json</code>, RFC 9264). You find it through <code>rel="linkset"</code> and change it with JSON Patch.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="kinds">Kinds of metadata</h2>
+<div class="table-wrap"><table><thead><tr><th>Kind</th><th>Examples</th><th>Who changes it</th></tr></thead><tbody>
+<tr><td>System managed</td><td><code>linkset</code>, <code>type</code> (Container/DataResource), <code>format</code>, <code>size</code>, <code>modified</code></td><td>Server only</td></tr>
+<tr><td>Core</td><td><code>up</code>, <code>items</code>, <code>title</code>, <code>creator</code></td><td>Client, subject to server restrictions</td></tr>
+<tr><td>User-defined</td><td><code>describedby</code>, <code>license</code>, extension relation URIs</td><td>Client</td></tr>
+</tbody></table></div>
+<pre data-lang="json" data-title="GET /alice/personalinfo.json.meta  (application/linkset+json)"><code class="language-json">{
+  &quot;linkset&quot;: [{
+    &quot;anchor&quot;: &quot;https://storage.example/alice/personalinfo.json&quot;,
+    &quot;describedby&quot;: [{ &quot;href&quot;: &quot;https://storage.example/schemas/personal-info.json&quot; }],
+    &quot;license&quot;: [{ &quot;href&quot;: &quot;https://creativecommons.org/licenses/by/4.0/&quot; }]
+  }]
+}</code></pre>
+
+<h2 id="read">Reading a linkset</h2>
+<p><code>readLinkset(resourceUrl)</code> discovers the linkset URL with <code>HEAD</code>, fetches it and returns a document
+with the linkset URL, its ETag, and the server's <code>Allow</code> and <code>Accept-Patch</code> headers. The
+<code>Linkset</code> model keeps unknown members, so a read-modify-write round trip loses nothing.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">LinksetDocument doc = client.readLinkset(url);      // HEAD for rel=&quot;linkset&quot;, then GET
+System.out.println(doc.url() + &quot; &quot; + doc.etag() + &quot; &quot; + doc.allow() + &quot; &quot; + doc.acceptPatch());
+
+for (Link link : doc.linkset().links()) System.out.println(link.rel() + &quot; → &quot; + link.href());
+List&lt;String&gt; shapes = doc.linkset().targets(&quot;describedby&quot;).stream().map(Linkset.LinkTarget::href).toList();</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const doc = await client.readLinkset(url);       // HEAD for rel=&quot;linkset&quot;, then GET
+console.log(doc.url, doc.etag, doc.allow, doc.acceptPatch);
+
+for (const link of doc.linkset.links()) console.log(link.rel, &quot;→&quot;, link.href);
+const shapes = doc.linkset.targets(&quot;describedby&quot;).map((target) =&gt; target.href);
+console.log(shapes);</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">lws::LinksetDocument doc = client.read_linkset(url);     // HEAD for rel=&quot;linkset&quot;, then GET
+std::cout &lt;&lt; doc.url &lt;&lt; ' ' &lt;&lt; doc.etag.value_or(&quot;&quot;) &lt;&lt; ' ' &lt;&lt; doc.allow.size() &lt;&lt; '\n';
+
+for (const lws::Link&amp; link : doc.linkset.links()) std::cout &lt;&lt; link.rel &lt;&lt; &quot; -&gt; &quot; &lt;&lt; link.href &lt;&lt; '\n';
+std::vector&lt;std::string&gt; shapes = doc.linkset.targets(&quot;describedby&quot;);</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let doc = client.read_linkset(url).await?;      // HEAD for rel=&quot;linkset&quot;, then GET
+println!(&quot;{} {:?} {:?} {:?}&quot;, doc.url, doc.etag, doc.allow, doc.accept_patch);
+
+for link in doc.linkset.links() {
+    println!(&quot;{} → {}&quot;, link.rel, link.href);
+}
+let shapes: Vec&lt;&amp;str&gt; = doc.linkset.targets(&quot;describedby&quot;);</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">doc, err := client.ReadLinkset(ctx, url) // HEAD for rel=&quot;linkset&quot;, then GET
+if err != nil {
+	return err
+}
+fmt.Println(doc.URL, doc.ETag, doc.Allow, doc.AcceptPatch)
+
+for _, link := range doc.Linkset.Links() {
+	fmt.Println(link.Rel, &quot;→&quot;, link.Href)
+}
+for _, target := range doc.Linkset.Targets(&quot;describedby&quot;) {
+	fmt.Println(target.Href)
+}</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">doc = client.read_linkset(url)          # HEAD for rel=&quot;linkset&quot;, then GET
+print(doc.url, doc.etag, doc.allow, doc.accept_patch)
+
+for link in doc.linkset.links():
+    print(link.rel, &quot;→&quot;, link.href)
+shapes = doc.linkset.targets(&quot;describedby&quot;)   # list of hrefs</code></pre>
+</div>
+
+<h2 id="patch">Patching a linkset</h2>
+<p>JSON Patch is the mandatory linkset update format. Two details catch most people:</p>
+<ul>
+  <li><strong>Escape relation URIs.</strong> Extension relation types are URIs and contain <code>/</code>, which JSON
+  Pointer uses as a separator. Build paths with <code>JsonPointer</code>, which escapes <code>/</code> as <code>~1</code> and
+  <code>~</code> as <code>~0</code>. For example, <code>/linkset/0/https:~1~1example.org~1rel~1reviewer/-</code>.</li>
+  <li><strong>Add versus append.</strong> <code>add</code> on an existing member <em>replaces</em> it. Append to an
+  existing relation with the <code>/-</code> array index, and create a new relation with a one-element array.</li>
+</ul>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">LinksetDocument doc = client.readLinkset(url);
+String rel = &quot;https://example.org/rel/reviewer&quot;;          // extension relation types are URIs
+Map&lt;String, String&gt; reviewer = Map.of(&quot;href&quot;, &quot;https://id.example/bob&quot;);
+
+// JsonPointer escapes &quot;/&quot; in the relation URI as &quot;~1&quot;.
+// &quot;add&quot; on an existing member replaces it, so append with &quot;/-&quot; when the relation exists.
+JsonPatch patch = doc.linkset().targets(rel).isEmpty()
+        ? JsonPatch.builder().add(JsonPointer.of(&quot;linkset&quot;, &quot;0&quot;, rel), List.of(reviewer)).build()
+        : JsonPatch.builder().add(JsonPointer.of(&quot;linkset&quot;, &quot;0&quot;, rel, &quot;-&quot;), reviewer).build();
+client.patchLinkset(doc.url(), patch, UpdateOptions.ifMatch(doc.etag().orElseThrow()));</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const doc = await client.readLinkset(url);
+const rel = &quot;https://example.org/rel/reviewer&quot;;           // extension relation types are URIs
+const reviewer = { href: &quot;https://id.example/bob&quot; };
+
+// JsonPointer escapes &quot;/&quot; in the relation URI as &quot;~1&quot;.
+// &quot;add&quot; on an existing member replaces it, so append with &quot;/-&quot; when the relation exists.
+const patch = doc.linkset.targets(rel).length &gt; 0
+  ? new JsonPatch().add(JsonPointer.from([&quot;linkset&quot;, 0, rel, &quot;-&quot;]), reviewer)
+  : new JsonPatch().add(JsonPointer.from([&quot;linkset&quot;, 0, rel]), [reviewer]);
+
+await client.patchLinkset(doc.url, patch, { ifMatch: doc.etag! });</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">lws::LinksetDocument doc = client.read_linkset(url);
+const std::string rel = &quot;https://example.org/rel/reviewer&quot;;     // extension relation types are URIs
+const nlohmann::json reviewer = {{&quot;href&quot;, &quot;https://id.example/bob&quot;}};
+
+// JsonPointer escapes &quot;/&quot; in the relation URI as &quot;~1&quot;.
+// &quot;add&quot; on an existing member replaces it, so append with &quot;/-&quot; when the relation exists.
+lws::JsonPatch patch;
+if (doc.linkset.targets(rel).empty())
+    patch.add(lws::JsonPointer::from_segments({&quot;linkset&quot;, &quot;0&quot;, rel}), nlohmann::json::array({reviewer}));
+else
+    patch.add(lws::JsonPointer::from_segments({&quot;linkset&quot;, &quot;0&quot;, rel, &quot;-&quot;}), reviewer);
+client.patch_linkset(doc.url, patch, {.if_match = doc.etag});</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let doc = client.read_linkset(url).await?;
+let rel = &quot;https://example.org/rel/reviewer&quot;;       // extension relation types are URIs
+let reviewer = serde_json::json!({&quot;href&quot;: &quot;https://id.example/bob&quot;});
+
+// JsonPointer escapes &quot;/&quot; in the relation URI as &quot;~1&quot;.
+// &quot;add&quot; on an existing member replaces it, so append with &quot;/-&quot; when the relation exists.
+let patch = if doc.linkset.targets(rel).is_empty() {
+    JsonPatch::new().add(JsonPointer::from_segments([&quot;linkset&quot;, &quot;0&quot;, rel]), serde_json::json!([reviewer]))
+} else {
+    JsonPatch::new().add(JsonPointer::from_segments([&quot;linkset&quot;, &quot;0&quot;, rel, &quot;-&quot;]), reviewer)
+};
+client
+    .patch_linkset(&amp;doc.url, &amp;patch)
+    .if_match(doc.etag.as_deref().unwrap_or(&quot;*&quot;))
+    .await?;</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">doc, err := client.ReadLinkset(ctx, url)
+if err != nil {
+	return err
+}
+rel := &quot;https://example.org/rel/reviewer&quot; // extension relation types are URIs
+reviewer := map[string]string{&quot;href&quot;: &quot;https://id.example/bob&quot;}
+
+// JSONPointer escapes &quot;/&quot; in the relation URI as &quot;~1&quot;.
+// &quot;add&quot; on an existing member replaces it, so append with &quot;/-&quot; when the relation exists.
+var patch lws.JSONPatch
+if len(doc.Linkset.Targets(rel)) &gt; 0 {
+	patch = patch.Add(lws.JSONPointer(&quot;linkset&quot;, &quot;0&quot;, rel, &quot;-&quot;), reviewer)
+} else {
+	patch = patch.Add(lws.JSONPointer(&quot;linkset&quot;, &quot;0&quot;, rel), []any{reviewer})
+}
+_, err = client.PatchLinkset(ctx, doc.URL, patch, lws.IfMatch(doc.ETag))
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">doc = client.read_linkset(url)
+rel = &quot;https://example.org/rel/reviewer&quot;      # extension relation types are URIs
+reviewer = {&quot;href&quot;: &quot;https://id.example/bob&quot;}
+
+# JsonPointer escapes &quot;/&quot; in the relation URI as &quot;~1&quot;.
+# &quot;add&quot; on an existing member replaces it, so append with &quot;/-&quot; when the relation exists.
+if doc.linkset.targets(rel):
+    patch = JsonPatch().add(JsonPointer.from_segments(&quot;linkset&quot;, 0, rel, &quot;-&quot;), reviewer)
+else:
+    patch = JsonPatch().add(JsonPointer.from_segments(&quot;linkset&quot;, 0, rel), [reviewer])
+client.patch_linkset(doc.url, patch, if_match=doc.etag)</code></pre>
+</div>
+<div class="callout tip"><p><strong>Always send If-Match</strong> Several agents may edit the same metadata. Pass the linkset's ETag so a concurrent change produces <code>412 Precondition Failed</code> instead of a silent overwrite.</p></div>
+
+<h2 id="put">Replacing a linkset</h2>
+<p>Servers may also accept <code>PUT</code> of a complete linkset, and advertise it in <code>Allow</code>. Check before
+you use it. Servers without <code>PUT</code> support answer <code>405 Method Not Allowed</code>.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">LinksetDocument doc = client.readLinkset(url);
+if (doc.supportsPut()) {                              // Allow lists PUT
+    Linkset updated = doc.linkset()                   // Linkset is immutable: add returns a copy
+            .add(url.toString(), &quot;license&quot;, URI.create(&quot;https://creativecommons.org/licenses/by/4.0/&quot;));
+    client.updateLinkset(doc.url(), updated, UpdateOptions.ifMatch(doc.etag().orElseThrow()));
+}</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const doc = await client.readLinkset(url);
+if (doc.allow.includes(&quot;PUT&quot;)) {
+  const linkset = doc.linkset.clone();
+  linkset.add(url, &quot;license&quot;, &quot;https://creativecommons.org/licenses/by/4.0/&quot;);
+  await client.updateLinkset(doc.url, linkset, { ifMatch: doc.etag! });
+}</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">lws::LinksetDocument doc = client.read_linkset(url);
+if (std::ranges::find(doc.allow, &quot;PUT&quot;) != doc.allow.end()) {
+    doc.linkset.add(url, &quot;license&quot;, &quot;https://creativecommons.org/licenses/by/4.0/&quot;);
+    client.update_linkset(doc.url, doc.linkset, {.if_match = doc.etag});
+}</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let mut doc = client.read_linkset(url).await?;
+if doc.allow.iter().any(|m| m == &quot;PUT&quot;) {
+    doc.linkset.add(url.as_str(), &quot;license&quot;, &quot;https://creativecommons.org/licenses/by/4.0/&quot;, None);
+    client
+        .update_linkset(&amp;doc.url, &amp;doc.linkset)
+        .if_match(doc.etag.as_deref().unwrap_or(&quot;*&quot;))
+        .await?;
+}</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">doc, err := client.ReadLinkset(ctx, url)
+if err != nil {
+	return err
+}
+if slices.Contains(doc.Allow, &quot;PUT&quot;) {
+	doc.Linkset.Add(url, &quot;license&quot;, &quot;https://creativecommons.org/licenses/by/4.0/&quot;, nil)
+	_, err = client.UpdateLinkset(ctx, doc.URL, doc.Linkset, lws.IfMatch(doc.ETag))
+}
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">doc = client.read_linkset(url)
+if &quot;PUT&quot; in doc.allow:
+    linkset = doc.linkset.copy()
+    linkset.add(url, &quot;license&quot;, &quot;https://creativecommons.org/licenses/by/4.0/&quot;)
+    client.update_linkset(doc.url, linkset, if_match=doc.etag)</code></pre>
+</div>
+
+<h2 id="combined">Content and links together</h2>
+<p>To change a resource's content and its links in one atomic request, pass <code>links</code> with
+<code>setLinkset</code> to <code>update</code> or <code>patch</code>. See <a href="resources.html#update">Replace (PUT)</a>.
+Server-managed relations such as <code>up</code>, <code>linkset</code> and the LWS type are never overridden
+by client-supplied links.</p>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Testing &amp; mock server · LWS Client</title>
+  <meta name="description" content="Shared conformance fixtures, the zero-dependency LWS mock server, and the cross-language interop scenario used to keep six clients in lockstep.">
+  <meta property="og:title" content="Testing &amp; mock server · LWS Client">
+  <meta property="og:description" content="Shared conformance fixtures, the zero-dependency LWS mock server, and the cross-language interop scenario used to keep six clients in lockstep.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="./assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="./getting-started.html">Get started</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./authentication.html">Auth</a>
+        <a href="./api-reference.html">API</a>
+        <a href="./spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="./index.html">Overview</a></li><li><a href="./getting-started.html">Getting started</a></li><li><a href="./api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1>Testing &amp; mock server</h1>
+<p class="lead">Six independent implementations only stay consistent if they are tested against the
+same data. The repository has three layers of shared testing: conformance fixtures, a mock LWS
+server, and an end-to-end interop scenario.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="fixtures">Conformance fixtures</h2>
+<p><code>conformance/fixtures/</code> holds language-neutral JSON test vectors. Every client's unit tests load
+them directly, so a parsing bug fixed in one language is caught in all six.</p>
+<div class="table-wrap"><table><thead><tr><th>Fixture</th><th>Covers</th></tr></thead><tbody>
+<tr><td><code>link-headers.json</code></td><td>RFC 8288 <code>Link</code> parsing: quoting, commas inside URIs, multiple relation types, relative targets</td></tr>
+<tr><td><code>www-authenticate.json</code></td><td>Challenge parsing including several challenges in one header and <code>token68</code></td></tr>
+<tr><td><code>structured-fields.json</code></td><td>RFC 8941/9651 dictionaries used by <code>Signature-Input</code>, <code>Signature</code> and <code>Content-Digest</code></td></tr>
+<tr><td><code>json-patch.json</code></td><td>JSON Pointer escaping and JSON Patch serialisation</td></tr>
+<tr><td><code>type-queries.json</code></td><td><code>application/lws-query+json</code> construction and client-side validation</td></tr>
+<tr><td><code>did-key.json</code></td><td>did:key derivation, including the official did:key P-256 test vector</td></tr>
+<tr><td><code>jwt.json</code></td><td>Self-signed ES256 and EdDSA credentials that every client must verify</td></tr>
+<tr><td><code>webhook/*.json</code></td><td>13 RFC 9421 signed deliveries: 3 valid and 10 attacks (tampered body, recomputed digest, wrong host, replay, missing components, unauthorised key, storage spoofing, algorithm confusion, …)</td></tr>
+<tr><td><code>responses/*.json</code></td><td>Real-shaped HTTP responses (storage description, paginated container with relative ids, linkset, notifications, access documents, OAuth metadata, problem details) with the expected parsed models</td></tr>
+</tbody></table></div>
+<p>The cryptographic fixtures are generated by a committed script (keys are reused, signatures are
+re-randomised):</p>
+<pre data-lang="bash"><code class="language-bash">node conformance/tools/generate-fixtures.mjs</code></pre>
+
+<h2 id="mock-server">Mock LWS server</h2>
+<p><code>testing/mock-server</code> is a zero-dependency Node.js (20+) implementation of the server side
+of every spec the clients cover. It is an in-memory storage with real authorization (token
+exchange, signed access tokens), pagination, linksets, JSON Patch, signed webhooks, access
+request and grant containers, and type index and search over HTTP <code>QUERY</code>.</p>
+<pre data-lang="bash"><code class="language-bash">node testing/mock-server/server.mjs --port 8787
+# LWS mock server listening on http://localhost:8787</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Option</th><th>Default</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>--port &lt;n&gt;</code></td><td><code>8787</code></td><td>Listen port (<code>0</code> picks a free port)</td></tr>
+<tr><td><code>--host &lt;addr&gt;</code></td><td>IPv4 + IPv6 loopback</td><td>Interface to bind</td></tr>
+<tr><td><code>--base-url &lt;url&gt;</code></td><td><code>http://localhost:&lt;port&gt;</code></td><td>Public origin used in every URL the server emits</td></tr>
+<tr><td><code>--page-size &lt;n&gt;</code></td><td><code>5</code></td><td>Page size for containers, the type index and search results (small, so pagination is always exercised)</td></tr>
+<tr><td><code>--no-auth</code></td><td>off</td><td>Disable authentication; every request acts as <code>anonymous</code></td></tr>
+<tr><td><code>--verbose</code></td><td>off</td><td>Log requests, token exchanges and webhook deliveries</td></tr>
+</tbody></table></div>
+<p>Node.js 22 or newer is recommended: the server relies on Node's HTTP parser accepting the
+<code>QUERY</code> method. It can also be started from code with
+<code>startServer({ port: 0 })</code> from <code>testing/mock-server/lib/server.mjs</code>, which
+resolves to <code>{ url, close() }</code>.</p>
+<div class="table-wrap"><table><thead><tr><th>URL</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>{base}/</code></td><td>Storage description (public)</td></tr>
+<tr><td><code>{base}/root/</code></td><td>Storage root container</td></tr>
+<tr><td><code>{base}/notifications/</code></td><td>Notification service (<code>WebhookSubscription</code>)</td></tr>
+<tr><td><code>{base}/access/requests/</code>, <code>{base}/access/grants/</code></td><td>Access request and grant services</td></tr>
+<tr><td><code>{base}/types/index</code>, <code>{base}/types/search</code></td><td>Type index and type search services</td></tr>
+<tr><td><code>{base}/.well-known/lws-configuration</code></td><td>Authorization server metadata (issuer <code>{base}</code>)</td></tr>
+<tr><td><code>{base}/oauth/token</code>, <code>{base}/oauth/jwks</code></td><td>Token exchange endpoint and signing keys</td></tr>
+</tbody></table></div>
+<div class="callout warn"><p><strong>Test use only</strong> The mock server keeps everything in memory, grants every authenticated agent full access and accepts unverified OpenID/SAML tokens in test mode. Never expose it to a network.</p></div>
+
+<h2 id="interop">Interop scenario</h2>
+<p><code>conformance/scenario.md</code> defines one end-to-end scenario that every client runs against the mock
+server. It covers self-signed did:key authentication through the full 401 → token exchange flow,
+discovery, CRUD with conditional requests, JSON Patch, linkset patches, pagination across pages,
+type index and search, signed webhook delivery and verification, access requests and grants,
+and recursive delete. Each language gates the test on <code>LWS_TEST_SERVER</code>:</p>
+<pre data-lang="bash"><code class="language-bash">node testing/mock-server/server.mjs --port 8787 &amp;
+export LWS_TEST_SERVER=http://localhost:8787
+
+(cd java &amp;&amp; mvn -q verify)
+(cd js &amp;&amp; npm run test:interop)
+(cd cpp &amp;&amp; ctest --preset debug)            # or: ctest --test-dir build/mingw-debug
+(cd rust &amp;&amp; cargo test --test interop)
+(cd go &amp;&amp; go test -run TestInterop -v .)
+(cd python &amp;&amp; .venv/bin/pytest tests/test_interop.py)   # Windows: .venv\Scripts\pytest</code></pre>
+
+<h2 id="unit">Running each test suite</h2>
+<p>Unit tests need no server. See each <a href="contributing.html#building">language's build commands</a>.
+Every suite includes in-process HTTP tests that simulate an LWS server, including the
+authorization flow, realm-check rejection, three-page pagination, <code>304</code>/<code>412</code>
+handling and error mapping.</p>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

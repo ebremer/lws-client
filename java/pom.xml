@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.ebremer</groupId>
+  <artifactId>lws-client</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <name>LWS Client for Java</name>
+  <description>Client for the W3C Linked Web Storage (LWS) Protocol 1.0: discovery, resources, containers,
+    linksets, OAuth 2.0 token exchange with OpenID Connect / SAML / self-signed (CID, did:key) credentials,
+    webhook notifications, access requests and grants, and type index / search services.</description>
+  <url>https://github.com/ebremer/lws-client</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/license/mit</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>Erich Bremer</name>
+      <url>https://github.com/ebremer</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <url>https://github.com/ebremer/lws-client</url>
+    <connection>scm:git:https://github.com/ebremer/lws-client.git</connection>
+  </scm>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <jackson.version>2.22.3</jackson.version>
+    <junit.version>5.14.4</junit.version>
+    <conformance.dir>${project.basedir}/../conformance</conformance.dir>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.16.0</version>
+        <configuration>
+          <release>17</release>
+          <compilerArgs>
+            <arg>-Xlint:all,-serial,-exports,-requires-transitive-automatic,-requires-automatic,-options</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.6.0</version>
+        <configuration>
+          <useModulePath>false</useModulePath>
+          <systemPropertyVariables>
+            <lws.conformance.dir>${conformance.dir}</lws.conformance.dir>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.1</version>
+      </plugin>
+      <plugin>
+        <!-- Compiles the example programs in src/examples/java against the library (not packaged). -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.1</version>
+        <executions>
+          <execution>
+            <id>add-example-sources</id>
+            <phase>generate-test-sources</phase>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>src/examples/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,18 @@
+{
+  "method": "POST",
+  "url": "https://receiver.example/hooks/lws?subscription=9e8d7c6b5a4f",
+  "now": 1790000030,
+  "name": "missing-required-components",
+  "description": "Signature does not cover @scheme, @authority and content-type",
+  "headers": {
+    "content-type": "application/lws+json",
+    "content-digest": "sha-256=:SFIoZZtk6hHkYJdIo+3OwkB09MpOSEcVp3INJDtIw34=:",
+    "signature-input": "sig1=(\"@method\" \"@path\" \"content-digest\");created=1790000000;keyid=\"https://storage.example/#key-p256\";alg=\"ecdsa-p256-sha256\"",
+    "signature": "sig1=:oiSF5CKPIzj+ohy39AT6dFUddDc8nkVw1F72TVMwlh4o5tEjHac7u3fGM/HOtyRHOdwru+41fZSIuyPpPrIBzg==:"
+  },
+  "body": "{\"@context\":[\"https://www.w3.org/ns/lws/v1\",\"https://www.w3.org/ns/activitystreams\"],\"type\":\"Notification\",\"storage\":\"https://storage.example/\",\"activity\":[{\"id\":\"urn:uuid:a1b2c3d4-5678-4abc-8ef0-1234567890ab\",\"type\":[\"Create\"],\"object\":{\"id\":\"https://storage.example/root/notes/meeting.txt\",\"type\":[\"DataResource\"]},\"target\":\"https://storage.example/root/notes/\",\"published\":\"2026-09-21T11:33:20Z\"},{\"id\":\"urn:uuid:b2c3d4e5-6789-4bcd-9f01-234567890abc\",\"type\":[\"Update\"],\"object\":{\"id\":\"https://storage.example/root/profile\",\"type\":[\"DataResource\"]},\"published\":\"2026-09-21T11:33:21Z\"}]}",
+  "expected": {
+    "valid": false,
+    "reason": "required component not covered"
+  }
+}

@@ -1,0 +1,628 @@
+@@@ install bash
+go get github.com/ebremer/lws-client/go@latest
+
+# then: import lws "github.com/ebremer/lws-client/go"
+@@@ first-program
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"strings"
+
+	lws "github.com/ebremer/lws-client/go"
+)
+
+func main() {
+	ctx := context.Background()
+	key, err := lws.GenerateP256Key()
+	if err != nil {
+		log.Fatal(err)
+	}
+	credentials, err := lws.NewDIDKeyCredentials(key, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)))
+	fmt.Println("agent:  ", credentials.Agent())
+
+	storage, err := client.DiscoverStorage(ctx, "http://localhost:8787/root/")
+	if err != nil {
+		log.Fatal(err)
+	}
+	root, err := storage.StorageRoot()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("storage:", storage.ID, " root:", root)
+
+	folder, err := client.CreateContainer(ctx, root, lws.Slug("hello-world"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	file, err := client.Create(ctx, folder.Location, strings.NewReader("Hello, LWS!"), "text/plain", lws.Slug("hello.txt"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("created:", file.Location)
+
+	res, err := client.Read(ctx, file.Location)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%s  (etag %s, parent %s)\n", res.Text(), res.ETag, res.Parent)
+}
+@@@ hero
+key, _ := lws.GenerateP256Key()
+credentials, _ := lws.NewDIDKeyCredentials(key, nil)
+client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)))
+
+storage, err := client.DiscoverStorage(ctx, "https://storage.example/root/")
+if err != nil {
+	return err
+}
+root, _ := storage.StorageRoot()
+todo, err := client.CreateJSON(ctx, root, map[string]any{"task": "write docs", "done": false})
+if err != nil {
+	return err
+}
+if _, err := client.Patch(ctx, todo.Location, lws.JSONPatch{}.Replace("/done", true)); err != nil {
+	return err
+}
+
+for item, err := range client.ListContainer(ctx, root) {
+	if err != nil {
+		return err
+	}
+	fmt.Println(item.ID, item.Format)
+}
+@@@ client-config
+client := lws.NewClient(
+	lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)),
+	lws.WithUserAgent("my-app/1.0"),         // default "lws-client-go/0.1.0"
+	lws.WithHeader("Accept-Language", "en"), // added to every request
+	lws.WithTimeout(20*time.Second),
+	// lws.WithHTTPClient(myHTTPClient),     // bring your own *http.Client (transport, proxies)
+)
+
+// Every call takes a context (deadlines, cancellation) plus per-call options.
+ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+defer cancel()
+page, err := client.ReadContainer(ctx, container, lws.Header("X-Trace", "1"))
+if err != nil {
+	return err
+}
+fmt.Println(page.TotalItems)
+@@@ discover
+// Any URL inside the storage is a valid starting point.
+storage, err := client.DiscoverStorage(ctx, "https://storage.example/root/notes/")
+if err != nil {
+	return err
+}
+root, err := storage.StorageRoot() // the required StorageRoot service
+if err != nil {
+	return err
+}
+fmt.Println(storage.ID, storage.Types, root)
+
+if svc, ok := storage.NotificationService(); ok {
+	fmt.Println(svc.ServiceEndpoint, svc.SubscriptionTypes())
+}
+for _, svc := range storage.Services {
+	fmt.Println(svc.Types, "→", svc.ServiceEndpoint)
+}
+if capability, ok := storage.Capability("https://feature.example/PatchSupport"); ok {
+	fmt.Println(string(capability.Raw["format"]))
+}
+
+// When you already know the storage URL:
+same, err := client.GetStorageDescription(ctx, storage.ID)
+if err != nil {
+	return err
+}
+fmt.Println(same.ID)
+@@@ create
+// A container (POST with Link: <https://www.w3.org/ns/lws#Container>; rel="type")
+notes, err := client.CreateContainer(ctx, container, lws.Slug("notes"))
+if err != nil {
+	return err
+}
+
+// Text, JSON or any io.Reader. The slug is only a hint: the server picks the final URL.
+list, err := client.Create(ctx, notes.Location, strings.NewReader("milk\neggs\n"), "text/plain", lws.Slug("shopping.txt"))
+if err != nil {
+	return err
+}
+todo, err := client.CreateJSON(ctx, notes.Location, map[string]any{"task": "write docs"},
+	lws.Slug("todo.json"),
+	lws.Types("https://schema.org/Action"),                                   // extra rel="type"
+	lws.Links(lws.NewLink("https://example.org/shapes/todo", "describedby")), // user metadata
+)
+if err != nil {
+	return err
+}
+png := []byte{0x89, 'P', 'N', 'G'} // your image bytes
+photo, err := client.Create(ctx, notes.Location, bytes.NewReader(png), "image/png", lws.Slug("photo.png"))
+if err != nil {
+	return err
+}
+fmt.Println(list.Location, todo.Metadata.Linkset, photo.Metadata.Parent)
+@@@ read
+res, err := client.Read(ctx, url)
+if err != nil {
+	return err
+}
+fmt.Println(res.StatusCode, res.ContentType, res.ETag, res.LastModified)
+fmt.Println(res.Types, res.IsDataResource(), res.Parent, res.Linkset)
+fmt.Println(len(res.Body), res.Text()) // Body is []byte
+
+var profile map[string]any
+if err := res.JSON(&profile); err != nil {
+	return err
+}
+
+// Headers and links only
+meta, err := client.Head(ctx, url)
+if err != nil {
+	return err
+}
+fmt.Println(meta.ContentLength, meta.Allow, meta.AcceptPatch, meta.LinksWithRel("describedby"))
+@@@ stream
+s, err := client.ReadStream(ctx, url) // nothing is buffered
+if err != nil {
+	return err
+}
+defer s.Body.Close()
+n, err := io.Copy(io.Discard, s.Body)
+if err != nil {
+	return err
+}
+fmt.Println("received", n, "bytes")
+
+// Uploads stream from any io.Reader. Without a cached token the client sends a HEAD first,
+// because a stream cannot be replayed after a 401.
+f, err := os.Open("big.bin")
+if err != nil {
+	return err
+}
+defer f.Close()
+_, err = client.Create(ctx, container, f, "application/octet-stream", lws.Slug("big.bin"))
+return err
+@@@ conditional
+first, err := client.Read(ctx, url)
+if err != nil {
+	return err
+}
+
+// Revalidate: 304 Not Modified is a normal result, not an error.
+again, err := client.Read(ctx, url, lws.IfNoneMatch(first.ETag))
+if err != nil {
+	return err
+}
+if again.NotModified {
+	fmt.Println("cached copy is still fresh")
+}
+
+// Optimistic concurrency: only overwrite the version you read.
+_, err = client.Update(ctx, url, strings.NewReader("new content"), "text/plain", lws.IfMatch(first.ETag))
+if errors.Is(err, lws.ErrPreconditionFailed) {
+	// Someone else changed it (412): re-read, merge, retry.
+} else if err != nil {
+	return err
+}
+@@@ range
+start, err := client.Read(ctx, url, lws.ByteRange(0, 1023)) // first KiB
+if err != nil {
+	return err
+}
+fmt.Println(start.StatusCode, start.ContentRange) // 206 "bytes 0-1023/52311"
+
+rest, err := client.Read(ctx, url, lws.ByteRange(1024, -1)) // from byte 1024 to the end
+if err != nil {
+	return err
+}
+tail, err := client.Read(ctx, url, lws.ByteRange(-512, 0)) // the last 512 bytes
+if err != nil {
+	return err
+}
+fmt.Println(len(rest.Body), len(tail.Body))
+@@@ update
+// PUT replaces the whole representation.
+body := strings.NewReader(`{"name":"Alice","age":31}`)
+if _, err := client.Update(ctx, url, body, "application/json", lws.IfMatch(etag)); err != nil {
+	return err
+}
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+_, err := client.Update(ctx, url, strings.NewReader("v2"), "text/plain",
+	lws.SetLinkset(),
+	lws.Links(lws.NewLink("https://creativecommons.org/licenses/by/4.0/", "license")),
+)
+return err
+@@@ patch
+// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+patch := lws.JSONPatch{}.Test("/version", 3).Replace("/status", "done").Add("/tags/-", "urgent").Remove("/draft")
+if _, err := client.Patch(ctx, url, patch, lws.IfMatch(etag)); err != nil {
+	return err
+}
+
+// Other formats only when the server advertises them in Accept-Patch.
+meta, err := client.Head(ctx, url)
+if err != nil {
+	return err
+}
+if slices.Contains(meta.AcceptPatch, "application/sparql-update") {
+	sparql := `INSERT DATA { <#me> <http://xmlns.com/foaf/0.1/name> "Alice" }`
+	_, err = client.PatchRaw(ctx, url, strings.NewReader(sparql), "application/sparql-update")
+}
+return err
+@@@ delete
+if err := client.Delete(ctx, url, lws.IfMatch(etag)); err != nil {
+	return err
+}
+
+err := client.Delete(ctx, container) // 409 Conflict when not empty
+if errors.Is(err, lws.ErrConflict) {
+	err = client.Delete(ctx, container, lws.Recursive()) // Depth: infinity
+}
+return err
+@@@ read-container
+page, err := client.ReadContainer(ctx, container)
+if err != nil {
+	return err
+}
+fmt.Println(page.ID, page.TotalItems, page.Metadata.ETag) // TotalItems is -1 when absent
+for _, item := range page.Items {
+	fmt.Println(item.ID, item.IsContainer(), item.Format, item.Size, item.Modified)
+}
+if page.Next != "" {
+	next, err := client.ReadContainer(ctx, page.Next) // opaque, server-issued URL
+	if err != nil {
+		return err
+	}
+	fmt.Println(len(next.Items))
+}
+@@@ list-container
+// Lazily follows rel="next": pages are fetched only as you iterate.
+for item, err := range client.ListContainer(ctx, container) {
+	if err != nil {
+		return err
+	}
+	if item.HasType("https://schema.org/Person") {
+		fmt.Println(item.ID)
+	}
+}
+@@@ read-linkset
+doc, err := client.ReadLinkset(ctx, url) // HEAD for rel="linkset", then GET
+if err != nil {
+	return err
+}
+fmt.Println(doc.URL, doc.ETag, doc.Allow, doc.AcceptPatch)
+
+for _, link := range doc.Linkset.Links() {
+	fmt.Println(link.Rel, "→", link.Href)
+}
+for _, target := range doc.Linkset.Targets("describedby") {
+	fmt.Println(target.Href)
+}
+@@@ patch-linkset
+doc, err := client.ReadLinkset(ctx, url)
+if err != nil {
+	return err
+}
+rel := "https://example.org/rel/reviewer" // extension relation types are URIs
+reviewer := map[string]string{"href": "https://id.example/bob"}
+
+// JSONPointer escapes "/" in the relation URI as "~1".
+// "add" on an existing member replaces it, so append with "/-" when the relation exists.
+var patch lws.JSONPatch
+if len(doc.Linkset.Targets(rel)) > 0 {
+	patch = patch.Add(lws.JSONPointer("linkset", "0", rel, "-"), reviewer)
+} else {
+	patch = patch.Add(lws.JSONPointer("linkset", "0", rel), []any{reviewer})
+}
+_, err = client.PatchLinkset(ctx, doc.URL, patch, lws.IfMatch(doc.ETag))
+return err
+@@@ put-linkset
+doc, err := client.ReadLinkset(ctx, url)
+if err != nil {
+	return err
+}
+if slices.Contains(doc.Allow, "PUT") {
+	doc.Linkset.Add(url, "license", "https://creativecommons.org/licenses/by/4.0/", nil)
+	_, err = client.UpdateLinkset(ctx, doc.URL, doc.Linkset, lws.IfMatch(doc.ETag))
+}
+return err
+@@@ auth-didkey
+// A did:key agent: the identifier is derived from the public key, nothing to host.
+key, err := lws.GenerateP256Key() // or lws.GenerateEd25519Key()
+if err != nil {
+	return err
+}
+credentials, err := lws.NewDIDKeyCredentials(key, nil)
+if err != nil {
+	return err
+}
+fmt.Println(credentials.Agent()) // did:key:zDn…
+
+client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)))
+_, err = client.Head(ctx, url) // 401 → AS metadata → token exchange → retried with a Bearer token
+return err
+@@@ auth-cid
+// An HTTPS agent publishes a controlled identifier document listing its key…
+key, err := lws.GenerateP256Key()
+if err != nil {
+	return err
+}
+jwk, err := lws.JWKFromPublicKey(key.Public())
+if err != nil {
+	return err
+}
+agent := "https://bot.example/agent"
+cid, err := json.Marshal(lws.NewControlledIdentifierDocument(agent, *jwk, "key-1"))
+if err != nil {
+	return err
+}
+fmt.Println(string(cid)) // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key.
+credentials, err := lws.NewSelfSignedCredentials(agent, key, "key-1", nil)
+if err != nil {
+	return err
+}
+client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)))
+_, err = client.Head(ctx, url)
+return err
+@@@ keys
+key, err := lws.GenerateP256Key()
+if err != nil {
+	return err
+}
+private, err := lws.JWKFromPrivateKey(key) // includes "d": store securely
+if err != nil {
+	return err
+}
+data, err := json.Marshal(private)
+if err != nil {
+	return err
+}
+parsed, err := lws.ParseJWK(data)
+if err != nil {
+	return err
+}
+restored, err := parsed.PrivateKey()
+if err != nil {
+	return err
+}
+credentials, err := lws.NewDIDKeyCredentials(restored, nil)
+if err != nil {
+	return err
+}
+
+// did:key <-> public key
+did, err := lws.DIDKeyFromPublicKey(key.Public())
+if err != nil {
+	return err
+}
+pub, err := lws.PublicKeyFromDIDKey(did)
+if err != nil {
+	return err
+}
+fmt.Println(credentials.Agent() == did, credentials.KeyID(), pub)
+@@@ auth-openid
+// The ID token from your OpenID Connect login (any OIDC library). Use
+// lws.NewOpenIDCredentialsFunc to supply a fresh token whenever one is needed.
+credentials := lws.NewOpenIDCredentials(idToken)
+client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials,
+	&lws.TokenExchangeOptions{
+		// ID tokens are not always audience-restricted: only send them to servers you trust.
+		AuthorizationServerFilter: func(asURI, realm string) bool { return asURI == "https://auth.example" },
+	})))
+_, err := client.Head(ctx, url)
+return err
+@@@ auth-saml
+// A signed SAML 2.0 assertion, base64url-encoded as RFC 8693 requires.
+credentials := lws.NewSAMLCredentials(lws.EncodeSAMLAssertion(samlAssertionXML))
+client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)))
+_, err := client.Head(ctx, url)
+return err
+@@@ auth-bearer
+// An access token you obtained yourself; it is only sent to URLs inside the realm.
+client := lws.NewClient(lws.WithAuthenticator(
+	lws.NewBearerTokenAuthenticator(accessToken, "https://storage.example/")))
+_, err := client.Head(ctx, url)
+return err
+@@@ auth-options
+trusted := map[string]bool{"https://auth.example": true}
+authenticator := lws.NewTokenExchangeAuthenticator(credentials, &lws.TokenExchangeOptions{
+	AllowInsecureHTTP:         false, // plain-http AS only on loopback (default)
+	AuthorizationServerFilter: func(asURI, realm string) bool { return trusted[asURI] },
+	HTTPClient:                http.DefaultClient, // used for metadata and token requests
+})
+client := lws.NewClient(lws.WithAuthenticator(authenticator))
+_, err := client.Head(ctx, url)
+return err
+@@@ custom-authenticator
+// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator interface.
+type apiKeyAuthenticator struct{ key string }
+
+func (a apiKeyAuthenticator) Authorize(ctx context.Context, req *http.Request) error {
+	if req.URL.Host == "storage.example" {
+		req.Header.Set("X-Api-Key", a.key)
+	}
+	return nil
+}
+
+func (a apiKeyAuthenticator) HandleChallenge(ctx context.Context, req *http.Request, resp *http.Response) (bool, error) {
+	return false, nil // nothing to refresh: the 401 surfaces as an *lws.HTTPError
+}
+
+func newAPIKeyClient(apiKey string) *lws.Client {
+	return lws.NewClient(lws.WithAuthenticator(apiKeyAuthenticator{key: apiKey}))
+}
+@@@ subscribe
+// SubscribeWebhook checks that the NotificationService supports WebhookSubscription.
+sub, err := client.SubscribeWebhook(ctx, storage, lws.WebhookSubscriptionRequest{
+	Topics:  []string{container}, // a container topic is recursive
+	Inbox:   "https://my-app.example/hooks/lws",
+	Expires: time.Now().Add(24 * time.Hour),
+})
+if err != nil {
+	return err
+}
+fmt.Println(sub.URL, sub.Expires)
+
+svc, _ := storage.NotificationService()
+for item, err := range client.ListSubscriptions(ctx, svc.ServiceEndpoint) {
+	if err != nil {
+		return err
+	}
+	fmt.Println(item.ID)
+}
+current, err := client.GetSubscription(ctx, sub.URL)
+if err != nil {
+	return err
+}
+fmt.Println(current.Type)
+return client.Unsubscribe(ctx, sub.URL)
+@@@ webhook
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+
+	lws "github.com/ebremer/lws-client/go"
+)
+
+func main() {
+	verifier := lws.NewWebhookVerifier(&lws.WebhookVerifierOptions{
+		TrustedStorages: []string{"https://storage.example/"}, // only this storage's signatures
+	})
+	inbox := "https://my-app.example/hooks/lws" // the registered URL (your public URL behind a proxy)
+
+	// Handler answers 204 for verified deliveries and 401 otherwise.
+	http.Handle("/hooks/lws", verifier.Handler(inbox, func(ctx context.Context, n *lws.VerifiedNotification) {
+		for _, a := range n.Notification.Activities {
+			fmt.Println(a.Types, a.Object.ID, a.Published)
+		}
+	}))
+	log.Fatal(http.ListenAndServe(":8080", nil))
+
+	// In your own handler: verified, err := verifier.VerifyRequest(r, inbox)
+}
+@@@ access-request
+policy := lws.NewAccessPolicy("https://id.example/agent", lws.ActionRead, lws.ActionCreate).
+	WithTarget("StorageResource", container).
+	WithConstraints(
+		lws.PurposeConstraint("https://purpose.example/collaboration"),
+		lws.NotAfter(time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)),
+	)
+request := lws.NewAccessRequest(storage.ID, policy)
+request.Inbox = "https://id.example/agent/inbox/"
+
+svc, _ := storage.AccessRequestService()
+requestURL, err := client.RequestAccess(ctx, svc.ServiceEndpoint, request)
+if err != nil {
+	return err
+}
+for item, err := range client.ListAccessRequests(ctx, svc.ServiceEndpoint) {
+	if err != nil {
+		return err
+	}
+	fmt.Println(item.ID)
+}
+pending, err := client.GetAccessRequest(ctx, requestURL)
+if err != nil {
+	return err
+}
+fmt.Println(pending.Access[0].Actions)
+return client.CancelAccessRequest(ctx, requestURL)
+@@@ access-grant
+// A storage controller approves a request by recording a grant with the same policy model.
+pending, err := client.GetAccessRequest(ctx, requestURL)
+if err != nil {
+	return err
+}
+svc, _ := storage.AccessGrantService()
+grantURL, err := client.GrantAccess(ctx, svc.ServiceEndpoint, lws.NewAccessGrant(pending.Storage, pending.Access...))
+if err != nil {
+	return err
+}
+for item, err := range client.ListAccessGrants(ctx, svc.ServiceEndpoint) {
+	if err != nil {
+		return err
+	}
+	fmt.Println(item.ID)
+}
+return client.RevokeAccessGrant(ctx, grantURL) // the server withdraws the underlying permissions
+@@@ list-types
+if svc, ok := storage.TypeIndexService(); ok {
+	for typ, err := range client.ListTypes(ctx, svc.ServiceEndpoint) {
+		if err != nil {
+			return err
+		}
+		fmt.Println(typ) // e.g. https://schema.org/Person
+	}
+}
+@@@ search
+svc, ok := storage.TypeSearchService()
+if !ok {
+	return errors.New("no type search service")
+}
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+query := lws.NewTypeQuery().
+	AnyOf("https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person").
+	AllOf("https://www.w3.org/ns/lws#DataResource")
+first, err := client.SearchTypes(ctx, svc.ServiceEndpoint, query) // HTTP QUERY
+if err != nil {
+	return err
+}
+fmt.Println(first.TotalItems, first.Next)
+
+for hit, err := range client.SearchAll(ctx, svc.ServiceEndpoint, lws.NewTypeQuery().AllOf("https://schema.org/Event")) {
+	if err != nil {
+		return err
+	}
+	fmt.Println(hit.ID, hit.Types)
+}
+
+// Indexed descriptive relations use the same grammar.
+shaped := lws.NewTypeQuery().RelationAllOf("describedby", "https://example.org/shapes/person")
+page, err := client.SearchTypes(ctx, svc.ServiceEndpoint, shaped)
+if err != nil {
+	return err
+}
+fmt.Println(len(page.Items))
+
+formats, err := client.AcceptedQueryFormats(ctx, svc.ServiceEndpoint)
+fmt.Println(formats) // [application/lws-query+json …]
+return err
+@@@ errors
+_, err := client.Read(ctx, url)
+var httpErr *lws.HTTPError
+var authErr *lws.AuthenticationError
+switch {
+case err == nil:
+case errors.Is(err, lws.ErrNotFound):
+	fmt.Println("no such resource")
+case errors.Is(err, lws.ErrUnauthorized) && errors.As(err, &httpErr):
+	fmt.Println("not authenticated", httpErr.Challenges)
+case errors.As(err, &httpErr):
+	fmt.Println(httpErr.StatusCode, httpErr.Problem)
+case errors.As(err, &authErr):
+	fmt.Println("token exchange failed:", authErr.Code, authErr.Description)
+default:
+	return err
+}
+@@@ problem
+err := client.Delete(ctx, container)
+var httpErr *lws.HTTPError
+if errors.Is(err, lws.ErrConflict) && errors.As(err, &httpErr) && httpErr.Problem != nil {
+	p := httpErr.Problem
+	fmt.Println(p.Type, p.Title, p.Detail, p.Instance, string(p.Extensions["itemCount"]))
+}

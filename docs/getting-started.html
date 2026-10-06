@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Getting started · LWS Client</title>
+  <meta name="description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go or Python and run your first authenticated request against a Linked Web Storage server.">
+  <meta property="og:title" content="Getting started · LWS Client">
+  <meta property="og:description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go or Python and run your first authenticated request against a Linked Web Storage server.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="./assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="./getting-started.html" aria-current="page">Get started</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./authentication.html">Auth</a>
+        <a href="./api-reference.html">API</a>
+        <a href="./spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="./index.html">Overview</a></li><li><a href="./getting-started.html">Getting started</a></li><li><a href="./api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1>Getting started</h1>
+<p class="lead">Install the client for your language, start the bundled mock server, and run a
+first program that authenticates, discovers a storage and writes a resource. It takes about
+five minutes.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="requirements">Requirements</h2>
+<ul>
+  <li><strong>Java</strong> 17+ (one runtime dependency: Jackson databind)</li>
+  <li><strong>JavaScript/TypeScript</strong>: Node.js 20+, any modern browser, Deno or Bun (no runtime dependencies)</li>
+  <li><strong>C++</strong>: a C++20 compiler and CMake 3.21+. nlohmann/json is required; libcurl and OpenSSL are optional.</li>
+  <li><strong>Rust</strong> 1.85+ (edition 2024, tokio)</li>
+  <li><strong>Go</strong> 1.23+ (no third-party dependencies)</li>
+  <li><strong>Python</strong> 3.10+ (httpx; the <code>crypto</code> extra adds <code>cryptography</code>)</li>
+</ul>
+
+<h2 id="install">Install</h2>
+<div class="callout"><p><strong>Package registries</strong> The packages are not on Maven Central, npm, crates.io or PyPI yet. Until they are, install from the GitHub repository as shown. The registry names are already reserved in each manifest, so switching later is a one-line change.</p></div>
+<div class="code-tabs">
+<pre data-lang="bash" data-tab="java" data-label="Java"><code class="language-bash"># Until it is on Maven Central: build and install into your local repository (~/.m2)
+git clone https://github.com/ebremer/lws-client.git
+cd lws-client/java &amp;&amp; mvn install
+
+# Maven
+#   &lt;dependency&gt;
+#     &lt;groupId&gt;com.ebremer&lt;/groupId&gt;
+#     &lt;artifactId&gt;lws-client&lt;/artifactId&gt;
+#     &lt;version&gt;0.1.0&lt;/version&gt;
+#   &lt;/dependency&gt;
+# Gradle (with mavenLocal())
+#   implementation(&quot;com.ebremer:lws-client:0.1.0&quot;)</code></pre>
+<pre data-lang="bash" data-tab="ts" data-label="TypeScript"><code class="language-bash"># From npm (once published)
+npm install lws-client
+
+# From source today: build a tarball and install it into your project
+git clone https://github.com/ebremer/lws-client.git
+cd lws-client/js &amp;&amp; npm install &amp;&amp; npm run build &amp;&amp; npm pack
+npm install /path/to/lws-client/js/lws-client-0.1.0.tgz</code></pre>
+<pre data-lang="cmake" data-tab="cpp" data-label="C++"><code class="language-cmake"># CMakeLists.txt: fetch and build the library with your project
+include(FetchContent)
+FetchContent_Declare(lws_client
+    GIT_REPOSITORY https://github.com/ebremer/lws-client.git
+    GIT_TAG        main
+    SOURCE_SUBDIR  cpp)
+FetchContent_MakeAvailable(lws_client)
+target_link_libraries(app PRIVATE lws::client)
+
+# Or, after `cmake --install`: find_package(lws-client 0.1 CONFIG REQUIRED)
+# Dependencies: nlohmann/json (required); libcurl and OpenSSL 3 (optional, see
+# LWS_WITH_CURL / LWS_WITH_OPENSSL). vcpkg users get all of them from cpp/vcpkg.json.</code></pre>
+<pre data-lang="toml" data-tab="rust" data-label="Rust"><code class="language-toml"># Cargo.toml
+[dependencies]
+lws-client = { git = &quot;https://github.com/ebremer/lws-client&quot; }   # crates.io (once published): &quot;0.1&quot;
+tokio = { version = &quot;1&quot;, features = [&quot;macros&quot;, &quot;rt-multi-thread&quot;] }
+futures-util = &quot;0.3&quot;   # TryStreamExt for the paginated streams
+
+# Features: default = [&quot;rustls&quot;, &quot;crypto&quot;]; &quot;native-tls&quot; switches the TLS backend.</code></pre>
+<pre data-lang="bash" data-tab="go" data-label="Go"><code class="language-bash">go get github.com/ebremer/lws-client/go@latest
+
+# then: import lws &quot;github.com/ebremer/lws-client/go&quot;</code></pre>
+<pre data-lang="bash" data-tab="python" data-label="Python"><code class="language-bash"># From PyPI (once published)
+pip install &quot;lws-client[crypto]&quot;
+
+# From GitHub today
+pip install &quot;lws-client[crypto] @ git+https://github.com/ebremer/lws-client#subdirectory=python&quot;
+
+# The crypto extra (cryptography) enables self-signed identities and webhook verification.</code></pre>
+</div>
+
+<h2 id="mock-server">Start a server to talk to</h2>
+<p>The repository includes a complete in-memory LWS server for development. It needs Node.js 22+ and has
+no dependencies:</p>
+<pre data-lang="bash"><code class="language-bash">git clone https://github.com/ebremer/lws-client.git
+node lws-client/testing/mock-server/server.mjs --port 8787
+# LWS mock server listening on http://localhost:8787</code></pre>
+<p>Its storage root is <code>http://localhost:8787/root/</code>. Every request needs an access
+token, which is exactly what the client's authenticator takes care of.</p>
+
+<h2 id="first-program">Your first program</h2>
+<p>The program below generates a self-signed <code>did:key</code> identity, lets the client handle
+the 401 → token exchange flow, discovers the storage from a resource URL, creates a container and
+a text file, and reads the file back with its metadata.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">import com.ebremer.lws.Body;
+import com.ebremer.lws.CreateOptions;
+import com.ebremer.lws.LwsClient;
+import com.ebremer.lws.Resource;
+import com.ebremer.lws.StorageDescription;
+import com.ebremer.lws.auth.KeyPairs;
+import com.ebremer.lws.auth.SelfSignedCredentials;
+import com.ebremer.lws.auth.TokenExchangeAuthenticator;
+import java.net.URI;
+
+public class HelloLws {
+    public static void main(String[] args) {
+        SelfSignedCredentials credentials = SelfSignedCredentials.didKey(KeyPairs.generateP256());
+        LwsClient client = LwsClient.builder()
+                .authenticator(TokenExchangeAuthenticator.of(credentials))
+                .build();
+        System.out.println(&quot;agent:   &quot; + credentials.agent());
+
+        StorageDescription storage = client.discoverStorage(URI.create(&quot;http://localhost:8787/root/&quot;));
+        System.out.println(&quot;storage: &quot; + storage.id() + &quot;  root: &quot; + storage.storageRoot());
+
+        URI folder = client.createContainer(storage.storageRoot(), CreateOptions.slug(&quot;hello-world&quot;)).location();
+        URI file = client.create(folder, Body.of(&quot;Hello, LWS!&quot;), &quot;text/plain&quot;, CreateOptions.slug(&quot;hello.txt&quot;)).location();
+        System.out.println(&quot;created: &quot; + file);
+
+        Resource resource = client.read(file);
+        System.out.println(resource.text() + &quot;  (etag &quot; + resource.etag().orElse(&quot;-&quot;)
+                + &quot;, parent &quot; + resource.metadata().parent().orElse(null) + &quot;)&quot;);
+    }
+}</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">import { LwsClient, TokenExchangeAuthenticator, SelfSignedCredentials, generateKeyPair } from &quot;lws-client&quot;;
+
+const credentials = SelfSignedCredentials.didKey(await generateKeyPair(&quot;ES256&quot;));
+const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });
+console.log(&quot;agent:  &quot;, credentials.agent);
+
+const storage = await client.discoverStorage(&quot;http://localhost:8787/root/&quot;);
+console.log(&quot;storage:&quot;, storage.id, &quot; root:&quot;, storage.storageRoot());
+
+const folder = await client.createContainer(storage.storageRoot(), { slug: &quot;hello-world&quot; });
+const file = await client.createText(folder.location, &quot;Hello, LWS!&quot;, { slug: &quot;hello.txt&quot; });
+console.log(&quot;created:&quot;, file.location);
+
+const resource = await client.read(file.location);
+console.log(await resource.text(), ` (etag ${resource.etag}, parent ${resource.parent})`);</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">#include &lt;iostream&gt;
+#include &lt;lws/lws.hpp&gt;
+
+int main() {
+    auto credentials = lws::SelfSignedCredentials::did_key(lws::PrivateKey::generate(lws::KeyAlgorithm::ES256));
+    lws::ClientOptions options;
+    options.authenticator = std::make_shared&lt;lws::TokenExchangeAuthenticator&gt;(credentials);
+    lws::Client client(options);
+    std::cout &lt;&lt; &quot;agent:   &quot; &lt;&lt; credentials-&gt;agent_id() &lt;&lt; &quot;\n&quot;;
+
+    auto storage = client.discover_storage(&quot;http://localhost:8787/root/&quot;);
+    std::cout &lt;&lt; &quot;storage: &quot; &lt;&lt; storage.id &lt;&lt; &quot;  root: &quot; &lt;&lt; storage.storage_root() &lt;&lt; &quot;\n&quot;;
+
+    auto folder = client.create_container(storage.storage_root(), {.slug = &quot;hello-world&quot;});
+    auto file = client.create(folder.location, &quot;Hello, LWS!&quot;, &quot;text/plain&quot;, {.slug = &quot;hello.txt&quot;});
+    std::cout &lt;&lt; &quot;created: &quot; &lt;&lt; file.location &lt;&lt; &quot;\n&quot;;
+
+    auto resource = client.read(file.location);
+    std::cout &lt;&lt; resource.text() &lt;&lt; &quot;  (etag &quot; &lt;&lt; resource.etag.value_or(&quot;-&quot;)
+              &lt;&lt; &quot;, parent &quot; &lt;&lt; resource.parent.value_or(&quot;-&quot;) &lt;&lt; &quot;)\n&quot;;
+}</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">use lws_client::{Client, SelfSignedCredentials, TokenExchangeAuthenticator, Url, crypto::SigningKey};
+
+#[tokio::main]
+async fn main() -&gt; lws_client::Result&lt;()&gt; {
+    let credentials = SelfSignedCredentials::did_key(SigningKey::generate_p256()?);
+    println!(&quot;agent:   {}&quot;, credentials.agent());
+    let client = Client::builder()
+        .authenticator(TokenExchangeAuthenticator::new(credentials))
+        .build()?;
+
+    let storage = client.discover_storage(&quot;http://localhost:8787/root/&quot;).await?;
+    let root = storage.storage_root()?.clone();
+    println!(&quot;storage: {}  root: {root}&quot;, storage.id);
+
+    let folder = client.create_container(&amp;root).slug(&quot;hello-world&quot;).await?.location;
+    let file = client
+        .create(&amp;folder, &quot;Hello, LWS!&quot;, &quot;text/plain&quot;)
+        .slug(&quot;hello.txt&quot;)
+        .await?
+        .location;
+    println!(&quot;created: {file}&quot;);
+
+    let resource = client.read(&amp;file).await?;
+    let etag = resource.metadata.etag.as_deref().unwrap_or(&quot;-&quot;);
+    let parent = resource.metadata.parent().map(Url::as_str).unwrap_or(&quot;-&quot;);
+    println!(&quot;{}  (etag {etag}, parent {parent})&quot;, resource.text()?);
+    Ok(())
+}</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">package main
+
+import (
+	&quot;context&quot;
+	&quot;fmt&quot;
+	&quot;log&quot;
+	&quot;strings&quot;
+
+	lws &quot;github.com/ebremer/lws-client/go&quot;
+)
+
+func main() {
+	ctx := context.Background()
+	key, err := lws.GenerateP256Key()
+	if err != nil {
+		log.Fatal(err)
+	}
+	credentials, err := lws.NewDIDKeyCredentials(key, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)))
+	fmt.Println(&quot;agent:  &quot;, credentials.Agent())
+
+	storage, err := client.DiscoverStorage(ctx, &quot;http://localhost:8787/root/&quot;)
+	if err != nil {
+		log.Fatal(err)
+	}
+	root, err := storage.StorageRoot()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(&quot;storage:&quot;, storage.ID, &quot; root:&quot;, root)
+
+	folder, err := client.CreateContainer(ctx, root, lws.Slug(&quot;hello-world&quot;))
+	if err != nil {
+		log.Fatal(err)
+	}
+	file, err := client.Create(ctx, folder.Location, strings.NewReader(&quot;Hello, LWS!&quot;), &quot;text/plain&quot;, lws.Slug(&quot;hello.txt&quot;))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(&quot;created:&quot;, file.Location)
+
+	res, err := client.Read(ctx, file.Location)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf(&quot;%s  (etag %s, parent %s)\n&quot;, res.Text(), res.ETag, res.Parent)
+}</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">from lws_client import LwsClient, SelfSignedCredentials, SigningKey, TokenExchangeAuthenticator
+
+credentials = SelfSignedCredentials.did_key(SigningKey.generate(&quot;ES256&quot;))
+print(&quot;agent:  &quot;, credentials.agent)
+
+with LwsClient(authenticator=TokenExchangeAuthenticator(credentials)) as client:
+    storage = client.discover_storage(&quot;http://localhost:8787/root/&quot;)
+    print(&quot;storage:&quot;, storage.id, &quot; root:&quot;, storage.storage_root())
+
+    folder = client.create_container(storage.storage_root(), slug=&quot;hello-world&quot;)
+    file = client.create_text(folder.location, &quot;Hello, LWS!&quot;, slug=&quot;hello.txt&quot;)
+    print(&quot;created:&quot;, file.location)
+
+    resource = client.read(file.location)
+    print(resource.text, f&quot; (etag {resource.etag}, parent {resource.parent})&quot;)</code></pre>
+</div>
+<p>Expected output (identifiers vary):</p>
+<pre data-lang="text"><code class="language-text">agent:   did:key:zDnaeYo3bnXyXXgYpknupHmZN6wBoSkPXpoqfqwPYQdTRTZJS
+storage: http://localhost:8787/  root: http://localhost:8787/root/
+created: http://localhost:8787/root/hello-world/hello.txt
+Hello, LWS!  (etag &quot;y3Np7XKGTBSEU-c181QlqW&quot;, parent http://localhost:8787/root/hello-world/)</code></pre>
+
+<h2 id="what-happened">What just happened</h2>
+<ol class="steps">
+  <li><strong>Identity.</strong> <code>SelfSignedCredentials.didKey</code> created an agent whose
+  identifier is derived from a fresh P-256 public key. It signs short-lived JWT credentials
+  (<code>sub = iss = client_id</code>) as described in the self-signed authentication suite.</li>
+  <li><strong>Challenge.</strong> The first request got <code>401</code> with
+  <code>WWW-Authenticate: Bearer as_uri="…", realm="…"</code>. The authenticator checked that the URL
+  is inside the realm and fetched <code>/.well-known/lws-configuration</code>.</li>
+  <li><strong>Token exchange.</strong> It posted the signed credential to the token endpoint (RFC 8693),
+  received an access token for the realm, cached it, and retried the request. Later requests
+  send the token immediately.</li>
+  <li><strong>Discovery.</strong> The response's <code>Link: rel="https://www.w3.org/ns/lws#storage"</code>
+  led to the storage description, whose <code>StorageRoot</code> service is the root container.</li>
+  <li><strong>Create and read.</strong> <code>POST</code> to the container returned <code>201 Created</code>
+  with a <code>Location</code>. <code>GET</code> returned the content plus an ETag and
+  <code>up</code>/<code>linkset</code>/<code>type</code> links.</li>
+</ol>
+
+<h2 id="next">Next steps</h2>
+<div class="cards">
+  <a class="card" href="resources.html"><h3>Reading &amp; writing</h3><p>Conditional updates, JSON Patch, ranges, deletes.</p></a>
+  <a class="card" href="authentication.html"><h3>Authentication</h3><p>OpenID Connect, SAML, self-signed agents and custom authenticators.</p></a>
+  <a class="card" href="notifications.html"><h3>Notifications</h3><p>Subscribe to changes and verify signed webhooks.</p></a>
+  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all six languages.</p></a>
+</div>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

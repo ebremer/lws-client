@@ -1,0 +1,56 @@
+{
+  "description": "Self-signed LWS authentication credentials (lws10-authn-ssi-cid). Each JWT must verify with publicJwk; ECDSA signatures are JOSE raw r||s.",
+  "vectors": [
+    {
+      "name": "es256-did-key",
+      "publicJwk": {
+        "kty": "EC",
+        "x": "_O6Y_fCfzYgxA6682sy2BM-b7GEKgd-pBrTyuJ9Mnuw",
+        "y": "Q3CR2ATbUtYcxMoSCzbALHajMl0MMJaS-TIkRBj5omI",
+        "crv": "P-256"
+      },
+      "jwt": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ekRuYWVoVEpvWFM3Y3d6dnN4VERWWGF5Nm94WThVbnBBRjVLOGY5Vk1yZkJNWHVpYiN6RG5hZWhUSm9YUzdjd3p2c3hURFZYYXk2b3hZOFVucEFGNUs4ZjlWTXJmQk1YdWliIn0.eyJzdWIiOiJkaWQ6a2V5OnpEbmFlaFRKb1hTN2N3enZzeFREVlhheTZveFk4VW5wQUY1SzhmOVZNcmZCTVh1aWIiLCJpc3MiOiJkaWQ6a2V5OnpEbmFlaFRKb1hTN2N3enZzeFREVlhheTZveFk4VW5wQUY1SzhmOVZNcmZCTVh1aWIiLCJjbGllbnRfaWQiOiJkaWQ6a2V5OnpEbmFlaFRKb1hTN2N3enZzeFREVlhheTZveFk4VW5wQUY1SzhmOVZNcmZCTVh1aWIiLCJhdWQiOlsiaHR0cHM6Ly9hcy5leGFtcGxlIl0sImlhdCI6MTc5MDAwMDAwMCwiZXhwIjoxNzkwMDAwMzAwLCJqdGkiOiI3ZjZjM2UyYS0xYjlkLTRjNDctOWQ4ZS0yZjBhNWI2YzdkOGUifQ.WArwDRnl7_KWhgYfu27OAupT9huI33sL53slUZGQWYzP_Gg5vWVFOWjquYqCP96ws-SyT5Hu9x2GdW1QklLyRA",
+      "header": {
+        "alg": "ES256",
+        "typ": "JWT",
+        "kid": "did:key:zDnaehTJoXS7cwzvsxTDVXay6oxY8UnpAF5K8f9VMrfBMXuib#zDnaehTJoXS7cwzvsxTDVXay6oxY8UnpAF5K8f9VMrfBMXuib"
+      },
+      "claims": {
+        "sub": "did:key:zDnaehTJoXS7cwzvsxTDVXay6oxY8UnpAF5K8f9VMrfBMXuib",
+        "iss": "did:key:zDnaehTJoXS7cwzvsxTDVXay6oxY8UnpAF5K8f9VMrfBMXuib",
+        "client_id": "did:key:zDnaehTJoXS7cwzvsxTDVXay6oxY8UnpAF5K8f9VMrfBMXuib",
+        "aud": [
+          "https://as.example"
+        ],
+        "iat": 1790000000,
+        "exp": 1790000300,
+        "jti": "7f6c3e2a-1b9d-4c47-9d8e-2f0a5b6c7d8e"
+      }
+    },
+    {
+      "name": "eddsa-did-key",
+      "publicJwk": {
+        "crv": "Ed25519",
+        "x": "ZTTveAK6nZDAz42gF2IlpdCkjOfZ_80ZPJ2pJjwd8AY",
+        "kty": "OKP"
+      },
+      "jwt": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ejZNa21HTDNFVnBBSzdpY2R4Z3FHc0h5eDU5cDdoOTF5ZGpSNjdaS01Bd2lXemdNI3o2TWttR0wzRVZwQUs3aWNkeGdxR3NIeXg1OXA3aDkxeWRqUjY3WktNQXdpV3pnTSJ9.eyJzdWIiOiJkaWQ6a2V5Ono2TWttR0wzRVZwQUs3aWNkeGdxR3NIeXg1OXA3aDkxeWRqUjY3WktNQXdpV3pnTSIsImlzcyI6ImRpZDprZXk6ejZNa21HTDNFVnBBSzdpY2R4Z3FHc0h5eDU5cDdoOTF5ZGpSNjdaS01Bd2lXemdNIiwiY2xpZW50X2lkIjoiZGlkOmtleTp6Nk1rbUdMM0VWcEFLN2ljZHhncUdzSHl4NTlwN2g5MXlkalI2N1pLTUF3aVd6Z00iLCJhdWQiOlsiaHR0cHM6Ly9hcy5leGFtcGxlIl0sImlhdCI6MTc5MDAwMDAwMCwiZXhwIjoxNzkwMDAwMzAwLCJqdGkiOiI3ZjZjM2UyYS0xYjlkLTRjNDctOWQ4ZS0yZjBhNWI2YzdkOGUifQ.K_OwrW9t8aaRMCBF9eOrP5HO6P8xdahbplJYPRnhvf0QOs5lufJhO0zgL2qDzRQQ17MMYUhu2DtKwyxOFKe1Cw",
+      "header": {
+        "alg": "EdDSA",
+        "typ": "JWT",
+        "kid": "did:key:z6MkmGL3EVpAK7icdxgqGsHyx59p7h91ydjR67ZKMAwiWzgM#z6MkmGL3EVpAK7icdxgqGsHyx59p7h91ydjR67ZKMAwiWzgM"
+      },
+      "claims": {
+        "sub": "did:key:z6MkmGL3EVpAK7icdxgqGsHyx59p7h91ydjR67ZKMAwiWzgM",
+        "iss": "did:key:z6MkmGL3EVpAK7icdxgqGsHyx59p7h91ydjR67ZKMAwiWzgM",
+        "client_id": "did:key:z6MkmGL3EVpAK7icdxgqGsHyx59p7h91ydjR67ZKMAwiWzgM",
+        "aud": [
+          "https://as.example"
+        ],
+        "iat": 1790000000,
+        "exp": 1790000300,
+        "jti": "7f6c3e2a-1b9d-4c47-9d8e-2f0a5b6c7d8e"
+      }
+    }
+  ]
+}

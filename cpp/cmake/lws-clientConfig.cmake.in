@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Erich Bremer and the lws-client contributors
+
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(nlohmann_json)
+set(LWS_CLIENT_WITH_CURL @LWS_WITH_CURL@)
+set(LWS_CLIENT_WITH_OPENSSL @LWS_WITH_OPENSSL@)
+if(LWS_CLIENT_WITH_CURL)
+    find_dependency(CURL)
+endif()
+if(LWS_CLIENT_WITH_OPENSSL)
+    find_dependency(OpenSSL 3.0 COMPONENTS Crypto)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/lws-client-targets.cmake")
+check_required_components(lws-client)

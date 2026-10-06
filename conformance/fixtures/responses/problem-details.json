@@ -1,0 +1,21 @@
+{
+  "description": "An RFC 9457 problem details error response; must map to the conflict error type with the problem attached.",
+  "status": 409,
+  "headers": { "content-type": "application/problem+json" },
+  "body": {
+    "type": "https://storage.example/problems/not-empty",
+    "title": "Container not empty",
+    "status": 409,
+    "detail": "Cannot delete container /alice/notes/ - container is not empty.",
+    "instance": "/alice/notes/",
+    "itemCount": 3
+  },
+  "expected": {
+    "error": "ConflictError",
+    "type": "https://storage.example/problems/not-empty",
+    "title": "Container not empty",
+    "detail": "Cannot delete container /alice/notes/ - container is not empty.",
+    "instance": "/alice/notes/",
+    "extension": { "itemCount": 3 }
+  }
+}

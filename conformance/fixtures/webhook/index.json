@@ -1,0 +1,19 @@
+{
+  "description": "RFC 9421 signed webhook deliveries. Verify each with storage-description.json as the dereferenced storage description, the given 'url' as the inbox URL, and 'now' (unix seconds) as the current time, using a 300 s max age / clock skew.",
+  "storageDescription": "storage-description.json",
+  "vectors": [
+    "p256-valid.json",
+    "ed25519-valid.json",
+    "p256-two-digests-valid.json",
+    "body-tampered.json",
+    "digest-recomputed.json",
+    "wrong-authority.json",
+    "too-old.json",
+    "from-the-future.json",
+    "missing-required-components.json",
+    "key-not-in-authentication.json",
+    "storage-mismatch.json",
+    "unknown-key.json",
+    "alg-mismatch.json"
+  ]
+}

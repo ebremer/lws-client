@@ -1,0 +1,404 @@
+@@@ install bash
+# From npm (once published)
+npm install lws-client
+
+# From source today: build a tarball and install it into your project
+git clone https://github.com/ebremer/lws-client.git
+cd lws-client/js && npm install && npm run build && npm pack
+npm install /path/to/lws-client/js/lws-client-0.1.0.tgz
+@@@ first-program
+import { LwsClient, TokenExchangeAuthenticator, SelfSignedCredentials, generateKeyPair } from "lws-client";
+
+const credentials = SelfSignedCredentials.didKey(await generateKeyPair("ES256"));
+const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });
+console.log("agent:  ", credentials.agent);
+
+const storage = await client.discoverStorage("http://localhost:8787/root/");
+console.log("storage:", storage.id, " root:", storage.storageRoot());
+
+const folder = await client.createContainer(storage.storageRoot(), { slug: "hello-world" });
+const file = await client.createText(folder.location, "Hello, LWS!", { slug: "hello.txt" });
+console.log("created:", file.location);
+
+const resource = await client.read(file.location);
+console.log(await resource.text(), ` (etag ${resource.etag}, parent ${resource.parent})`);
+@@@ hero
+const credentials = SelfSignedCredentials.didKey(await generateKeyPair());
+const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });
+
+const storage = await client.discoverStorage("https://storage.example/root/");
+const todo = await client.createJson(storage.storageRoot(), { task: "write docs", done: false });
+await client.patch(todo.location, new JsonPatch().replace("/done", true));
+
+for await (const item of client.listContainer(storage.storageRoot())) {
+  console.log(item.id, item.format);
+}
+@@@ client-config
+const credentials = SelfSignedCredentials.didKey(await generateKeyPair());
+const client = new LwsClient({
+  authenticator: new TokenExchangeAuthenticator(credentials),
+  userAgent: "my-app/1.0",               // default "lws-client-js/0.1.0" (not sent by browsers)
+  headers: { "Accept-Language": "en" },  // added to every request
+  timeoutMs: 20_000,
+  // fetch: myFetch,                     // inject your own fetch (proxies, tests, instrumentation)
+});
+
+// Every operation also takes { headers, signal } for per-call headers and cancellation.
+const controller = new AbortController();
+const page = await client.readContainer(container, { signal: controller.signal });
+console.log(page.totalItems);
+@@@ discover
+// Any URL inside the storage is a valid starting point.
+const storage = await client.discoverStorage("https://storage.example/root/notes/");
+console.log(storage.id, storage.types);
+
+const root = storage.storageRoot();                    // the required StorageRoot service
+const notifications = storage.notificationService();   // Service | undefined
+console.log(root, notifications?.serviceEndpoint, notifications?.subscriptionTypes);
+
+for (const service of storage.services()) {
+  console.log(service.types, "→", service.serviceEndpoint);
+}
+const patchSupport = storage.capability("https://feature.example/PatchSupport");
+console.log(patchSupport?.property("format"));
+
+// When you already know the storage URL:
+const same = await client.getStorageDescription(storage.id);
+console.log(same.id);
+@@@ create
+// A container (POST with Link: <https://www.w3.org/ns/lws#Container>; rel="type")
+const notes = (await client.createContainer(container, { slug: "notes" })).location;
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+const list = await client.createText(notes, "milk\neggs\n", { slug: "shopping.txt" });
+const todo = await client.createJson(notes, { task: "write docs" }, {
+  slug: "todo.json",
+  types: ["https://schema.org/Action"],                                    // extra rel="type"
+  links: [{ href: "https://example.org/shapes/todo", rel: "describedby" }], // user metadata
+});
+const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);                      // your image bytes
+const photo = await client.create(notes, png, "image/png", { slug: "photo.png" });
+
+console.log(list.location, todo.metadata.linkset, photo.metadata.parent);
+@@@ read
+const resource = await client.read(url);
+console.log(resource.status, resource.contentType, resource.etag, resource.lastModified);
+console.log(resource.types, resource.isDataResource(), resource.parent, resource.linkset);
+
+const text = await resource.text();     // the body is buffered once and can be re-read
+const bytes = await resource.bytes();
+console.log(text.length, bytes.byteLength);
+
+const data = await (await client.read(url, { accept: "application/json" })).json();
+console.log(data);
+
+// Headers and links only
+const meta = await client.head(url);
+console.log(meta.contentLength, meta.allow, meta.acceptPatch, meta.links("describedby"));
+@@@ stream
+const resource = await client.read(url);
+const reader = resource.body!.getReader();   // ReadableStream<Uint8Array>, nothing buffered
+let received = 0;
+for (;;) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  received += value.byteLength;
+}
+console.log(`received ${received} bytes`);
+
+// Upload a stream: the client obtains a token first (HEAD) because a stream cannot be replayed.
+const upload = new Blob(["large file contents"]).stream();
+await client.create(container, upload, "application/octet-stream", { slug: "big.bin" });
+@@@ conditional
+const first = await client.read(url);
+
+// Revalidate: 304 Not Modified is a normal result, not an error.
+const again = await client.read(url, { ifNoneMatch: first.etag! });
+if (again.notModified) console.log("cached copy is still fresh");
+
+// Optimistic concurrency: only overwrite the version you read.
+try {
+  await client.update(url, "new content", "text/plain", { ifMatch: first.etag! });
+} catch (e) {
+  if (!(e instanceof PreconditionFailedError)) throw e;
+  // Someone else changed it (412): re-read, merge, retry.
+}
+@@@ range
+const start = await client.read(url, { range: { start: 0, end: 1023 } });   // first KiB
+console.log(start.partial, start.contentRange);                            // true "bytes 0-1023/52311"
+
+const tail = await client.read(url, { range: { suffix: 512 } });           // last 512 bytes
+const rest = await client.read(url, { range: "bytes=1024-" });             // raw Range value
+console.log((await tail.bytes()).byteLength, rest.status);
+@@@ update
+// PUT replaces the whole representation.
+await client.update(url, JSON.stringify({ name: "Alice", age: 31 }), "application/json", { ifMatch: etag });
+await client.updateJson(url, { name: "Alice", age: 32 });
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+await client.update(url, "v2", "text/plain", {
+  setLinkset: true,
+  links: [{ href: "https://creativecommons.org/licenses/by/4.0/", rel: "license" }],
+});
+@@@ patch
+// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+await client.patch(
+  url,
+  new JsonPatch().test("/version", 3).replace("/status", "done").add("/tags/-", "urgent").remove("/draft"),
+  { ifMatch: etag },
+);
+
+// Other formats only when the server advertises them in Accept-Patch.
+const meta = await client.head(url);
+if (meta.acceptPatch.includes("application/sparql-update")) {
+  await client.patch(url, {
+    body: 'INSERT DATA { <#me> <http://xmlns.com/foaf/0.1/name> "Alice" }',
+    contentType: "application/sparql-update",
+  });
+}
+@@@ delete
+await client.delete(url, { ifMatch: etag });
+
+try {
+  await client.delete(container);                       // 409 Conflict when not empty
+} catch (e) {
+  if (!(e instanceof ConflictError)) throw e;
+  await client.delete(container, { recursive: true });  // Depth: infinity
+}
+@@@ read-container
+const page = await client.readContainer(container);
+console.log(page.id, page.totalItems, page.metadata.etag);
+for (const item of page.items) {
+  console.log(item.id, item.isContainer() ? "container" : item.format, item.size, item.modified);
+}
+if (page.next) {
+  const nextPage = await client.readContainer(page.next);   // opaque, server-issued URL
+  console.log(nextPage.items.length);
+}
+@@@ list-container
+// Lazily follows rel="next": pages are fetched only as you iterate.
+for await (const item of client.listContainer(container)) {
+  if (item.hasType("https://schema.org/Person")) console.log(item.id);
+}
+
+// Collect everything
+const ids: string[] = [];
+for await (const item of client.listContainer(container)) ids.push(item.id);
+@@@ read-linkset
+const doc = await client.readLinkset(url);       // HEAD for rel="linkset", then GET
+console.log(doc.url, doc.etag, doc.allow, doc.acceptPatch);
+
+for (const link of doc.linkset.links()) console.log(link.rel, "→", link.href);
+const shapes = doc.linkset.targets("describedby").map((target) => target.href);
+console.log(shapes);
+@@@ patch-linkset
+const doc = await client.readLinkset(url);
+const rel = "https://example.org/rel/reviewer";           // extension relation types are URIs
+const reviewer = { href: "https://id.example/bob" };
+
+// JsonPointer escapes "/" in the relation URI as "~1".
+// "add" on an existing member replaces it, so append with "/-" when the relation exists.
+const patch = doc.linkset.targets(rel).length > 0
+  ? new JsonPatch().add(JsonPointer.from(["linkset", 0, rel, "-"]), reviewer)
+  : new JsonPatch().add(JsonPointer.from(["linkset", 0, rel]), [reviewer]);
+
+await client.patchLinkset(doc.url, patch, { ifMatch: doc.etag! });
+@@@ put-linkset
+const doc = await client.readLinkset(url);
+if (doc.allow.includes("PUT")) {
+  const linkset = doc.linkset.clone();
+  linkset.add(url, "license", "https://creativecommons.org/licenses/by/4.0/");
+  await client.updateLinkset(doc.url, linkset, { ifMatch: doc.etag! });
+}
+@@@ auth-didkey
+// A did:key agent: the identifier is derived from the public key, nothing to host.
+const keys = await generateKeyPair("ES256");          // or "EdDSA" (Ed25519)
+const credentials = SelfSignedCredentials.didKey(keys);
+console.log(credentials.agent);                        // did:key:zDn…
+
+const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });
+await client.head(url);   // 401 → AS metadata → token exchange → retried with a Bearer token
+@@@ auth-cid
+// An HTTPS agent publishes a controlled identifier document listing its key…
+const keys = await generateKeyPair("ES256");
+const agent = "https://bot.example/agent";
+const cid = controlledIdentifierDocument(agent, keys.publicJwk, "key-1");
+console.log(JSON.stringify(cid));   // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key.
+const credentials = SelfSignedCredentials.forAgent(agent, keys, "key-1");
+const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });
+@@@ keys
+// Keys are non-extractable by default; opt in to persist them.
+const keys = await generateKeyPair("ES256", { extractable: true });
+const privateJwk = await exportPrivateJwk(keys);       // store securely
+const restored = await importKeyPair(privateJwk);
+const credentials = SelfSignedCredentials.didKey(restored);
+
+// did:key <-> JWK
+const { did, kid } = didKeyFromJwk(keys.publicJwk);
+const publicJwk = jwkFromDidKey(did);
+console.log(credentials.agent === did, kid, publicJwk.crv);
+@@@ auth-openid
+// The ID token from your OpenID Connect login (any OIDC library). Pass a function instead of a
+// string to supply a fresh token whenever a new access token is needed.
+const credentials = new OpenIdCredentials(idToken);
+const client = new LwsClient({
+  authenticator: new TokenExchangeAuthenticator(credentials, {
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    authorizationServerFilter: (asUri) => asUri === "https://auth.example",
+  }),
+});
+@@@ auth-saml
+// A signed SAML 2.0 assertion from your identity provider (raw XML is base64url-encoded for you).
+const credentials = new SamlCredentials(samlAssertionXml);
+const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });
+@@@ auth-bearer
+// An access token you obtained yourself; it is only sent to URLs inside the realm.
+const client = new LwsClient({
+  authenticator: new BearerTokenAuthenticator(accessToken, { realm: "https://storage.example/" }),
+});
+@@@ auth-options
+const trusted = new Set(["https://auth.example"]);
+const authenticator = new TokenExchangeAuthenticator(credentials, {
+  allowInsecureHttp: false,                          // plain-http AS only on loopback (default)
+  authorizationServerFilter: (asUri) => trusted.has(asUri),
+  refreshSkewSeconds: 30,                            // refresh 30 s before expiry (default)
+});
+const client = new LwsClient({ authenticator });
+@@@ custom-authenticator
+// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator interface.
+class ApiKeyAuthenticator implements Authenticator {
+  readonly #key: string;
+  constructor(key: string) {
+    this.#key = key;
+  }
+  authorize(request: AuthRequest): void {
+    if (new URL(request.url).origin === "https://storage.example") {
+      request.headers.set("x-api-key", this.#key);
+    }
+  }
+  handleChallenge(): boolean {
+    return false;   // nothing to refresh: surface the 401 as UnauthorizedError
+  }
+}
+const client = new LwsClient({ authenticator: new ApiKeyAuthenticator(apiKey) });
+@@@ subscribe
+const service = storage.notificationService();
+if (!service?.supportsWebhooks()) throw new Error("this storage has no webhook notifications");
+
+const subscription = await client.subscribe(service, {
+  topics: [container],                            // a container topic is recursive
+  inbox: "https://my-app.example/hooks/lws",
+  expires: new Date(Date.now() + 24 * 3600_000),
+});
+console.log(subscription.subscription, subscription.expires);
+
+for await (const s of client.listSubscriptions(service)) console.log(s.id);
+const current = await client.getSubscription(subscription.subscription);
+console.log(current.type);
+await client.unsubscribe(subscription.subscription);
+@@@ webhook
+import { createServer } from "node:http";
+import { LwsClient, WebhookVerifier } from "lws-client";
+import { createWebhookHandler } from "lws-client/node";
+
+const client = new LwsClient();
+const verifier = new WebhookVerifier({
+  resolveStorageDescription: (id) => client.getStorageDescription(id),
+  trustedStorages: ["https://storage.example/"],   // only this storage's signatures
+});
+
+const handler = createWebhookHandler(
+  verifier,
+  (notification) => {
+    for (const a of notification.activities) console.log(a.types, a.object.id, a.published);
+  },
+  { inboxUrl: "https://my-app.example/hooks/lws", onError: (e) => console.warn("rejected", e) },
+);
+createServer((req, res) => void handler(req, res)).listen(8080);
+
+// Fetch-style runtimes (Deno, Bun, workers):
+//   const { notification } = await verifier.verify(request, { inboxUrl });
+@@@ access-request
+const request = new AccessRequest({
+  storage: storage.id,
+  inbox: "https://id.example/agent/inbox/",
+  access: [{
+    actions: [Action.READ, Action.CREATE],
+    assignee: "https://id.example/agent",
+    target: { type: "StorageResource", values: [container] },
+    constraints: [
+      Constraints.purpose("https://purpose.example/collaboration"),
+      Constraints.notAfter(new Date("2026-12-31T23:59:59Z")),
+    ],
+  }],
+});
+const requests = storage.accessRequestService()!;
+const requestUrl = await client.requestAccess(requests, request);
+
+for await (const r of client.listAccessRequests(requests)) console.log(r.id);
+const pending = await client.getAccessRequest(requestUrl);
+console.log(pending.access[0]?.actions);
+await client.cancelAccessRequest(requestUrl);
+@@@ access-grant
+// A storage controller approves a request by recording a grant with the same policy model.
+const pending = await client.getAccessRequest(requestUrl);
+const grants = storage.accessGrantService()!;
+const grantUrl = await client.grantAccess(grants, new AccessGrant({
+  storage: pending.storage,
+  access: [...pending.access],
+}));
+
+for await (const g of client.listAccessGrants(grants)) console.log(g.id);
+await client.revokeAccessGrant(grantUrl);   // the server withdraws the underlying permissions
+@@@ list-types
+const index = storage.typeIndexService();
+if (index) {
+  for await (const type of client.listTypes(index)) console.log(type);  // e.g. https://schema.org/Person
+}
+@@@ search
+const search = storage.typeSearchService()!;
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+const query = new TypeQuery()
+  .anyOf("https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person")
+  .allOf("https://www.w3.org/ns/lws#DataResource");
+
+const firstPage = await client.searchTypes(search, query);   // HTTP QUERY
+console.log(firstPage.totalItems, firstPage.next);
+
+for await (const hit of client.searchAll(search, TypeQuery.allOf("https://schema.org/Event"))) {
+  console.log(hit.id, hit.types);
+}
+
+// Indexed descriptive relations use the same grammar.
+const shaped = new TypeQuery().relation("describedby").allOf("https://example.org/shapes/person");
+console.log((await client.searchTypes(search, shaped)).items.length);
+
+console.log(await client.acceptedQueryFormats(search));      // ["application/lws-query+json", …]
+@@@ errors
+try {
+  await client.read(url);
+} catch (e) {
+  if (e instanceof NotFoundError) {
+    console.log("no such resource");
+  } else if (e instanceof UnauthorizedError) {
+    console.log("not authenticated", e.challenges);
+  } else if (e instanceof HttpError) {
+    console.log(e.status, e.problem?.title ?? e.message);
+  } else if (e instanceof AuthenticationError) {
+    console.log("token exchange failed:", e.error, e.errorDescription);
+  } else {
+    throw e;
+  }
+}
+@@@ problem
+try {
+  await client.delete(container);
+} catch (e) {
+  if (e instanceof ConflictError && e.problem) {
+    const { type, title, detail, instance, extensions } = e.problem;
+    console.log(type, title, detail, instance, extensions["itemCount"]);
+  }
+}

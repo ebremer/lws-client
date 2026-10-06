@@ -1,0 +1,42 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MIT -->
+<!--
+  Minimal browser usage. Serve the js/ folder (e.g. `npx http-server js -p 8080`)
+  and open http://localhost:8080/examples/browser.html. The storage must allow
+  CORS for this origin. In a real app, bundle `lws-client` or import it from a CDN.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>lws-client in the browser</title>
+  </head>
+  <body>
+    <label>Container URL <input id="url" size="60" value="http://localhost:8787/root/" /></label>
+    <label>Access token <input id="token" size="40" placeholder="optional bearer token" /></label>
+    <button id="list">List</button>
+    <ul id="items"></ul>
+    <script type="module">
+      import { LwsClient, BearerTokenAuthenticator, HttpError } from "../dist/index.js";
+
+      document.querySelector("#list").addEventListener("click", async () => {
+        const url = document.querySelector("#url").value;
+        const token = document.querySelector("#token").value.trim();
+        const client = new LwsClient(token ? { authenticator: new BearerTokenAuthenticator(token, { realm: new URL(url).origin + "/" }) } : {});
+        const list = document.querySelector("#items");
+        list.replaceChildren();
+        try {
+          for await (const item of client.listContainer(url)) {
+            const li = document.createElement("li");
+            li.textContent = `${item.isContainer() ? "📁" : "📄"} ${item.id}`;
+            list.append(li);
+          }
+        } catch (e) {
+          const li = document.createElement("li");
+          li.textContent = e instanceof HttpError ? `${e.status}: ${e.message}` : String(e);
+          list.append(li);
+        }
+      });
+    </script>
+  </body>
+</html>

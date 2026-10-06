@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authentication · LWS Client</title>
+  <meta name="description" content="Configure LWS authentication: the automatic 401 → OAuth 2.0 token exchange flow, OpenID Connect, SAML 2.0, self-signed did:key and controlled-identifier agents, bearer tokens and custom authenticators.">
+  <meta property="og:title" content="Authentication · LWS Client">
+  <meta property="og:description" content="Configure LWS authentication: the automatic 401 → OAuth 2.0 token exchange flow, OpenID Connect, SAML 2.0, self-signed did:key and controlled-identifier agents, bearer tokens and custom authenticators.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="./assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="./getting-started.html">Get started</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./authentication.html" aria-current="page">Auth</a>
+        <a href="./api-reference.html">API</a>
+        <a href="./spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="./index.html">Overview</a></li><li><a href="./getting-started.html">Getting started</a></li><li><a href="./api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1>Authentication</h1>
+<p class="lead">LWS separates identity from authorization. Your <em>credential provider</em> proves who you are.
+The storage's authorization server exchanges that proof for a short-lived access token. The clients run
+that exchange automatically whenever a storage answers <code>401</code>.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="model">The pieces</h2>
+<div class="table-wrap"><table><thead><tr><th>Concept</th><th>What it is</th><th>Provided as</th></tr></thead><tbody>
+<tr><td>Authenticator</td><td>Pluggable hook: adds credentials before a request, reacts to a 401</td><td><code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, or your own</td></tr>
+<tr><td>Credential provider</td><td>Produces an authentication credential (subject token) for an authorization server</td><td><code>OpenIdCredentials</code>, <code>SamlCredentials</code>, <code>SelfSignedCredentials</code></td></tr>
+<tr><td>Authorization server (AS)</td><td>Issues access tokens; metadata at <code>/.well-known/lws-configuration</code></td><td>Named by the storage's <code>WWW-Authenticate</code> challenge</td></tr>
+<tr><td>Access token</td><td>RFC 9068 JWT with <code>aud</code> = the challenge's realm, valid for minutes</td><td>Cached and reused by the authenticator</td></tr>
+</tbody></table></div>
+
+<h2 id="flow">What happens on a 401</h2>
+<p>See the <a href="concepts.html#auth">sequence diagram</a>. With a <code>TokenExchangeAuthenticator</code> configured, each client:</p>
+<ol class="steps">
+  <li>Parses <code>WWW-Authenticate: Bearer as_uri="…", realm="…"</code>. Without such a challenge, the
+  <code>401</code> surfaces as an <em>unauthorized</em> error that carries the parsed challenges.</li>
+  <li><strong>Checks the realm.</strong> The request URL must have the same scheme, host and port, and its path must equal the
+  realm's path or sit below it at a <code>/</code> boundary. Otherwise it raises an authentication error and sends nothing.</li>
+  <li><strong>Checks transport security.</strong> The AS and its token endpoint must use HTTPS unless they are on loopback
+  (or <code>allowInsecureHttp</code> is set for testing). It also applies your optional <code>authorizationServerFilter</code>.</li>
+  <li>Fetches the AS metadata (RFC 8414 path insertion) and checks that <code>issuer</code> equals <code>as_uri</code>, and that
+  <code>subject_token_types_supported</code> (if present) accepts your credential type.</li>
+  <li>Posts an RFC 8693 token exchange with <code>resource</code> = realm, <code>subject_token</code> and
+  <code>subject_token_type</code>. OAuth errors become authentication errors carrying <code>error</code> and
+  <code>error_description</code>.</li>
+  <li>Caches the access token per (issuer, realm) until 30 s before it expires. Expiry comes from
+  <code>expires_in</code>, else the JWT's <code>exp</code>, else 300 s. It then retries the original request once.</li>
+</ol>
+<p>Later requests inside the realm send the cached token straight away. A <code>401</code> with a cached token
+discards it and runs the exchange once more. Concurrent requests share a single in-flight exchange.
+Tokens are never sent to URLs outside their realm, including across redirects.</p>
+
+<h2 id="self-signed">Self-signed identities</h2>
+<p>Bots, server-side jobs and command-line tools usually hold their own key pair. With the self-signed
+suite (<code>lws10-authn-ssi-cid</code>), the agent signs a short-lived JWT in which
+<code>sub = iss = client_id = agent URI</code> and <code>aud</code> is the authorization server. The clients support
+ES256 (P-256) and EdDSA (Ed25519). Signatures use the JOSE raw <code>r‖s</code> encoding, and each JWT carries a
+<code>kid</code> and a random <code>jti</code>.</p>
+
+<h3 id="did-key">did:key agents</h3>
+<p>A <code>did:key</code> identifier is derived from the public key itself, so there is nothing to host. This is the
+quickest way to get an identity. The trade-off is that you cannot rotate the key without changing the identity.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// A did:key agent: the identifier is derived from the public key, nothing to host.
+KeyPair keys = KeyPairs.generateP256();                 // or KeyPairs.generateEd25519()
+SelfSignedCredentials credentials = SelfSignedCredentials.didKey(keys);
+System.out.println(credentials.agent());                 // did:key:zDn…
+
+LwsClient client = LwsClient.builder().authenticator(TokenExchangeAuthenticator.of(credentials)).build();
+client.head(url);   // 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// A did:key agent: the identifier is derived from the public key, nothing to host.
+const keys = await generateKeyPair(&quot;ES256&quot;);          // or &quot;EdDSA&quot; (Ed25519)
+const credentials = SelfSignedCredentials.didKey(keys);
+console.log(credentials.agent);                        // did:key:zDn…
+
+const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });
+await client.head(url);   // 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// A did:key agent: the identifier is derived from the public key, nothing to host.
+auto key = lws::PrivateKey::generate(lws::KeyAlgorithm::ES256);   // or KeyAlgorithm::EdDSA
+auto credentials = lws::SelfSignedCredentials::did_key(key);
+std::cout &lt;&lt; credentials-&gt;agent_id() &lt;&lt; '\n';                       // did:key:zDn…
+
+lws::ClientOptions options;
+options.authenticator = std::make_shared&lt;lws::TokenExchangeAuthenticator&gt;(credentials);
+lws::Client client(options);
+client.head(url);   // 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// A did:key agent: the identifier is derived from the public key, nothing to host.
+let key = SigningKey::generate_p256()?;            // or SigningKey::generate_ed25519()?
+let credentials = SelfSignedCredentials::did_key(key);
+println!(&quot;{}&quot;, credentials.agent());                // did:key:zDn…
+
+let client = Client::builder()
+    .authenticator(TokenExchangeAuthenticator::new(credentials))
+    .build()?;
+client.head(url).await?;   // 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// A did:key agent: the identifier is derived from the public key, nothing to host.
+key, err := lws.GenerateP256Key() // or lws.GenerateEd25519Key()
+if err != nil {
+	return err
+}
+credentials, err := lws.NewDIDKeyCredentials(key, nil)
+if err != nil {
+	return err
+}
+fmt.Println(credentials.Agent()) // did:key:zDn…
+
+client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)))
+_, err = client.Head(ctx, url) // 401 → AS metadata → token exchange → retried with a Bearer token
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># A did:key agent: the identifier is derived from the public key, nothing to host.
+key = SigningKey.generate(&quot;ES256&quot;)             # or &quot;EdDSA&quot; (Ed25519)
+credentials = SelfSignedCredentials.did_key(key)
+print(credentials.agent)                        # did:key:zDn…
+
+client = LwsClient(authenticator=TokenExchangeAuthenticator(credentials))
+client.head(url)   # 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
+</div>
+
+<h3 id="cid">HTTPS agents with a controlled identifier document</h3>
+<p>To keep a stable identity across key rotations, give the agent an HTTPS URI and publish a
+<a href="https://www.w3.org/TR/cid-1.0/">controlled identifier document</a> there. The authorization server
+dereferences the agent URI and finds the verification key by the JWT's <code>kid</code>.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// An HTTPS agent publishes a controlled identifier document listing its key…
+KeyPair keys = KeyPairs.generateP256();
+URI agent = URI.create(&quot;https://bot.example/agent&quot;);
+ObjectNode cid = ControlledIdentifiers.document(agent, keys.getPublic(), &quot;key-1&quot;);
+System.out.println(cid.toPrettyString());          // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key.
+SelfSignedCredentials credentials = SelfSignedCredentials.forAgent(agent, keys.getPrivate(), &quot;key-1&quot;);
+LwsClient client = LwsClient.builder().authenticator(TokenExchangeAuthenticator.of(credentials)).build();</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// An HTTPS agent publishes a controlled identifier document listing its key…
+const keys = await generateKeyPair(&quot;ES256&quot;);
+const agent = &quot;https://bot.example/agent&quot;;
+const cid = controlledIdentifierDocument(agent, keys.publicJwk, &quot;key-1&quot;);
+console.log(JSON.stringify(cid));   // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key.
+const credentials = SelfSignedCredentials.forAgent(agent, keys, &quot;key-1&quot;);
+const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// An HTTPS agent publishes a controlled identifier document listing its key…
+auto key = lws::PrivateKey::generate(lws::KeyAlgorithm::ES256);
+const std::string agent = &quot;https://bot.example/agent&quot;;
+nlohmann::json cid = lws::controlled_identifier_document(agent, key.public_jwk(), &quot;key-1&quot;);
+std::cout &lt;&lt; cid.dump(2) &lt;&lt; '\n';    // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key.
+auto credentials = lws::SelfSignedCredentials::for_agent(agent, key, &quot;key-1&quot;);
+lws::ClientOptions options;
+options.authenticator = std::make_shared&lt;lws::TokenExchangeAuthenticator&gt;(credentials);
+lws::Client client(options);</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// An HTTPS agent publishes a controlled identifier document listing its key…
+let key = SigningKey::generate_p256()?;
+let agent = &quot;https://bot.example/agent&quot;;
+let cid = controlled_identifier_document(agent, &amp;key.public_jwk(), &quot;key-1&quot;);
+println!(&quot;{}&quot;, serde_json::to_string_pretty(&amp;cid)?);   // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key.
+let credentials = SelfSignedCredentials::for_agent(agent, key, &quot;key-1&quot;);
+let client = Client::builder()
+    .authenticator(TokenExchangeAuthenticator::new(credentials))
+    .build()?;</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// An HTTPS agent publishes a controlled identifier document listing its key…
+key, err := lws.GenerateP256Key()
+if err != nil {
+	return err
+}
+jwk, err := lws.JWKFromPublicKey(key.Public())
+if err != nil {
+	return err
+}
+agent := &quot;https://bot.example/agent&quot;
+cid, err := json.Marshal(lws.NewControlledIdentifierDocument(agent, *jwk, &quot;key-1&quot;))
+if err != nil {
+	return err
+}
+fmt.Println(string(cid)) // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key.
+credentials, err := lws.NewSelfSignedCredentials(agent, key, &quot;key-1&quot;, nil)
+if err != nil {
+	return err
+}
+client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)))
+_, err = client.Head(ctx, url)
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">import json
+
+# An HTTPS agent publishes a controlled identifier document listing its key…
+key = SigningKey.generate(&quot;ES256&quot;)
+agent = &quot;https://bot.example/agent&quot;
+cid = controlled_identifier_document(agent, key.public_jwk(), &quot;key-1&quot;)
+print(json.dumps(cid))     # serve this at https://bot.example/agent
+
+# …and signs credentials with the matching private key.
+credentials = SelfSignedCredentials.for_agent(agent, key, &quot;key-1&quot;)
+client = LwsClient(authenticator=TokenExchangeAuthenticator(credentials))</code></pre>
+</div>
+<pre data-lang="json" data-title="https://bot.example/agent"><code class="language-json">{
+  &quot;@context&quot;: [&quot;https://www.w3.org/ns/cid/v1&quot;],
+  &quot;id&quot;: &quot;https://bot.example/agent&quot;,
+  &quot;authentication&quot;: [{
+    &quot;id&quot;: &quot;https://bot.example/agent#key-1&quot;,
+    &quot;type&quot;: &quot;JsonWebKey&quot;,
+    &quot;controller&quot;: &quot;https://bot.example/agent&quot;,
+    &quot;publicKeyJwk&quot;: { &quot;kty&quot;: &quot;EC&quot;, &quot;crv&quot;: &quot;P-256&quot;, &quot;x&quot;: &quot;…&quot;, &quot;y&quot;: &quot;…&quot;, &quot;kid&quot;: &quot;key-1&quot;, &quot;alg&quot;: &quot;ES256&quot; }
+  }]
+}</code></pre>
+
+<h3 id="keys">Generating, persisting and importing keys</h3>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">KeyPair keys = KeyPairs.generateP256();
+ObjectNode privateJwk = Jwk.fromKeyPair(keys);          // includes &quot;d&quot;: store securely
+KeyPair restored = new KeyPair(Jwk.toPublicKey(privateJwk), Jwk.toPrivateKey(privateJwk));
+SelfSignedCredentials credentials = SelfSignedCredentials.didKey(restored);
+
+// did:key &lt;-&gt; public key
+String did = DidKey.fromPublicKey(keys.getPublic());   // did:key:zDn…
+String kid = DidKey.keyId(did);                         // did:key:zDn…#zDn…
+PublicKey fromDid = DidKey.toPublicKey(did);
+System.out.println(credentials.agent() + &quot; &quot; + kid + &quot; &quot; + fromDid.getAlgorithm());</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// Keys are non-extractable by default; opt in to persist them.
+const keys = await generateKeyPair(&quot;ES256&quot;, { extractable: true });
+const privateJwk = await exportPrivateJwk(keys);       // store securely
+const restored = await importKeyPair(privateJwk);
+const credentials = SelfSignedCredentials.didKey(restored);
+
+// did:key &lt;-&gt; JWK
+const { did, kid } = didKeyFromJwk(keys.publicJwk);
+const publicJwk = jwkFromDidKey(did);
+console.log(credentials.agent === did, kid, publicJwk.crv);</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">auto key = lws::PrivateKey::generate(lws::KeyAlgorithm::ES256);
+nlohmann::json private_jwk = key.private_jwk();          // includes &quot;d&quot;: store securely
+std::string pem = key.to_pem();                          // or PKCS#8 PEM
+auto restored = lws::PrivateKey::from_jwk(private_jwk);  // or lws::PrivateKey::from_pem(pem)
+auto credentials = lws::SelfSignedCredentials::did_key(restored);
+
+// did:key from a public JWK
+lws::DidKey did = lws::did_key_from_public_jwk(key.public_jwk());
+std::cout &lt;&lt; (credentials-&gt;agent_id() == did.did) &lt;&lt; ' ' &lt;&lt; did.kid &lt;&lt; '\n';</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let key = SigningKey::generate_p256()?;
+let private_jwk = key.to_jwk().to_json();             // includes &quot;d&quot;: store securely
+let restored = SigningKey::from_jwk(&amp;Jwk::from_json(&amp;private_jwk)?)?;
+let credentials = SelfSignedCredentials::did_key(restored);
+
+// did:key &lt;-&gt; public key
+let did = key.did_key();                               // DidKey { did, kid }
+let public = VerifyingKey::from_did_key(&amp;did.did)?;
+println!(&quot;{} {} {:?}&quot;, credentials.agent() == did.did, did.kid, public.algorithm());</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">key, err := lws.GenerateP256Key()
+if err != nil {
+	return err
+}
+private, err := lws.JWKFromPrivateKey(key) // includes &quot;d&quot;: store securely
+if err != nil {
+	return err
+}
+data, err := json.Marshal(private)
+if err != nil {
+	return err
+}
+parsed, err := lws.ParseJWK(data)
+if err != nil {
+	return err
+}
+restored, err := parsed.PrivateKey()
+if err != nil {
+	return err
+}
+credentials, err := lws.NewDIDKeyCredentials(restored, nil)
+if err != nil {
+	return err
+}
+
+// did:key &lt;-&gt; public key
+did, err := lws.DIDKeyFromPublicKey(key.Public())
+if err != nil {
+	return err
+}
+pub, err := lws.PublicKeyFromDIDKey(did)
+if err != nil {
+	return err
+}
+fmt.Println(credentials.Agent() == did, credentials.KeyID(), pub)</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">key = SigningKey.generate(&quot;ES256&quot;)
+private_jwk = key.private_jwk()                # store securely (or key.to_pem())
+restored = SigningKey.from_jwk(private_jwk)
+credentials = SelfSignedCredentials.did_key(restored)
+
+# did:key &lt;-&gt; JWK
+did = restored.did_key()                       # did:key:z…
+kid = did_key_kid(did)                         # did:key:z…#z…
+public_jwk = did_key_to_jwk(did)
+print(credentials.agent == did, kid, public_jwk[&quot;crv&quot;])</code></pre>
+</div>
+<div class="callout warn"><p><strong>Protect private keys</strong> A private JWK or PEM is a long-lived credential. Keep it in a secret store, never in a repository. JavaScript keys are non-extractable unless you ask otherwise.</p></div>
+
+<h2 id="openid">OpenID Connect</h2>
+<p>For people signing in through an OpenID provider, use any OIDC library for the login and hand the
+<strong>ID token</strong> to <code>OpenIdCredentials</code>. It is sent as
+<code>urn:ietf:params:oauth:token-type:id_token</code>. Pass a callback instead of a string to supply a fresh
+token each time one is needed. For verifiers to trust the provider, the user's agent URI must resolve to a
+controlled identifier document listing it:</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;@context&quot;: [&quot;https://www.w3.org/ns/cid/v1&quot;],
+  &quot;id&quot;: &quot;https://id.example/alice&quot;,
+  &quot;service&quot;: [{ &quot;type&quot;: &quot;https://www.w3.org/ns/lws#OpenIdProvider&quot;, &quot;serviceEndpoint&quot;: &quot;https://openid.example&quot; }]
+}</code></pre>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// The ID token from your OpenID Connect login (any OIDC library). OpenIdCredentials.from(supplier)
+// supplies a fresh token whenever a new access token is needed.
+OpenIdCredentials credentials = OpenIdCredentials.of(idToken);
+LwsClient client = LwsClient.builder()
+        .authenticator(TokenExchangeAuthenticator.builder(credentials)
+                // ID tokens are not always audience-restricted: only send them to servers you trust.
+                .authorizationServerFilter((asUri, realm) -&gt; asUri.equals(URI.create(&quot;https://auth.example&quot;)))
+                .build())
+        .build();</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// The ID token from your OpenID Connect login (any OIDC library). Pass a function instead of a
+// string to supply a fresh token whenever a new access token is needed.
+const credentials = new OpenIdCredentials(idToken);
+const client = new LwsClient({
+  authenticator: new TokenExchangeAuthenticator(credentials, {
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    authorizationServerFilter: (asUri) =&gt; asUri === &quot;https://auth.example&quot;,
+  }),
+});</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// The ID token from your OpenID Connect login (any OIDC library). Construct OpenIdCredentials
+// with a supplier instead to provide a fresh token whenever a new access token is needed.
+lws::TokenExchangeOptions exchange;
+// ID tokens are not always audience-restricted: only send them to servers you trust.
+exchange.authorization_server_filter = [](std::string_view as_uri, std::string_view) {
+    return as_uri == &quot;https://auth.example&quot;;
+};
+lws::ClientOptions options;
+options.authenticator = std::make_shared&lt;lws::TokenExchangeAuthenticator&gt;(
+    std::make_shared&lt;lws::OpenIdCredentials&gt;(id_token), exchange);
+lws::Client client(options);</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// The ID token from your OpenID Connect login (any OIDC library). OpenIdCredentials::from_fn
+// supplies a fresh token whenever a new access token is needed.
+let credentials = OpenIdCredentials::new(id_token);
+let authenticator = TokenExchangeAuthenticator::builder(credentials)
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    .authorization_server_filter(|as_uri, _realm| as_uri.host_str() == Some(&quot;auth.example&quot;))
+    .build();
+let client = Client::builder().authenticator(authenticator).build()?;</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// The ID token from your OpenID Connect login (any OIDC library). Use
+// lws.NewOpenIDCredentialsFunc to supply a fresh token whenever one is needed.
+credentials := lws.NewOpenIDCredentials(idToken)
+client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials,
+	&amp;lws.TokenExchangeOptions{
+		// ID tokens are not always audience-restricted: only send them to servers you trust.
+		AuthorizationServerFilter: func(asURI, realm string) bool { return asURI == &quot;https://auth.example&quot; },
+	})))
+_, err := client.Head(ctx, url)
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># The ID token from your OpenID Connect login (any OIDC library). Pass a callable instead of a
+# string to supply a fresh token whenever a new access token is needed.
+credentials = OpenIdCredentials(id_token)
+client = LwsClient(
+    authenticator=TokenExchangeAuthenticator(
+        credentials,
+        # ID tokens are not always audience-restricted: only send them to servers you trust.
+        authorization_server_filter=lambda as_uri, realm: as_uri == &quot;https://auth.example&quot;,
+    )
+)</code></pre>
+</div>
+
+<h2 id="saml">SAML 2.0</h2>
+<p><code>SamlCredentials</code> sends a signed assertion as <code>urn:ietf:params:oauth:token-type:saml2</code>,
+base64url-encoded as RFC 8693 requires. Raw XML is encoded for you. Trust in SAML identity providers is
+established out of band by the authorization server.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+SamlCredentials credentials = SamlCredentials.ofXml(samlAssertionXml);
+LwsClient client = LwsClient.builder().authenticator(TokenExchangeAuthenticator.of(credentials)).build();</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// A signed SAML 2.0 assertion from your identity provider (raw XML is base64url-encoded for you).
+const credentials = new SamlCredentials(samlAssertionXml);
+const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+auto saml = std::make_shared&lt;lws::SamlCredentials&gt;(lws::SamlCredentials::from_xml(saml_assertion_xml));
+lws::ClientOptions options;
+options.authenticator = std::make_shared&lt;lws::TokenExchangeAuthenticator&gt;(saml);
+lws::Client client(options);</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+let credentials = SamlCredentials::from_xml(saml_assertion_xml);
+let client = Client::builder()
+    .authenticator(TokenExchangeAuthenticator::new(credentials))
+    .build()?;</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// A signed SAML 2.0 assertion, base64url-encoded as RFC 8693 requires.
+credentials := lws.NewSAMLCredentials(lws.EncodeSAMLAssertion(samlAssertionXML))
+client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)))
+_, err := client.Head(ctx, url)
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># A signed SAML 2.0 assertion from your identity provider (raw XML is base64url-encoded for you).
+credentials = SamlCredentials(saml_assertion_xml)
+client = LwsClient(authenticator=TokenExchangeAuthenticator(credentials))</code></pre>
+</div>
+
+<h2 id="bearer">Existing access tokens</h2>
+<p>If you obtain access tokens yourself, <code>BearerTokenAuthenticator</code> sends them as
+<code>Authorization: Bearer</code>. Give it the realm so the token never leaves that storage.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// An access token you obtained yourself; it is only sent to URLs inside the realm.
+LwsClient client = LwsClient.builder()
+        .authenticator(BearerTokenAuthenticator.of(accessToken, URI.create(&quot;https://storage.example/&quot;)))
+        .build();</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// An access token you obtained yourself; it is only sent to URLs inside the realm.
+const client = new LwsClient({
+  authenticator: new BearerTokenAuthenticator(accessToken, { realm: &quot;https://storage.example/&quot; }),
+});</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// An access token you obtained yourself; it is only sent to URLs inside the realm.
+lws::ClientOptions options;
+options.authenticator = std::make_shared&lt;lws::BearerTokenAuthenticator&gt;(access_token, &quot;https://storage.example/&quot;);
+lws::Client client(options);</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// An access token you obtained yourself; it is only sent to URLs inside the realm.
+let realm = Url::parse(&quot;https://storage.example/&quot;).expect(&quot;valid URL&quot;);
+let client = Client::builder()
+    .authenticator(BearerTokenAuthenticator::new(access_token).with_realm(realm))
+    .build()?;</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// An access token you obtained yourself; it is only sent to URLs inside the realm.
+client := lws.NewClient(lws.WithAuthenticator(
+	lws.NewBearerTokenAuthenticator(accessToken, &quot;https://storage.example/&quot;)))
+_, err := client.Head(ctx, url)
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># An access token you obtained yourself; it is only sent to URLs inside the realm.
+client = LwsClient(
+    authenticator=BearerTokenAuthenticator(access_token, realm=&quot;https://storage.example/&quot;)
+)</code></pre>
+</div>
+
+<h2 id="options">Options</h2>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">Set&lt;URI&gt; trusted = Set.of(URI.create(&quot;https://auth.example&quot;));
+TokenExchangeAuthenticator authenticator = TokenExchangeAuthenticator.builder(credentials)
+        .allowInsecureHttp(false)                         // plain-http AS only on loopback (default)
+        .authorizationServerFilter((asUri, realm) -&gt; trusted.contains(asUri))
+        .refreshSkew(Duration.ofSeconds(30))              // refresh 30 s before expiry (default)
+        .build();
+LwsClient client = LwsClient.builder().authenticator(authenticator).build();</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const trusted = new Set([&quot;https://auth.example&quot;]);
+const authenticator = new TokenExchangeAuthenticator(credentials, {
+  allowInsecureHttp: false,                          // plain-http AS only on loopback (default)
+  authorizationServerFilter: (asUri) =&gt; trusted.has(asUri),
+  refreshSkewSeconds: 30,                            // refresh 30 s before expiry (default)
+});
+const client = new LwsClient({ authenticator });</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">const std::set&lt;std::string, std::less&lt;&gt;&gt; trusted = {&quot;https://auth.example&quot;};
+lws::TokenExchangeOptions exchange;
+exchange.allow_insecure_http = false;                 // plain-http AS only on loopback (default)
+exchange.authorization_server_filter = [trusted](std::string_view as_uri, std::string_view) {
+    return trusted.contains(as_uri);
+};
+exchange.refresh_skew = std::chrono::seconds(30);    // refresh 30 s before expiry (default)
+lws::ClientOptions options;
+options.authenticator = std::make_shared&lt;lws::TokenExchangeAuthenticator&gt;(credentials, exchange);
+lws::Client client(options);</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let authenticator = TokenExchangeAuthenticator::builder(credentials)
+    .allow_insecure_http(false)                            // plain-http AS only on loopback (default)
+    .authorization_server_filter(|as_uri, _realm| as_uri.host_str() == Some(&quot;auth.example&quot;))
+    .refresh_margin(Duration::from_secs(30))               // refresh 30 s before expiry (default)
+    .build();
+let client = Client::builder().authenticator(authenticator).build()?;</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">trusted := map[string]bool{&quot;https://auth.example&quot;: true}
+authenticator := lws.NewTokenExchangeAuthenticator(credentials, &amp;lws.TokenExchangeOptions{
+	AllowInsecureHTTP:         false, // plain-http AS only on loopback (default)
+	AuthorizationServerFilter: func(asURI, realm string) bool { return trusted[asURI] },
+	HTTPClient:                http.DefaultClient, // used for metadata and token requests
+})
+client := lws.NewClient(lws.WithAuthenticator(authenticator))
+_, err := client.Head(ctx, url)
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">trusted = {&quot;https://auth.example&quot;}
+authenticator = TokenExchangeAuthenticator(
+    credentials,
+    allow_insecure_http=False,                  # plain-http AS only on loopback (default)
+    authorization_server_filter=lambda as_uri, realm: as_uri in trusted,
+    refresh_skew=30.0,                          # refresh 30 s before expiry (default)
+)
+client = LwsClient(authenticator=authenticator)</code></pre>
+</div>
+<div class="table-wrap"><table><thead><tr><th>Option</th><th>Default</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>allowInsecureHttp</code></td><td><code>false</code></td><td>Permit <code>http://</code> authorization servers on non-loopback hosts (testing only)</td></tr>
+<tr><td><code>authorizationServerFilter(asUri, realm)</code></td><td>allow all</td><td>Refuse to send credentials to authorization servers you don't trust</td></tr>
+<tr><td>refresh skew / margin</td><td>30 s</td><td>How long before expiry a cached access token is replaced</td></tr>
+<tr><td>self-signed lifetime</td><td>300 s</td><td>Lifetime of each self-signed JWT credential</td></tr>
+</tbody></table></div>
+
+<h2 id="custom">Custom authenticators</h2>
+<p>Any scheme fits the two-method <code>Authenticator</code> interface: API keys, cookies, DPoP or mutual TLS
+headers. <code>authorize</code> runs before every request, including redirected ones. <code>handleChallenge</code> runs
+on a <code>401</code> and returns whether to retry once.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator interface.
+Authenticator apiKeyAuth = new Authenticator() {
+    @Override
+    public void authorize(AuthRequest request) {
+        if (&quot;storage.example&quot;.equals(request.uri().getHost())) request.setHeader(&quot;X-Api-Key&quot;, apiKey);
+    }
+
+    @Override
+    public boolean handleChallenge(AuthRequest request, AuthResponse response) {
+        return false;   // nothing to refresh: the 401 surfaces as UnauthorizedException
+    }
+};
+LwsClient client = LwsClient.builder().authenticator(apiKeyAuth).build();</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator interface.
+class ApiKeyAuthenticator implements Authenticator {
+  readonly #key: string;
+  constructor(key: string) {
+    this.#key = key;
+  }
+  authorize(request: AuthRequest): void {
+    if (new URL(request.url).origin === &quot;https://storage.example&quot;) {
+      request.headers.set(&quot;x-api-key&quot;, this.#key);
+    }
+  }
+  handleChallenge(): boolean {
+    return false;   // nothing to refresh: surface the 401 as UnauthorizedError
+  }
+}
+const client = new LwsClient({ authenticator: new ApiKeyAuthenticator(apiKey) });</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// Any scheme (API keys, cookies, DPoP…) plugs in by implementing lws::Authenticator.
+class ApiKeyAuthenticator final : public lws::Authenticator {
+public:
+    explicit ApiKeyAuthenticator(std::string key) : key_(std::move(key)) {}
+
+    void authorize(lws::HttpRequest&amp; request) override {
+        if (request.url.starts_with(&quot;https://storage.example/&quot;)) request.headers.set(&quot;X-Api-Key&quot;, key_);
+    }
+
+    bool handle_challenge(const lws::HttpRequest&amp;, const lws::HttpResponse&amp;, lws::HttpTransport&amp;) override {
+        return false;   // nothing to refresh: the 401 surfaces as lws::UnauthorizedError
+    }
+
+private:
+    std::string key_;
+};
+
+lws::Client make_api_key_client(std::string api_key) {
+    lws::ClientOptions options;
+    options.authenticator = std::make_shared&lt;ApiKeyAuthenticator&gt;(std::move(api_key));
+    return lws::Client(options);
+}</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">use lws_client::auth::{Authenticator, BoxFuture, RequestParts, ResponseParts};
+
+// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator trait.
+struct ApiKeyAuthenticator {
+    key: String,
+}
+
+impl Authenticator for ApiKeyAuthenticator {
+    fn authorize&lt;'a&gt;(&amp;'a self, request: &amp;'a mut RequestParts) -&gt; BoxFuture&lt;'a, lws_client::Result&lt;()&gt;&gt; {
+        Box::pin(async move {
+            if request.url.host_str() == Some(&quot;storage.example&quot;) {
+                request.headers.insert(&quot;x-api-key&quot;, self.key.parse().expect(&quot;valid header value&quot;));
+            }
+            Ok(())
+        })
+    }
+
+    fn handle_challenge&lt;'a&gt;(
+        &amp;'a self,
+        _request: &amp;'a RequestParts,
+        _response: &amp;'a ResponseParts,
+    ) -&gt; BoxFuture&lt;'a, lws_client::Result&lt;bool&gt;&gt; {
+        Box::pin(async { Ok(false) }) // nothing to refresh: the 401 surfaces as Error::Unauthorized
+    }
+}
+
+fn api_key_client(key: &amp;str) -&gt; lws_client::Result&lt;Client&gt; {
+    Client::builder()
+        .authenticator(ApiKeyAuthenticator { key: key.to_owned() })
+        .build()
+}</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator interface.
+type apiKeyAuthenticator struct{ key string }
+
+func (a apiKeyAuthenticator) Authorize(ctx context.Context, req *http.Request) error {
+	if req.URL.Host == &quot;storage.example&quot; {
+		req.Header.Set(&quot;X-Api-Key&quot;, a.key)
+	}
+	return nil
+}
+
+func (a apiKeyAuthenticator) HandleChallenge(ctx context.Context, req *http.Request, resp *http.Response) (bool, error) {
+	return false, nil // nothing to refresh: the 401 surfaces as an *lws.HTTPError
+}
+
+func newAPIKeyClient(apiKey string) *lws.Client {
+	return lws.NewClient(lws.WithAuthenticator(apiKeyAuthenticator{key: apiKey}))
+}</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">import httpx
+
+
+# Any scheme (API keys, cookies, DPoP…) plugs in by subclassing Authenticator.
+class ApiKeyAuthenticator(Authenticator):
+    def __init__(self, key: str) -&gt; None:
+        self.key = key
+
+    def authorize(self, request: httpx.Request) -&gt; None:
+        if request.url.host == &quot;storage.example&quot;:
+            request.headers[&quot;x-api-key&quot;] = self.key
+
+
+# handle_challenge() returns False by default, so a 401 surfaces as UnauthorizedError.
+client = LwsClient(authenticator=ApiKeyAuthenticator(api_key))</code></pre>
+</div>
+
+<h2 id="security">Security considerations</h2>
+<ul>
+  <li><strong>A storage chooses the authorization server.</strong> Self-signed credentials are audience-bound
+  to that server, so a malicious storage gains nothing from them. Static OpenID or SAML tokens may not be
+  audience-restricted, so restrict them with <code>authorizationServerFilter</code> or obtain audience-restricted tokens.</li>
+  <li><strong>Realm checks are not optional.</strong> They stop a server from collecting a token whose audience
+  covers resources outside its own space.</li>
+  <li><strong>Short lifetimes.</strong> Access tokens should live five minutes or less. Self-signed credentials
+  default to five minutes and are cached per audience until shortly before expiry.</li>
+  <li><strong>TLS everywhere.</strong> Bearer tokens and ID tokens grant access to whoever holds them.</li>
+</ul>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

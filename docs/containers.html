@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Containers &amp; pagination · LWS Client</title>
+  <meta name="description" content="Read LWS container listings (application/lws+json), iterate lazily across server-issued pages and work with contained resource metadata.">
+  <meta property="og:title" content="Containers &amp; pagination · LWS Client">
+  <meta property="og:description" content="Read LWS container listings (application/lws+json), iterate lazily across server-issued pages and work with contained resource metadata.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="./assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="./getting-started.html">Get started</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./authentication.html">Auth</a>
+        <a href="./api-reference.html">API</a>
+        <a href="./spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="./index.html">Overview</a></li><li><a href="./getting-started.html">Getting started</a></li><li><a href="./api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1>Containers &amp; pagination</h1>
+<p class="lead">A container lists its members in an <code>application/lws+json</code> representation. Large
+containers are split into pages linked with <code>first</code>, <code>next</code>, <code>prev</code> and
+<code>last</code>. The clients give you one page at a time, or a lazy sequence over all of them.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="representation">The container representation</h2>
+<pre data-lang="json" data-title="GET /alice/photos/  (Accept: application/lws+json)"><code class="language-json">{
+  &quot;@context&quot;: &quot;https://www.w3.org/ns/lws/v1&quot;,
+  &quot;id&quot;: &quot;/alice/photos/&quot;,
+  &quot;type&quot;: &quot;Container&quot;,
+  &quot;totalItems&quot;: 150,
+  &quot;items&quot;: [
+    { &quot;type&quot;: &quot;DataResource&quot;, &quot;id&quot;: &quot;/alice/photos/vacation.jpg&quot;,
+      &quot;format&quot;: &quot;image/jpeg&quot;, &quot;size&quot;: 248392, &quot;modified&quot;: &quot;2025-11-20T10:30:00Z&quot; },
+    { &quot;type&quot;: &quot;Container&quot;, &quot;id&quot;: &quot;albums/&quot; }
+  ]
+}</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Model property</th><th>Notes</th></tr></thead><tbody>
+<tr><td><code>id</code></td><td><code>id</code></td><td>Resolved to an absolute URL</td></tr>
+<tr><td><code>type</code></td><td><code>types</code></td><td>Always a list. <code>Container</code>, <code>lws:Container</code> and the full IRI all match <code>isContainer()</code></td></tr>
+<tr><td><code>totalItems</code></td><td><code>totalItems</code></td><td>All visible members across pages; may be approximate (optional or <code>-1</code> in Go when absent)</td></tr>
+<tr><td><code>items</code></td><td><code>items</code></td><td>This page's members as <code>ContainedResource</code></td></tr>
+<tr><td><code>format</code></td><td><code>format</code></td><td>Media type; required for data resources</td></tr>
+<tr><td><code>size</code> / <code>modified</code></td><td><code>size</code> / <code>modified</code></td><td>Optional. An unparseable date never fails the listing (the raw string is kept)</td></tr>
+</tbody></table></div>
+<div class="callout tip"><p><strong>Relative identifiers</strong> Servers may return path-relative ids such as <code>/alice/photos/</code> or <code>albums/</code>. The clients always resolve them against the response URL, so every id you receive is absolute and can be passed straight to <code>read</code>.</p></div>
+
+<h2 id="pages">Reading one page</h2>
+<p><code>readContainer</code> returns a single page with its pagination links and response metadata. Page URLs are
+opaque: follow them, but never construct them.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">ContainerPage page = client.readContainer(container);
+System.out.println(page.id() + &quot; &quot; + page.totalItems() + &quot; &quot; + page.etag());
+for (ContainedResource item : page.items()) {
+    System.out.println(item.id() + &quot; &quot; + (item.isContainer() ? &quot;container&quot; : item.format().orElse(&quot;?&quot;))
+            + &quot; &quot; + item.size() + &quot; &quot; + item.modified());
+}
+page.next().ifPresent(next -&gt;                        // opaque, server-issued URL
+        System.out.println(client.readContainer(next).items().size()));</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const page = await client.readContainer(container);
+console.log(page.id, page.totalItems, page.metadata.etag);
+for (const item of page.items) {
+  console.log(item.id, item.isContainer() ? &quot;container&quot; : item.format, item.size, item.modified);
+}
+if (page.next) {
+  const nextPage = await client.readContainer(page.next);   // opaque, server-issued URL
+  console.log(nextPage.items.length);
+}</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">lws::ContainerPage page = client.read_container(container);
+std::cout &lt;&lt; page.id &lt;&lt; ' ' &lt;&lt; page.total_items.value_or(-1) &lt;&lt; ' ' &lt;&lt; page.metadata.etag.value_or(&quot;&quot;) &lt;&lt; '\n';
+for (const lws::ContainedResource&amp; item : page.items) {
+    std::cout &lt;&lt; item.id &lt;&lt; ' ' &lt;&lt; (item.is_container() ? &quot;container&quot; : item.format.value_or(&quot;?&quot;)) &lt;&lt; ' '
+              &lt;&lt; item.size.value_or(-1) &lt;&lt; ' ' &lt;&lt; item.modified_raw.value_or(&quot;&quot;) &lt;&lt; '\n';
+}
+if (page.next) {
+    auto next_page = client.read_container(*page.next);   // opaque, server-issued URL
+    std::cout &lt;&lt; next_page.items.size() &lt;&lt; '\n';
+}</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let page = client.read_container(container).await?;
+println!(&quot;{} {:?} {:?}&quot;, page.id, page.total_items, page.metadata.etag);
+for item in &amp;page.items {
+    println!(&quot;{} {} {:?} {:?} {:?}&quot;, item.id, item.is_container(), item.format, item.size, item.modified);
+}
+if let Some(next) = &amp;page.next {
+    let next_page = client.read_container(next).await?;   // opaque, server-issued URL
+    println!(&quot;{}&quot;, next_page.items.len());
+}</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">page, err := client.ReadContainer(ctx, container)
+if err != nil {
+	return err
+}
+fmt.Println(page.ID, page.TotalItems, page.Metadata.ETag) // TotalItems is -1 when absent
+for _, item := range page.Items {
+	fmt.Println(item.ID, item.IsContainer(), item.Format, item.Size, item.Modified)
+}
+if page.Next != &quot;&quot; {
+	next, err := client.ReadContainer(ctx, page.Next) // opaque, server-issued URL
+	if err != nil {
+		return err
+	}
+	fmt.Println(len(next.Items))
+}</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">page = client.read_container(container)
+print(page.id, page.total_items, page.metadata.etag)
+for item in page.items:
+    kind = &quot;container&quot; if item.is_container else item.format
+    print(item.id, kind, item.size, item.modified)
+if page.next:
+    next_page = client.read_container(page.next)   # opaque, server-issued URL
+    print(len(next_page.items))</code></pre>
+</div>
+<p>The clients accept the three equivalent container media types (<code>application/lws+json</code>,
+<code>application/ld+json</code>, <code>application/json</code>). Any other content type, or a body whose type is
+not a container, is reported as a protocol error.</p>
+
+<h2 id="iterate">Iterating every member</h2>
+<p><code>listContainer</code> follows <code>rel="next"</code> lazily. A page is only fetched when you iterate past
+the previous one, so you can stop early without loading the rest. Each language uses its native
+lazy-sequence type:</p>
+<div class="table-wrap"><table><thead><tr><th>Language</th><th>Type returned by listContainer</th></tr></thead><tbody>
+<tr><td>Java</td><td><code>Stream&lt;ContainedResource&gt;</code> (lazy, spliterator-backed)</td></tr>
+<tr><td>TypeScript</td><td><code>AsyncGenerator&lt;ContainedResource&gt;</code> (<code>for await</code>)</td></tr>
+<tr><td>C++</td><td><code>lws::ContainerRange</code>, a C++20 input range (<code>for (auto&amp; item : …)</code>, <code>.to_vector()</code>)</td></tr>
+<tr><td>Rust</td><td><code>LwsStream&lt;ContainedResource&gt;</code>, a <code>futures::Stream</code> (<code>try_next</code>, <code>try_collect</code>)</td></tr>
+<tr><td>Go</td><td><code>iter.Seq2[ContainedResource, error]</code> (<code>for item, err := range …</code>)</td></tr>
+<tr><td>Python</td><td><code>Iterator[ContainedResource]</code>; <code>AsyncIterator</code> on <code>AsyncLwsClient</code></td></tr>
+</tbody></table></div>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// A lazy Stream: pages are fetched only as the stream is consumed.
+client.listContainer(container)
+        .filter(item -&gt; item.hasType(&quot;https://schema.org/Person&quot;))
+        .forEach(item -&gt; System.out.println(item.id()));
+
+List&lt;URI&gt; ids = client.listContainer(container).map(ContainedResource::id).toList();</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// Lazily follows rel=&quot;next&quot;: pages are fetched only as you iterate.
+for await (const item of client.listContainer(container)) {
+  if (item.hasType(&quot;https://schema.org/Person&quot;)) console.log(item.id);
+}
+
+// Collect everything
+const ids: string[] = [];
+for await (const item of client.listContainer(container)) ids.push(item.id);</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// A lazy input range: pages are fetched only as you iterate.
+for (const lws::ContainedResource&amp; item : client.list_container(container)) {
+    if (item.has_type(&quot;https://schema.org/Person&quot;)) std::cout &lt;&lt; item.id &lt;&lt; '\n';
+}
+
+std::vector&lt;lws::ContainedResource&gt; all = client.list_container(container).to_vector();</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// A lazy Stream: pages are fetched only as you poll it.
+let mut items = client.list_container(container);
+while let Some(item) = items.try_next().await? {
+    if item.has_type(&quot;https://schema.org/Person&quot;) {
+        println!(&quot;{}&quot;, item.id);
+    }
+}
+
+let all: Vec&lt;ContainedResource&gt; = client.list_container(container).try_collect().await?;</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// Lazily follows rel=&quot;next&quot;: pages are fetched only as you iterate.
+for item, err := range client.ListContainer(ctx, container) {
+	if err != nil {
+		return err
+	}
+	if item.HasType(&quot;https://schema.org/Person&quot;) {
+		fmt.Println(item.ID)
+	}
+}</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># Lazily follows rel=&quot;next&quot;: pages are fetched only as you iterate.
+for item in client.list_container(container):
+    if item.has_type(&quot;https://schema.org/Person&quot;):
+        print(item.id)
+
+ids = [item.id for item in client.list_container(container)]
+# AsyncLwsClient: async for item in client.list_container(container): ...</code></pre>
+</div>
+
+<h2 id="visibility">What you can see</h2>
+<p>If you can read a container, its listing includes every member you can access. It may also list members
+you cannot read. Being able to list a container does not imply access to its members, and access to a
+member does not imply you can list its container. Expect <code>403</code> or <code>404</code> when you follow ids from a listing.</p>
+
+<h2 id="other-listings">Other listings use the same model</h2>
+<p>Subscriptions, access requests and access grants are exposed as LWS containers too, and type search
+results use the same <code>ContainerPage</code> shape. The same pagination helpers
+(<code>listSubscriptions</code>, <code>listAccessRequests</code>, <code>searchAll</code>…) work for all of them.</p>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

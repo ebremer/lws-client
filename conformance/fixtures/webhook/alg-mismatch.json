@@ -1,0 +1,18 @@
+{
+  "method": "POST",
+  "url": "https://receiver.example/hooks/lws?subscription=9e8d7c6b5a4f",
+  "now": 1790000030,
+  "name": "alg-mismatch",
+  "description": "alg parameter (ed25519) does not match the P-256 key",
+  "headers": {
+    "content-type": "application/lws+json",
+    "content-digest": "sha-256=:SFIoZZtk6hHkYJdIo+3OwkB09MpOSEcVp3INJDtIw34=:",
+    "signature-input": "sig1=(\"@method\" \"@scheme\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790000000;keyid=\"https://storage.example/#key-p256\";alg=\"ed25519\"",
+    "signature": "sig1=:GNzjep7aiWe8eDEV4DN0KDxzTjDUd7el6V040ONP9Msl8aNvxlEcocLn8xANZMcAGrd54bKplcVnmGc/PvIPew==:"
+  },
+  "body": "{\"@context\":[\"https://www.w3.org/ns/lws/v1\",\"https://www.w3.org/ns/activitystreams\"],\"type\":\"Notification\",\"storage\":\"https://storage.example/\",\"activity\":[{\"id\":\"urn:uuid:a1b2c3d4-5678-4abc-8ef0-1234567890ab\",\"type\":[\"Create\"],\"object\":{\"id\":\"https://storage.example/root/notes/meeting.txt\",\"type\":[\"DataResource\"]},\"target\":\"https://storage.example/root/notes/\",\"published\":\"2026-09-21T11:33:20Z\"},{\"id\":\"urn:uuid:b2c3d4e5-6789-4bcd-9f01-234567890abc\",\"type\":[\"Update\"],\"object\":{\"id\":\"https://storage.example/root/profile\",\"type\":[\"DataResource\"]},\"published\":\"2026-09-21T11:33:21Z\"}]}",
+  "expected": {
+    "valid": false,
+    "reason": "alg does not match key"
+  }
+}

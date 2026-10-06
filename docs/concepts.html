@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LWS concepts · LWS Client</title>
+  <meta name="description" content="The Linked Web Storage model in one page: storages, storage descriptions, containers, data resources, linksets, authentication, notifications, access grants and type indexes.">
+  <meta property="og:title" content="LWS concepts · LWS Client">
+  <meta property="og:description" content="The Linked Web Storage model in one page: storages, storage descriptions, containers, data resources, linksets, authentication, notifications, access grants and type indexes.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="./assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="./getting-started.html">Get started</a>
+        <a href="./concepts.html" aria-current="page">Concepts</a>
+        <a href="./authentication.html">Auth</a>
+        <a href="./api-reference.html">API</a>
+        <a href="./spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="./index.html">Overview</a></li><li><a href="./getting-started.html">Getting started</a></li><li><a href="./api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1>LWS concepts</h1>
+<p class="lead">Linked Web Storage (LWS) is the W3C Working Group's standard for giving applications secure,
+permissioned access to data that users keep in a storage of their choosing. It grew out of the Solid
+Protocol. This page summarises the model the clients implement.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="storage">Storages and storage descriptions</h2>
+<p>A <dfn>storage</dfn> is a hierarchy of HTTP resources managed under LWS rules. Every storage is
+identified by a URI. Dereferencing it yields a <dfn>storage description</dfn>: a
+<a href="https://www.w3.org/TR/cid-1.0/">W3C Controlled Identifier</a> document served as
+<code>application/lws+cid</code>. It lists <code>service</code> entries (one of which is always the
+<code>StorageRoot</code>), optional <code>capability</code> entries, and keys the storage uses to sign
+webhooks.</p>
+<pre data-lang="json" data-title="GET https://storage.example/  →  application/lws+cid"><code class="language-json">{
+  &quot;@context&quot;: [&quot;https://www.w3.org/ns/cid/v1&quot;, &quot;https://www.w3.org/ns/lws/v1&quot;],
+  &quot;id&quot;: &quot;https://storage.example/&quot;,
+  &quot;type&quot;: &quot;Storage&quot;,
+  &quot;service&quot;: [
+    { &quot;type&quot;: &quot;StorageRoot&quot;, &quot;serviceEndpoint&quot;: &quot;https://storage.example/root/&quot; },
+    { &quot;type&quot;: &quot;NotificationService&quot;, &quot;serviceEndpoint&quot;: &quot;https://storage.example/notifications/&quot;,
+      &quot;subscriptionType&quot;: [&quot;WebhookSubscription&quot;] },
+    { &quot;type&quot;: &quot;TypeIndexService&quot;, &quot;serviceEndpoint&quot;: &quot;https://storage.example/types/index&quot; },
+    { &quot;type&quot;: &quot;TypeSearchService&quot;, &quot;serviceEndpoint&quot;: &quot;https://storage.example/types/search&quot; }
+  ]
+}</code></pre>
+<p>Clients never guess URLs. Every response to <code>GET</code>/<code>HEAD</code> on a storage resource
+carries <code>Link: &lt;storage&gt;; rel="https://www.w3.org/ns/lws#storage"</code>, so
+<a href="discovery.html">discovery</a> can start from any resource URL.</p>
+
+<h2 id="resources">Containers and data resources</h2>
+
+<figure class="diagram">
+<svg viewBox="0 0 760 236" role="img" aria-labelledby="rm-title">
+  <title id="rm-title">LWS resource model: a storage description points to the storage root container, which contains containers and data resources, each with a linkset.</title>
+  <defs><marker id="rm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0L10 5L0 10z"/></marker></defs>
+  <rect class="box-accent" x="8" y="62" width="176" height="84" rx="8"/>
+  <text class="label" x="22" y="88">Storage description</text>
+  <text class="sublabel" x="22" y="108">application/lws+cid</text>
+  <text class="sublabel" x="22" y="126">service, capability</text>
+  <rect class="box" x="268" y="76" width="140" height="56" rx="8"/>
+  <text class="label" x="282" y="100">Storage root</text>
+  <text class="sublabel" x="282" y="119">Container /root/</text>
+  <rect class="box" x="448" y="14" width="140" height="56" rx="8"/>
+  <text class="label" x="462" y="38">notes/</text>
+  <text class="sublabel" x="462" y="57">Container</text>
+  <rect class="box" x="448" y="138" width="140" height="56" rx="8"/>
+  <text class="label" x="462" y="162">profile.json</text>
+  <text class="sublabel" x="462" y="181">DataResource</text>
+  <rect class="box" x="616" y="14" width="136" height="56" rx="8"/>
+  <text class="label" x="630" y="38">shopping.txt</text>
+  <text class="sublabel" x="630" y="57">DataResource</text>
+  <rect class="box" x="616" y="138" width="136" height="56" rx="8" stroke-dasharray="5 4"/>
+  <text class="label" x="630" y="162">profile.json.meta</text>
+  <text class="sublabel" x="630" y="181">linkset+json</text>
+  <path class="edge" d="M184 104H266" marker-end="url(#rm-arrow)"/>
+  <text class="edge-label" x="225" y="96" text-anchor="middle">StorageRoot</text>
+  <path class="edge" d="M408 96C430 96 426 42 446 42" marker-end="url(#rm-arrow)"/>
+  <path class="edge" d="M408 112C430 112 426 166 446 166" marker-end="url(#rm-arrow)"/>
+  <text class="edge-label" x="438" y="108" text-anchor="middle">items</text>
+  <path class="edge" d="M588 42H614" marker-end="url(#rm-arrow)"/>
+  <path class="edge" d="M588 166H614" stroke-dasharray="4 4" marker-end="url(#rm-arrow)"/>
+  <text class="edge-label" x="602" y="214" text-anchor="middle">rel="linkset"</text>
+</svg>
+<figcaption>A storage is described by a storage description; its root container lists members in <code>items</code>. Every member links back to its parent with <code>rel="up"</code> and to its metadata with <code>rel="linkset"</code>.</figcaption>
+</figure>
+<dl class="defs">
+  <dt>Container</dt><dd>A resource that enumerates other resources. Its representation
+  (<code>application/lws+json</code>) has <code>id</code>, <code>type: "Container"</code>,
+  <code>totalItems</code> and <code>items</code>. Large listings are paginated with
+  <code>first</code>/<code>next</code>/<code>prev</code>/<code>last</code> links.</dd>
+  <dt>Data resource</dt><dd>Any data-bearing resource: a document, image, JSON object, RDF graph and so on.</dd>
+  <dt>Containment</dt><dd>Expressed through metadata, not URL structure: <code>rel="up"</code> links to
+  the parent, and the parent lists the child in <code>items</code>. The server assigns URIs, and
+  clients must not infer containment from paths.</dd>
+  <dt>Linkset</dt><dd>Every resource has an auxiliary <code>application/linkset+json</code>
+  (RFC 9264) resource holding its metadata links, discovered via <code>rel="linkset"</code> and
+  updated with JSON Patch.</dd>
+</dl>
+
+<h2 id="operations">Operations and their HTTP binding</h2>
+<div class="table-wrap"><table><thead><tr><th>Operation</th><th>HTTP</th><th>Success</th><th>Notes</th></tr></thead><tbody>
+<tr><td>Read</td><td><code>GET</code> / <code>HEAD</code></td><td><code>200</code>, <code>206</code>, <code>304</code></td><td>ETag on every response; range and conditional requests</td></tr>
+<tr><td>List</td><td><code>GET</code> container</td><td><code>200</code></td><td><code>application/lws+json</code>; link-based pagination</td></tr>
+<tr><td>Create</td><td><code>POST</code> container</td><td><code>201</code> + <code>Location</code></td><td>Container via <code>Link: &lt;…lws#Container&gt;; rel="type"</code>; name hint via <code>Slug</code></td></tr>
+<tr><td>Replace</td><td><code>PUT</code></td><td><code>200</code> / <code>204</code></td><td><code>If-Match</code> to avoid lost updates (<code>412</code>)</td></tr>
+<tr><td>Patch</td><td><code>PATCH</code></td><td><code>200</code> / <code>204</code></td><td>JSON Patch (<code>application/json-patch+json</code>) is the baseline format</td></tr>
+<tr><td>Delete</td><td><code>DELETE</code></td><td><code>204</code></td><td>Non-empty container → <code>409</code> unless <code>Depth: infinity</code></td></tr>
+</tbody></table></div>
+<div class="callout tip"><p><strong>Baseline patch format</strong> The 2026-10-05 editor's draft made JSON Patch (RFC 6902) the mandatory PATCH format for resources and linksets, replacing JSON Merge Patch. Every client ships a <code>JsonPatch</code> builder.</p></div>
+
+<h2 id="media-types">Media types</h2>
+<div class="table-wrap"><table><thead><tr><th>Media type</th><th>Used for</th></tr></thead><tbody>
+<tr><td><code>application/lws+cid</code></td><td>Storage descriptions</td></tr>
+<tr><td><code>application/lws+json</code></td><td>Container listings, subscriptions, notifications, access requests/grants, type index and search results (equivalent to <code>application/ld+json</code> and <code>application/json</code> for containers)</td></tr>
+<tr><td><code>application/linkset+json</code></td><td>Linkset (metadata) resources</td></tr>
+<tr><td><code>application/json-patch+json</code></td><td>PATCH bodies</td></tr>
+<tr><td><code>application/lws-query+json</code></td><td>Type search filters sent with the HTTP <code>QUERY</code> method</td></tr>
+</tbody></table></div>
+
+<h2 id="auth">Authentication and authorization</h2>
+<p>LWS separates <em>who you are</em> from <em>what you may do</em>. An identity provider issues an
+<dfn>authentication credential</dfn> (an OpenID Connect ID token, a SAML assertion or a self-signed
+JWT). The client exchanges it at the storage's authorization server for a short-lived OAuth 2.0
+access token (RFC 8693 token exchange), then presents that token as a <code>Bearer</code> token.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 760 392" role="img" aria-labelledby="auth-title">
+  <title id="auth-title">LWS authorization sequence: 401 challenge, authorization server metadata discovery, OAuth 2.0 token exchange, and a retried request with a bearer token.</title>
+  <defs><marker id="seq-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0L10 5L0 10z"/></marker></defs>
+  <rect class="box-accent" x="40" y="10" width="160" height="38" rx="8"/><text class="label" x="120" y="34" text-anchor="middle">LWS client</text>
+  <rect class="box" x="300" y="10" width="160" height="38" rx="8"/><text class="label" x="380" y="34" text-anchor="middle">Storage server</text>
+  <rect class="box" x="560" y="10" width="160" height="38" rx="8"/><text class="label" x="640" y="34" text-anchor="middle">Authorization server</text>
+  <path class="edge" d="M120 48V384M380 48V384M640 48V384" stroke-dasharray="3 5"/>
+  <path class="edge" d="M120 84H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="76" text-anchor="middle">GET /root/notes/</text>
+  <path class="edge" d="M380 122H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="114" text-anchor="middle">401 · Bearer as_uri, realm</text>
+  <path class="edge" d="M120 164H638" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="156" text-anchor="middle">GET /.well-known/lws-configuration</text>
+  <path class="edge" d="M640 202H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="194" text-anchor="middle">issuer · token_endpoint</text>
+  <path class="edge" d="M120 244H638" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="236" text-anchor="middle">POST token (token-exchange, subject_token)</text>
+  <path class="edge" d="M640 282H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="274" text-anchor="middle">access_token (aud = realm)</text>
+  <path class="edge" d="M120 324H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="316" text-anchor="middle">GET + Authorization: Bearer</text>
+  <path class="edge" d="M380 362H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="354" text-anchor="middle">200 OK</text>
+</svg>
+<figcaption>Every client runs this flow automatically when configured with a <code>TokenExchangeAuthenticator</code>. Tokens are cached per authorization server and realm and reused proactively.</figcaption>
+</figure>
+<p>Three authentication suites are defined. Each is a credential provider in every client:</p>
+<div class="table-wrap"><table><thead><tr><th>Suite</th><th>Credential</th><th>Token type</th></tr></thead><tbody>
+<tr><td>OpenID Connect</td><td>ID token from an OpenID provider listed in the agent's CID document</td><td><code>urn:ietf:params:oauth:token-type:id_token</code></td></tr>
+<tr><td>SAML 2.0</td><td>Signed SAML assertion (base64url)</td><td><code>urn:ietf:params:oauth:token-type:saml2</code></td></tr>
+<tr><td>Self-signed (CID / did:key)</td><td>JWT signed by the agent's own key; <code>sub = iss = client_id</code></td><td><code>urn:ietf:params:oauth:token-type:jwt</code></td></tr>
+</tbody></table></div>
+<p>See <a href="authentication.html">Authentication</a> for configuration, key management and security notes.</p>
+
+<h2 id="notifications">Notifications</h2>
+<p>A storage may advertise a <code>NotificationService</code>. Subscribers <code>POST</code> a
+<code>WebhookSubscription</code> naming <code>topic</code> resources and an <code>inbox</code>. A
+subscription to a container is recursive. The server then <code>POST</code>s notification envelopes
+wrapping Activity Streams 2.0 <code>Create</code>, <code>Update</code> and <code>Delete</code>
+activities to the inbox, signed with HTTP Message Signatures (RFC 9421). The clients include a
+verifier that checks the <code>Content-Digest</code>, the signature, the signing key's storage
+description and the notification's storage. See <a href="notifications.html">Notifications</a>.</p>
+
+<h2 id="access">Access requests and grants</h2>
+<p>Agents ask for access by posting an <code>AccessRequest</code> to the storage's
+<code>AccessRequestService</code>. A storage controller records decisions as <code>AccessGrant</code>s.
+Both use an ODRL-based profile: actions (<code>read</code>, <code>modify</code>, <code>create</code>,
+<code>delete</code>), an assignee, targets and constraints (purpose, client, format, type, date-time).
+See <a href="access.html">Access requests &amp; grants</a>.</p>
+
+<h2 id="index">Type index and search</h2>
+<p>Instead of crawling containers, clients can ask a <code>TypeIndexService</code> which resource types
+exist, and query a <code>TypeSearchService</code> using the HTTP <code>QUERY</code> method with a
+conjunctive-normal-form filter such as
+<code>{"type": [["schema:Person", "foaf:Person"], "lws:DataResource"]}</code>. Results are always
+filtered to what the caller may read. See <a href="type-index.html">Type index &amp; search</a>.</p>
+
+<h2 id="glossary">Glossary</h2>
+<dl class="defs">
+  <dt>Agent</dt><dd>A person, social entity or software identified by a URI.</dd>
+  <dt>Storage controller</dt><dd>An agent that controls every resource in a storage.</dd>
+  <dt>Realm</dt><dd>The URI in a <code>WWW-Authenticate</code> challenge that scopes a token. It becomes
+  the token's audience, and the client only sends the token to URLs inside it.</dd>
+  <dt>Authorization server (AS)</dt><dd>Issues access tokens. Its metadata lives at
+  <code>/.well-known/lws-configuration</code>.</dd>
+  <dt>Subscription / inbox</dt><dd>A registration for change notifications and the URL they are delivered to.</dd>
+</dl>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

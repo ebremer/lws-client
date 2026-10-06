@@ -1,0 +1,44 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# Java
+java/target/
+*.class
+
+# JavaScript / TypeScript
+node_modules/
+js/dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+python/build/
+python/dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Rust
+rust/target/
+
+# Go
+go/coverage.out
+
+# C++
+cpp/build*/
+cpp/out/
+cpp/vcpkg_installed/
+CMakeUserPresets.json
+
+# Docs
+docs/_site/

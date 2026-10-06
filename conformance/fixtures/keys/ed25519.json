@@ -1,0 +1,14 @@
+{
+  "description": "TEST KEY ONLY - never use outside the conformance fixtures",
+  "privateJwk": {
+    "crv": "Ed25519",
+    "d": "mog-a8FuZ2hPX_c8IFlGIFhv-QacP2li_ZajL96GWus",
+    "x": "ZTTveAK6nZDAz42gF2IlpdCkjOfZ_80ZPJ2pJjwd8AY",
+    "kty": "OKP"
+  },
+  "publicJwk": {
+    "crv": "Ed25519",
+    "x": "ZTTveAK6nZDAz42gF2IlpdCkjOfZ_80ZPJ2pJjwd8AY",
+    "kty": "OKP"
+  }
+}

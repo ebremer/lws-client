@@ -1,0 +1,109 @@
+{
+  "description": "RFC 8288 Link header parsing. 'headers' are separate header field lines. Expected links are in order; 'href' is resolved against 'base'; 'params' excludes 'rel', has lower-cased names, and keeps values verbatim (unquoted/unescaped). A valueless parameter has the value \"\". Registered (non-URI) relation types are lower-cased; extension relation URIs are kept as-is. A rel with several space-separated values yields one link per value.",
+  "cases": [
+    {
+      "name": "single-relative",
+      "base": "https://storage.example/alice/notes/list.txt",
+      "headers": ["</alice/notes/>; rel=\"up\""],
+      "expected": [{ "href": "https://storage.example/alice/notes/", "rel": "up", "params": {} }]
+    },
+    {
+      "name": "several-in-one-line",
+      "base": "https://storage.example/alice/notes/shoppinglist.txt",
+      "headers": [
+        "</alice/notes/shoppinglist.txt.meta>; rel=\"linkset\"; type=\"application/linkset+json\", </alice/notes/>; rel=\"up\", <https://www.w3.org/ns/lws#DataResource>; rel=\"type\""
+      ],
+      "expected": [
+        { "href": "https://storage.example/alice/notes/shoppinglist.txt.meta", "rel": "linkset", "params": { "type": "application/linkset+json" } },
+        { "href": "https://storage.example/alice/notes/", "rel": "up", "params": {} },
+        { "href": "https://www.w3.org/ns/lws#DataResource", "rel": "type", "params": {} }
+      ]
+    },
+    {
+      "name": "several-lines-and-token-rel",
+      "base": "https://storage.example/x/y",
+      "headers": ["<https://storage.example/>; rel=\"https://www.w3.org/ns/lws#storage\"", "</x/>; rel=up"],
+      "expected": [
+        { "href": "https://storage.example/", "rel": "https://www.w3.org/ns/lws#storage", "params": {} },
+        { "href": "https://storage.example/x/", "rel": "up", "params": {} }
+      ]
+    },
+    {
+      "name": "multiple-rel-values",
+      "base": "https://example.org/photos/",
+      "headers": ["</photos/?page=3>; rel=\"next last\""],
+      "expected": [
+        { "href": "https://example.org/photos/?page=3", "rel": "next", "params": {} },
+        { "href": "https://example.org/photos/?page=3", "rel": "last", "params": {} }
+      ]
+    },
+    {
+      "name": "comma-inside-quoted-param",
+      "base": "https://example.org/",
+      "headers": ["<https://example.org/a>; rel=\"describedby\"; title=\"Hello, world\", <https://example.org/b>; rel=\"license\""],
+      "expected": [
+        { "href": "https://example.org/a", "rel": "describedby", "params": { "title": "Hello, world" } },
+        { "href": "https://example.org/b", "rel": "license", "params": {} }
+      ]
+    },
+    {
+      "name": "comma-and-semicolon-inside-uri",
+      "base": "https://example.org/",
+      "headers": ["<https://example.org/a,b;c>; rel=\"related\""],
+      "expected": [{ "href": "https://example.org/a,b;c", "rel": "related", "params": {} }]
+    },
+    {
+      "name": "escaped-quote",
+      "base": "https://example.org/",
+      "headers": ["<https://example.org/c>; rel=\"related\"; title=\"say \\\"hi\\\" \\\\ bye\""],
+      "expected": [{ "href": "https://example.org/c", "rel": "related", "params": { "title": "say \"hi\" \\ bye" } }]
+    },
+    {
+      "name": "case-insensitive-names",
+      "base": "https://example.org/",
+      "headers": ["<https://example.org/d>; REL=\"Next\"; Type=\"text/html\""],
+      "expected": [{ "href": "https://example.org/d", "rel": "next", "params": { "type": "text/html" } }]
+    },
+    {
+      "name": "valueless-param",
+      "base": "https://example.org/",
+      "headers": ["<https://example.org/e>; rel=\"alternate\"; crossorigin"],
+      "expected": [{ "href": "https://example.org/e", "rel": "alternate", "params": { "crossorigin": "" } }]
+    },
+    {
+      "name": "whitespace-tolerance",
+      "base": "https://example.org/dir/doc",
+      "headers": ["   <other>  ;  rel = \"up\"  ;type=text/plain  ,<../x>;rel=related"],
+      "expected": [
+        { "href": "https://example.org/dir/other", "rel": "up", "params": { "type": "text/plain" } },
+        { "href": "https://example.org/x", "rel": "related", "params": {} }
+      ]
+    },
+    {
+      "name": "anchor-param-kept",
+      "base": "https://example.org/doc",
+      "headers": ["<https://example.org/f>; rel=\"describedby\"; anchor=\"#frag\""],
+      "expected": [{ "href": "https://example.org/f", "rel": "describedby", "params": { "anchor": "#frag" } }]
+    },
+    {
+      "name": "lws-create-response",
+      "base": "https://example.com/alice/",
+      "headers": [
+        "</alice/notes/.meta>; rel=\"linkset\"; type=\"application/linkset+json\"",
+        "</alice/>; rel=\"up\"",
+        "<https://www.w3.org/ns/lws#Container>; rel=\"type\""
+      ],
+      "expected": [
+        { "href": "https://example.com/alice/notes/.meta", "rel": "linkset", "params": { "type": "application/linkset+json" } },
+        { "href": "https://example.com/alice/", "rel": "up", "params": {} },
+        { "href": "https://www.w3.org/ns/lws#Container", "rel": "type", "params": {} }
+      ]
+    },
+    {
+      "name": "empty",
+      "base": "https://example.org/",
+      "headers": [""],
+      "expected": []
+    }
+  ]
+}

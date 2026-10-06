@@ -1,0 +1,49 @@
+{
+  "description": "Type Index page and Type Search result page (lws10-index).",
+  "typeIndex": {
+    "url": "https://example.org/types/index",
+    "headers": {
+      "content-type": "application/lws+json",
+      "cache-control": "private",
+      "link": [
+        "<https://example.org/types/index?page=1>; rel=\"first\"",
+        "<https://example.org/types/index?page=2>; rel=\"next\"",
+        "<https://example.org/types/index?page=4>; rel=\"last\""
+      ]
+    },
+    "body": {
+      "@context": "https://www.w3.org/ns/lws/v1",
+      "type": "TypeIndex",
+      "totalItems": 142,
+      "items": [{ "id": "https://schema.org/Person" }, { "id": "https://schema.org/Event" }, { "id": "https://schema.org/Message" }]
+    },
+    "expected": {
+      "totalItems": 142,
+      "types": ["https://schema.org/Person", "https://schema.org/Event", "https://schema.org/Message"],
+      "next": "https://example.org/types/index?page=2"
+    }
+  },
+  "search": {
+    "url": "https://example.org/types/search",
+    "headers": {
+      "content-type": "application/lws+json",
+      "cache-control": "private",
+      "link": ["<https://example.org/types/search?cursor=8f2a1c>; rel=\"first\"", "<https://example.org/types/search?cursor=b71e90>; rel=\"next\""]
+    },
+    "body": {
+      "@context": "https://www.w3.org/ns/lws/v1",
+      "type": "ContainerPage",
+      "totalItems": 27,
+      "items": [
+        { "type": ["DataResource", "https://schema.org/Person"], "id": "https://example.org/data/person-4872" },
+        { "type": ["DataResource", "https://schema.org/Person"], "id": "https://example.org/data/person-4873" },
+        { "type": "Container", "id": "https://example.org/data/people/" }
+      ]
+    },
+    "expected": {
+      "totalItems": 27,
+      "ids": ["https://example.org/data/person-4872", "https://example.org/data/person-4873", "https://example.org/data/people/"],
+      "next": "https://example.org/types/search?cursor=b71e90"
+    }
+  }
+}

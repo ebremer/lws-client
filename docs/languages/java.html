@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Java · LWS Client</title>
+  <meta name="description" content="The LWS client for Java 17+: installation, configuration, blocking and CompletableFuture APIs, lazy Streams, exceptions and build instructions.">
+  <meta property="og:title" content="Java · LWS Client">
+  <meta property="og:description" content="The LWS client for Java 17+: installation, configuration, blocking and CompletableFuture APIs, lazy Streams, exceptions and build instructions.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="../getting-started.html">Get started</a>
+        <a href="../concepts.html">Concepts</a>
+        <a href="../authentication.html">Auth</a>
+        <a href="../api-reference.html">API</a>
+        <a href="../spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="../index.html">Overview</a></li><li><a href="../getting-started.html">Getting started</a></li><li><a href="../api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1><span class="lang-badge lang-java">JV</span> Java</h1>
+<div class="badges">
+  <span class="badge accent">com.ebremer:lws-client:0.1.0</span>
+  <span class="badge">Java 17+</span>
+  <span class="badge">JPMS module com.ebremer.lws</span>
+  <span class="badge">1 dependency: Jackson databind</span>
+</div>
+<p class="lead">A modern Java client built on <code>java.net.http.HttpClient</code>. It offers blocking calls that pair
+well with virtual threads, <code>CompletableFuture</code> variants for the core operations, records for every model,
+lazy <code>Stream</code>s for pagination, and JDK-only cryptography.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="install">Install</h2>
+<pre data-lang="bash"><code class="language-bash"># Until it is on Maven Central: build and install into your local repository (~/.m2)
+git clone https://github.com/ebremer/lws-client.git
+cd lws-client/java &amp;&amp; mvn install
+
+# Maven
+#   &lt;dependency&gt;
+#     &lt;groupId&gt;com.ebremer&lt;/groupId&gt;
+#     &lt;artifactId&gt;lws-client&lt;/artifactId&gt;
+#     &lt;version&gt;0.1.0&lt;/version&gt;
+#   &lt;/dependency&gt;
+# Gradle (with mavenLocal())
+#   implementation(&quot;com.ebremer:lws-client:0.1.0&quot;)</code></pre>
+
+<h2 id="first">First program</h2>
+<pre data-lang="java"><code class="language-java">import com.ebremer.lws.Body;
+import com.ebremer.lws.CreateOptions;
+import com.ebremer.lws.LwsClient;
+import com.ebremer.lws.Resource;
+import com.ebremer.lws.StorageDescription;
+import com.ebremer.lws.auth.KeyPairs;
+import com.ebremer.lws.auth.SelfSignedCredentials;
+import com.ebremer.lws.auth.TokenExchangeAuthenticator;
+import java.net.URI;
+
+public class HelloLws {
+    public static void main(String[] args) {
+        SelfSignedCredentials credentials = SelfSignedCredentials.didKey(KeyPairs.generateP256());
+        LwsClient client = LwsClient.builder()
+                .authenticator(TokenExchangeAuthenticator.of(credentials))
+                .build();
+        System.out.println(&quot;agent:   &quot; + credentials.agent());
+
+        StorageDescription storage = client.discoverStorage(URI.create(&quot;http://localhost:8787/root/&quot;));
+        System.out.println(&quot;storage: &quot; + storage.id() + &quot;  root: &quot; + storage.storageRoot());
+
+        URI folder = client.createContainer(storage.storageRoot(), CreateOptions.slug(&quot;hello-world&quot;)).location();
+        URI file = client.create(folder, Body.of(&quot;Hello, LWS!&quot;), &quot;text/plain&quot;, CreateOptions.slug(&quot;hello.txt&quot;)).location();
+        System.out.println(&quot;created: &quot; + file);
+
+        Resource resource = client.read(file);
+        System.out.println(resource.text() + &quot;  (etag &quot; + resource.etag().orElse(&quot;-&quot;)
+                + &quot;, parent &quot; + resource.metadata().parent().orElse(null) + &quot;)&quot;);
+    }
+}</code></pre>
+
+<h2 id="configure">Configure the client</h2>
+<pre data-lang="java"><code class="language-java">LwsClient client = LwsClient.builder()
+        .authenticator(TokenExchangeAuthenticator.of(credentials))
+        .userAgent(&quot;my-app/1.0&quot;)                  // default &quot;lws-client-java/0.1.0&quot;
+        .header(&quot;Accept-Language&quot;, &quot;en&quot;)          // added to every request
+        .timeout(Duration.ofSeconds(20))          // per request
+        .connectTimeout(Duration.ofSeconds(5))
+        // .httpClient(myHttpClient)              // bring your own java.net.http.HttpClient
+        .build();
+
+// Per-call headers and timeouts
+ContainerPage page = client.readContainer(container,
+        ReadOptions.builder().header(&quot;X-Trace&quot;, &quot;1&quot;).timeout(Duration.ofSeconds(5)).build());
+System.out.println(page.totalItems());
+
+// Core operations have CompletableFuture variants
+client.readAsync(url).thenAccept(resource -&gt; System.out.println(resource.text()));</code></pre>
+<p><code>LwsClient</code> is immutable and thread-safe; build one and share it. <code>withAuthenticator(a)</code> returns a copy
+with a different authenticator. The default <code>HttpClient</code> does not follow redirects itself. The client follows
+them instead and re-checks credentials on each hop. If you supply your own <code>HttpClient</code> with redirects
+enabled, you bypass that protection.</p>
+
+<h2 id="idioms">Java idioms</h2>
+<div class="table-wrap"><table><thead><tr><th>Aspect</th><th>How the Java client does it</th></tr></thead><tbody>
+<tr><td>Calls</td><td>Blocking methods (ideal with virtual threads) plus <code>headAsync</code>, <code>readAsync</code>, <code>readContainerAsync</code>, <code>createAsync</code>, <code>createContainerAsync</code>, <code>updateAsync</code>, <code>patchAsync</code>, <code>deleteAsync</code>, <code>discoverStorageAsync</code></td></tr>
+<tr><td>Pagination</td><td><code>listContainer</code>, <code>listTypes</code>, <code>searchAll</code>, <code>listSubscriptions</code>… return lazy <code>Stream</code>s</td></tr>
+<tr><td>Options</td><td>Immutable option objects with builders and static shortcuts: <code>CreateOptions.slug(…)</code>, <code>UpdateOptions.ifMatch(…)</code>, <code>DeleteOptions.recursive()</code>, <code>ReadOptions.ifNoneMatch(…)</code></td></tr>
+<tr><td>Bodies</td><td><code>Body.of(String | byte[])</code>, <code>Body.ofJson(Object)</code>, <code>Body.ofFile(Path)</code>, <code>Body.ofInputStream(Supplier)</code>; all replayable, so the 401 retry always works</td></tr>
+<tr><td>Models</td><td>Records with <code>Optional</code> / <code>OptionalLong</code> for absent values; JSON as Jackson <code>JsonNode</code>; <code>json(Class)</code> for data binding</td></tr>
+<tr><td>Errors</td><td>Unchecked: <code>LwsException</code> → <code>HttpStatusException</code> → <code>NotFoundException</code>, <code>ConflictException</code>, …</td></tr>
+<tr><td>Crypto</td><td>JDK only: <code>SHA256withECDSAinP1363Format</code>, <code>Ed25519</code>; also RSA public JWKs and P-384/RSA webhook signatures</td></tr>
+</tbody></table></div>
+
+<h2 id="packages">Packages</h2>
+<div class="table-wrap"><table><thead><tr><th>Package</th><th>Contents</th></tr></thead><tbody>
+<tr><td><code>com.ebremer.lws</code></td><td><code>LwsClient</code>, options, <code>Body</code>, models (<code>Resource</code>, <code>ContainerPage</code>, <code>StorageDescription</code>, <code>Linkset</code>…), exceptions, <code>Lws</code> constants</td></tr>
+<tr><td><code>com.ebremer.lws.auth</code></td><td><code>Authenticator</code>, <code>TokenExchangeAuthenticator</code>, credentials, <code>KeyPairs</code>, <code>Jwk</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifiers</code></td></tr>
+<tr><td><code>com.ebremer.lws.notify</code></td><td><code>WebhookSubscriptionRequest</code>, <code>Subscription</code>, <code>Notification</code>, <code>WebhookVerifier</code>, <code>HttpExchangeWebhooks</code></td></tr>
+<tr><td><code>com.ebremer.lws.access</code></td><td><code>AccessRequest</code>, <code>AccessGrant</code>, <code>AccessPolicy</code>, <code>AccessTarget</code>, <code>Constraint</code></td></tr>
+<tr><td><code>com.ebremer.lws.index</code></td><td><code>TypeQuery</code>, <code>TypeIndexPage</code></td></tr>
+<tr><td><code>com.ebremer.lws.patch</code> / <code>.http</code></td><td><code>JsonPatch</code>, <code>JsonPointer</code> / <code>Link</code>, <code>LinkHeader</code>, <code>WwwAuthenticate</code>, <code>StructuredFields</code>, <code>ProblemDetails</code></td></tr>
+</tbody></table></div>
+
+<h2 id="notes">Notes and deviations</h2>
+<ul>
+  <li>The contract's <em>ProtocolError</em> is <code>LwsProtocolException</code> (to avoid clashing with
+  <code>java.net.ProtocolException</code>). <em>HttpError</em> is <code>HttpStatusException</code>, and transport failures are
+  <code>LwsTransportException</code>.</li>
+  <li>Option getters are named <code>ifMatchValue()</code>, <code>slugValue()</code>… because the static factories use the plain names.</li>
+  <li><code>ContainerPage.id()</code> is <code>Optional</code> because synthetic search pages have no id.</li>
+  <li><code>readLinksetResource(linksetUrl)</code> complements <code>readLinkset(resourceUrl)</code> when you already know the linkset URL.</li>
+  <li><code>Linkset</code> is immutable: <code>add</code>/<code>remove</code> return a new instance.</li>
+  <li><code>HttpExchangeWebhooks</code> needs the <code>jdk.httpserver</code> module, which is declared <code>requires static</code>.</li>
+</ul>
+
+<h2 id="build">Build, test and examples</h2>
+<pre data-lang="bash"><code class="language-bash">cd java
+mvn verify                                          # compile (--release 17), unit + fixture + HTTP tests
+node ../testing/mock-server/server.mjs --port 8787 &amp;
+LWS_TEST_SERVER=http://localhost:8787 mvn verify    # adds the cross-language interop scenario
+
+# Examples (src/examples/java): Quickstart, SelfSignedAuth, WebhookReceiver
+mvn -q dependency:build-classpath -Dmdep.outputFile=cp.txt
+java -cp &quot;target/classes:target/test-classes:$(cat cp.txt)&quot; \
+     com.ebremer.lws.examples.Quickstart http://localhost:8787/root/   # use ';' on Windows</code></pre>
+<div class="callout"><p><strong>Source</strong> <a href="https://github.com/ebremer/lws-client/tree/main/java">java/</a> in the repository, with its own <a href="https://github.com/ebremer/lws-client/blob/main/java/README.md">README</a>.</p></div>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

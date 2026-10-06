@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Access requests &amp; grants · LWS Client</title>
+  <meta name="description" content="Request access to resources in a Linked Web Storage and record access grants using the ODRL-based LWS access profile.">
+  <meta property="og:title" content="Access requests &amp; grants · LWS Client">
+  <meta property="og:description" content="Request access to resources in a Linked Web Storage and record access grants using the ODRL-based LWS access profile.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="./assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="./getting-started.html">Get started</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./authentication.html">Auth</a>
+        <a href="./api-reference.html">API</a>
+        <a href="./spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="./index.html">Overview</a></li><li><a href="./getting-started.html">Getting started</a></li><li><a href="./api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1>Access requests &amp; grants</h1>
+<p class="lead">An agent asks for access by posting an <code>AccessRequest</code> to the storage's
+<code>AccessRequestService</code>. A storage controller records a decision as an <code>AccessGrant</code>, and the server
+then adjusts its access policies. Grants are records of what was allowed, not tokens you present.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="model">The access profile</h2>
+<pre data-lang="json"><code class="language-json">{
+  &quot;@context&quot;: [&quot;https://www.w3.org/ns/lws/v1&quot;],
+  &quot;type&quot;: [&quot;AccessRequest&quot;],
+  &quot;storage&quot;: &quot;https://storage.example/&quot;,
+  &quot;inbox&quot;: &quot;https://id.example/agent/inbox/&quot;,
+  &quot;access&quot;: [{
+    &quot;type&quot;: [&quot;AccessPolicy&quot;],
+    &quot;action&quot;: [&quot;read&quot;, &quot;create&quot;],
+    &quot;assignee&quot;: &quot;https://id.example/agent&quot;,
+    &quot;target&quot;: { &quot;type&quot;: &quot;StorageResource&quot;, &quot;value&quot;: [&quot;https://storage.example/root/projects/&quot;] },
+    &quot;constraint&quot;: [
+      { &quot;leftOperand&quot;: &quot;purpose&quot;, &quot;operator&quot;: &quot;eq&quot;, &quot;rightOperand&quot;: &quot;https://purpose.example/collaboration&quot; },
+      { &quot;leftOperand&quot;: &quot;dateTime&quot;, &quot;operator&quot;: &quot;lteq&quot;, &quot;rightOperand&quot;: &quot;2026-12-31T23:59:59Z&quot; }
+    ]
+  }]
+}</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Member</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>action</code></td><td><code>read</code> (GET/HEAD), <code>modify</code> (PUT/PATCH), <code>create</code> (POST), <code>delete</code> (DELETE)</td></tr>
+<tr><td><code>assignee</code></td><td>The agent requesting or receiving access; <code>http://xmlns.com/foaf/0.1/Agent</code> means everyone</td></tr>
+<tr><td><code>target</code></td><td><code>StorageResource</code>, <code>Container</code> or <code>DataResource</code> matcher plus resource URLs</td></tr>
+<tr><td><code>constraint</code></td><td>All must hold. Operands are <code>purpose</code>, <code>client</code>, <code>format</code>, <code>type</code> and <code>dateTime</code>; operators are <code>eq</code>, <code>isAnyOf</code>, <code>gteq</code> and <code>lteq</code></td></tr>
+</tbody></table></div>
+<h3 id="constraints">Constraint helpers</h3>
+<div class="table-wrap"><table><thead><tr><th>Helper (concept)</th><th>Produces</th></tr></thead><tbody>
+<tr><td><code>purpose(uri)</code> / <code>purposeAnyOf(uris)</code></td><td><code>purpose eq</code> / <code>purpose isAnyOf</code></td></tr>
+<tr><td><code>client(clientId)</code></td><td><code>client eq</code>: limit access to one application</td></tr>
+<tr><td><code>format(mediaType)</code> / <code>formatAnyOf(types)</code></td><td><code>format eq</code> / <code>isAnyOf</code></td></tr>
+<tr><td><code>type(iri)</code> / <code>typeAnyOf(iris)</code></td><td><code>type eq</code> / <code>isAnyOf</code> (Rust and Python: <code>resource_type…</code>)</td></tr>
+<tr><td><code>notBefore(time)</code> / <code>notAfter(time)</code></td><td><code>dateTime gteq</code> / <code>dateTime lteq</code> (an access window)</td></tr>
+</tbody></table></div>
+
+<h2 id="request">Requesting access</h2>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">AccessRequest request = AccessRequest.builder()
+        .storage(storage.id())
+        .inbox(URI.create(&quot;https://id.example/agent/inbox/&quot;))
+        .access(AccessPolicy.builder()
+                .actions(Lws.Access.ACTION_READ, Lws.Access.ACTION_CREATE)
+                .assignee(URI.create(&quot;https://id.example/agent&quot;))
+                .target(AccessTarget.storageResources(container))
+                .constraint(Constraint.purpose(URI.create(&quot;https://purpose.example/collaboration&quot;)))
+                .constraint(Constraint.notAfter(Instant.parse(&quot;2026-12-31T23:59:59Z&quot;)))
+                .build())
+        .build();
+URI requests = storage.accessRequestService().orElseThrow().serviceEndpoint();
+URI requestUrl = client.requestAccess(requests, request);
+
+client.listAccessRequests(requests).forEach(r -&gt; System.out.println(r.id()));
+AccessRequest pending = client.getAccessRequest(requestUrl);
+System.out.println(pending.access().get(0).actions());
+client.cancelAccessRequest(requestUrl);</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const request = new AccessRequest({
+  storage: storage.id,
+  inbox: &quot;https://id.example/agent/inbox/&quot;,
+  access: [{
+    actions: [Action.READ, Action.CREATE],
+    assignee: &quot;https://id.example/agent&quot;,
+    target: { type: &quot;StorageResource&quot;, values: [container] },
+    constraints: [
+      Constraints.purpose(&quot;https://purpose.example/collaboration&quot;),
+      Constraints.notAfter(new Date(&quot;2026-12-31T23:59:59Z&quot;)),
+    ],
+  }],
+});
+const requests = storage.accessRequestService()!;
+const requestUrl = await client.requestAccess(requests, request);
+
+for await (const r of client.listAccessRequests(requests)) console.log(r.id);
+const pending = await client.getAccessRequest(requestUrl);
+console.log(pending.access[0]?.actions);
+await client.cancelAccessRequest(requestUrl);</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">lws::AccessPolicy policy{
+    .actions = {&quot;read&quot;, &quot;create&quot;},
+    .assignee = &quot;https://id.example/agent&quot;,
+    .target = lws::AccessTarget{.type = &quot;StorageResource&quot;, .values = {container}},
+    .constraints = {
+        lws::Constraint::purpose(&quot;https://purpose.example/collaboration&quot;),
+        lws::Constraint::not_after(&quot;2026-12-31T23:59:59Z&quot;),
+    },
+};
+lws::AccessRequest request{
+    .storage = storage.id,
+    .inbox = &quot;https://id.example/agent/inbox/&quot;,
+    .access = {policy},
+};
+const std::string requests = storage.access_request_service()-&gt;service_endpoint;
+std::string request_url = client.request_access(requests, request);
+
+for (const auto&amp; r : client.list_access_requests(requests)) std::cout &lt;&lt; r.id &lt;&lt; '\n';
+lws::AccessRequest pending = client.get_access_request(request_url);
+std::cout &lt;&lt; pending.access.at(0).actions.size() &lt;&lt; '\n';
+client.cancel_access_request(request_url);</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let policy = AccessPolicy::builder(&quot;https://id.example/agent&quot;)
+    .actions([&quot;read&quot;, &quot;create&quot;])
+    .target_resources([container.as_str()])
+    .constraint(Constraint::purpose(&quot;https://purpose.example/collaboration&quot;))
+    .constraint(Constraint::not_after(&quot;2026-12-31T23:59:59Z&quot;))
+    .build()?;
+let request = AccessRequest::builder(storage.id.as_str())
+    .inbox(&quot;https://id.example/agent/inbox/&quot;)
+    .policy(policy)
+    .build()?;
+
+let requests = &amp;storage.access_request_service().expect(&quot;AccessRequestService&quot;).service_endpoint;
+let request_url = client.request_access(requests, &amp;request).await?;
+
+let mut listed = client.list_access_requests(requests);
+while let Some(r) = listed.try_next().await? {
+    println!(&quot;{}&quot;, r.id);
+}
+let pending = client.get_access_request(&amp;request_url).await?;
+println!(&quot;{:?}&quot;, pending.access[0].actions);
+client.cancel_access_request(&amp;request_url).await?;</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">policy := lws.NewAccessPolicy(&quot;https://id.example/agent&quot;, lws.ActionRead, lws.ActionCreate).
+	WithTarget(&quot;StorageResource&quot;, container).
+	WithConstraints(
+		lws.PurposeConstraint(&quot;https://purpose.example/collaboration&quot;),
+		lws.NotAfter(time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC)),
+	)
+request := lws.NewAccessRequest(storage.ID, policy)
+request.Inbox = &quot;https://id.example/agent/inbox/&quot;
+
+svc, _ := storage.AccessRequestService()
+requestURL, err := client.RequestAccess(ctx, svc.ServiceEndpoint, request)
+if err != nil {
+	return err
+}
+for item, err := range client.ListAccessRequests(ctx, svc.ServiceEndpoint) {
+	if err != nil {
+		return err
+	}
+	fmt.Println(item.ID)
+}
+pending, err := client.GetAccessRequest(ctx, requestURL)
+if err != nil {
+	return err
+}
+fmt.Println(pending.Access[0].Actions)
+return client.CancelAccessRequest(ctx, requestURL)</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">from datetime import datetime, timezone
+
+policy = AccessPolicy(
+    actions=[&quot;read&quot;, &quot;create&quot;],
+    assignee=&quot;https://id.example/agent&quot;,
+    target=AccessTarget(&quot;StorageResource&quot;, [container]),
+    constraints=[
+        Constraint.purpose(&quot;https://purpose.example/collaboration&quot;),
+        Constraint.not_after(datetime(2026, 12, 31, 23, 59, 59, tzinfo=timezone.utc)),
+    ],
+)
+request = AccessRequest(storage=storage.id, inbox=&quot;https://id.example/agent/inbox/&quot;, access=[policy])
+
+requests = storage.access_request_service()
+assert requests is not None
+request_url = client.request_access(requests, request)
+
+for r in client.list_access_requests(requests):
+    print(r.id)
+pending = client.get_access_request(request_url)
+print(pending.access[0].actions)
+client.cancel_access_request(request_url)</code></pre>
+</div>
+
+<h2 id="grant">Granting and revoking</h2>
+<p>Creating grants is normally reserved to the storage controller. Revoking a grant (<code>DELETE</code>) tells the
+server to withdraw the permissions it recorded.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// A storage controller approves a request by recording a grant with the same policy model.
+AccessRequest pending = client.getAccessRequest(requestUrl);
+URI grants = storage.accessGrantService().orElseThrow().serviceEndpoint();
+URI grantUrl = client.grantAccess(grants, AccessGrant.approving(pending));
+
+client.listAccessGrants(grants).forEach(g -&gt; System.out.println(g.id()));
+client.revokeAccessGrant(grantUrl);   // the server withdraws the underlying permissions</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// A storage controller approves a request by recording a grant with the same policy model.
+const pending = await client.getAccessRequest(requestUrl);
+const grants = storage.accessGrantService()!;
+const grantUrl = await client.grantAccess(grants, new AccessGrant({
+  storage: pending.storage,
+  access: [...pending.access],
+}));
+
+for await (const g of client.listAccessGrants(grants)) console.log(g.id);
+await client.revokeAccessGrant(grantUrl);   // the server withdraws the underlying permissions</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// A storage controller approves a request by recording a grant with the same policy model.
+lws::AccessRequest pending = client.get_access_request(request_url);
+const std::string grants = storage.access_grant_service()-&gt;service_endpoint;
+std::string grant_url = client.grant_access(grants, {.storage = pending.storage, .access = pending.access});
+
+for (const auto&amp; g : client.list_access_grants(grants)) std::cout &lt;&lt; g.id &lt;&lt; '\n';
+client.revoke_access_grant(grant_url);   // the server withdraws the underlying permissions</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// A storage controller approves a request by recording a grant with the same policy model.
+let pending = client.get_access_request(request_url).await?;
+let mut grant = AccessGrant::builder(pending.storage.as_str());
+for policy in pending.access {
+    grant = grant.policy(policy);
+}
+let grants = &amp;storage.access_grant_service().expect(&quot;AccessGrantService&quot;).service_endpoint;
+let grant_url = client.grant_access(grants, &amp;grant.build()?).await?;
+
+let mut listed = client.list_access_grants(grants);
+while let Some(g) = listed.try_next().await? {
+    println!(&quot;{}&quot;, g.id);
+}
+client.revoke_access_grant(&amp;grant_url).await?;   // the server withdraws the underlying permissions</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// A storage controller approves a request by recording a grant with the same policy model.
+pending, err := client.GetAccessRequest(ctx, requestURL)
+if err != nil {
+	return err
+}
+svc, _ := storage.AccessGrantService()
+grantURL, err := client.GrantAccess(ctx, svc.ServiceEndpoint, lws.NewAccessGrant(pending.Storage, pending.Access...))
+if err != nil {
+	return err
+}
+for item, err := range client.ListAccessGrants(ctx, svc.ServiceEndpoint) {
+	if err != nil {
+		return err
+	}
+	fmt.Println(item.ID)
+}
+return client.RevokeAccessGrant(ctx, grantURL) // the server withdraws the underlying permissions</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># A storage controller approves a request by recording a grant with the same policy model.
+pending = client.get_access_request(request_url)
+grants = storage.access_grant_service()
+assert grants is not None
+grant_url = client.grant_access(grants, AccessGrant(storage=pending.storage, access=list(pending.access)))
+
+for g in client.list_access_grants(grants):
+    print(g.id)
+client.revoke_access_grant(grant_url)   # the server withdraws the underlying permissions</code></pre>
+</div>
+<div class="callout"><p><strong>Notifications</strong> If a request or grant has an <code>inbox</code>, the server should notify it: the controller about new requests, and the requester when a grant is created. These deliveries use the LWS notification format, so you can verify them with the same <a href="notifications.html#verify">webhook verifier</a>.</p></div>
+
+<h2 id="endpoints">Endpoints</h2>
+<div class="table-wrap"><table><thead><tr><th>Operation</th><th>HTTP</th><th>Client method</th></tr></thead><tbody>
+<tr><td>Create request</td><td><code>POST {AccessRequestService}</code></td><td><code>requestAccess</code> → URL of the request</td></tr>
+<tr><td>List requests</td><td><code>GET {AccessRequestService}</code> (an LWS container)</td><td><code>listAccessRequests</code></td></tr>
+<tr><td>Read / cancel request</td><td><code>GET</code> / <code>DELETE {request}</code></td><td><code>getAccessRequest</code> / <code>cancelAccessRequest</code></td></tr>
+<tr><td>Create grant</td><td><code>POST {AccessGrantService}</code></td><td><code>grantAccess</code> → URL of the grant</td></tr>
+<tr><td>List grants</td><td><code>GET {AccessGrantService}</code></td><td><code>listAccessGrants</code></td></tr>
+<tr><td>Read / revoke grant</td><td><code>GET</code> / <code>DELETE {grant}</code></td><td><code>getAccessGrant</code> / <code>revokeAccessGrant</code></td></tr>
+</tbody></table></div>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

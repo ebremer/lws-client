@@ -1,0 +1,50 @@
+{
+  "description": "First page of a paginated container (lws10-core Pagination example), with relative ids and relative Link targets that must be resolved against the request URL.",
+  "url": "https://storage.example/alice/photos/",
+  "status": 200,
+  "headers": {
+    "content-type": "application/lws+json",
+    "etag": "\"photos-page1-etag\"",
+    "vary": "Accept",
+    "link": [
+      "</alice/photos/.meta>; rel=\"linkset\"; type=\"application/linkset+json\"",
+      "</alice/>; rel=\"up\"",
+      "<https://www.w3.org/ns/lws#Container>; rel=\"type\"",
+      "</alice/photos/?page=1>; rel=\"first\"",
+      "</alice/photos/?page=3>; rel=\"last\"",
+      "</alice/photos/?page=2>; rel=\"next\"",
+      "<https://storage.example/>; rel=\"https://www.w3.org/ns/lws#storage\""
+    ]
+  },
+  "body": {
+    "@context": "https://www.w3.org/ns/lws/v1",
+    "id": "/alice/photos/",
+    "type": "Container",
+    "totalItems": 150,
+    "items": [
+      { "type": "DataResource", "id": "/alice/photos/vacation.jpg", "format": "image/jpeg", "size": 248392, "modified": "2025-11-20T10:30:00Z" },
+      { "type": ["DataResource", "http://example.org/customType"], "id": "/alice/photos/portrait.png", "format": "image/png", "size": 102400, "modified": "2025-11-21T14:15:00Z" },
+      { "type": "Container", "id": "albums/" },
+      { "type": ["lws:DataResource"], "id": "https://storage.example/alice/photos/odd.bin", "format": "application/octet-stream", "modified": "not-a-date" }
+    ]
+  },
+  "expected": {
+    "id": "https://storage.example/alice/photos/",
+    "isContainer": true,
+    "totalItems": 150,
+    "etag": "\"photos-page1-etag\"",
+    "linkset": "https://storage.example/alice/photos/.meta",
+    "parent": "https://storage.example/alice/",
+    "storage": "https://storage.example/",
+    "first": "https://storage.example/alice/photos/?page=1",
+    "next": "https://storage.example/alice/photos/?page=2",
+    "prev": null,
+    "last": "https://storage.example/alice/photos/?page=3",
+    "items": [
+      { "id": "https://storage.example/alice/photos/vacation.jpg", "isContainer": false, "isDataResource": true, "format": "image/jpeg", "size": 248392, "modified": "2025-11-20T10:30:00Z", "types": ["DataResource"] },
+      { "id": "https://storage.example/alice/photos/portrait.png", "isContainer": false, "isDataResource": true, "format": "image/png", "size": 102400, "modified": "2025-11-21T14:15:00Z", "types": ["DataResource", "http://example.org/customType"], "hasType": "http://example.org/customType" },
+      { "id": "https://storage.example/alice/photos/albums/", "isContainer": true, "isDataResource": false, "format": null, "size": null, "modified": null, "types": ["Container"] },
+      { "id": "https://storage.example/alice/photos/odd.bin", "isContainer": false, "isDataResource": true, "format": "application/octet-stream", "size": null, "modified": null, "modifiedRaw": "not-a-date", "types": ["lws:DataResource"] }
+    ]
+  }
+}

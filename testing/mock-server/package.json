@@ -1,0 +1,22 @@
+{
+  "name": "lws-mock-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zero-dependency in-memory Linked Web Storage (LWS) test server used by the lws-client interop tests",
+  "license": "MIT",
+  "type": "module",
+  "main": "./lib/server.mjs",
+  "exports": {
+    ".": "./lib/server.mjs"
+  },
+  "bin": {
+    "lws-mock-server": "./server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "description": "WWW-Authenticate parsing (RFC 9110 section 11.6.1). 'headers' are separate header field lines. Compare 'scheme' case-insensitively. Parameter names are lower-cased; values are unquoted/unescaped. 'token68' is present only when the challenge uses the token68 form.",
+  "cases": [
+    {
+      "name": "lws-challenge",
+      "headers": ["Bearer as_uri=\"https://authorization.example\",\n                realm=\"https://storage.example/storage_1\",\n                error=\"invalid_token\""],
+      "expected": [
+        { "scheme": "Bearer", "params": { "as_uri": "https://authorization.example", "realm": "https://storage.example/storage_1", "error": "invalid_token" } }
+      ]
+    },
+    {
+      "name": "two-challenges-one-line",
+      "headers": ["Bearer as_uri=\"https://as.example\", realm=\"https://s.example/\", DPoP algs=\"ES256 PS256\""],
+      "expected": [
+        { "scheme": "Bearer", "params": { "as_uri": "https://as.example", "realm": "https://s.example/" } },
+        { "scheme": "DPoP", "params": { "algs": "ES256 PS256" } }
+      ]
+    },
+    {
+      "name": "two-lines",
+      "headers": ["Basic realm=\"simple\"", "Bearer realm=\"https://s.example/\", as_uri=\"https://as.example\""],
+      "expected": [
+        { "scheme": "Basic", "params": { "realm": "simple" } },
+        { "scheme": "Bearer", "params": { "realm": "https://s.example/", "as_uri": "https://as.example" } }
+      ]
+    },
+    {
+      "name": "token68",
+      "headers": ["Negotiate a87421000492aa874209af8bc028==, Bearer realm=\"r\""],
+      "expected": [
+        { "scheme": "Negotiate", "token68": "a87421000492aa874209af8bc028==", "params": {} },
+        { "scheme": "Bearer", "params": { "realm": "r" } }
+      ]
+    },
+    {
+      "name": "unquoted-token-value",
+      "headers": ["Bearer realm=\"https://s.example/\", error=invalid_token, as_uri=\"https://as.example\""],
+      "expected": [
+        { "scheme": "Bearer", "params": { "realm": "https://s.example/", "error": "invalid_token", "as_uri": "https://as.example" } }
+      ]
+    },
+    {
+      "name": "comma-and-escapes-in-quoted-value",
+      "headers": ["Bearer realm=\"a, b\", error_description=\"bad \\\"token\\\"\", as_uri=\"https://as.example\""],
+      "expected": [
+        { "scheme": "Bearer", "params": { "realm": "a, b", "error_description": "bad \"token\"", "as_uri": "https://as.example" } }
+      ]
+    },
+    {
+      "name": "case-insensitive",
+      "headers": ["bearer REALM=\"https://s.example/\", As_Uri=\"https://as.example\""],
+      "expected": [
+        { "scheme": "bearer", "params": { "realm": "https://s.example/", "as_uri": "https://as.example" } }
+      ]
+    },
+    {
+      "name": "scheme-only",
+      "headers": ["Bearer"],
+      "expected": [{ "scheme": "Bearer", "params": {} }]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "description": "JSON Pointer segment escaping (RFC 6901) and JSON Patch serialization (RFC 6902).",
+  "pointerEscapes": [
+    { "segment": "describedby", "escaped": "describedby" },
+    { "segment": "https://www.w3.org/ns/lws#storage", "escaped": "https:~1~1www.w3.org~1ns~1lws#storage" },
+    { "segment": "a~b", "escaped": "a~0b" },
+    { "segment": "~/", "escaped": "~0~1" },
+    { "segment": "", "escaped": "" }
+  ],
+  "pointers": [
+    { "segments": ["linkset", "0", "https://example.org/rel", "-"], "pointer": "/linkset/0/https:~1~1example.org~1rel/-" },
+    { "segments": [], "pointer": "" }
+  ],
+  "patch": {
+    "operations": [
+      { "op": "add", "path": "/linkset/0/license", "value": [{ "href": "https://creativecommons.org/licenses/by/4.0/" }] },
+      { "op": "remove", "path": "/linkset/0/describedby/0" },
+      { "op": "replace", "path": "/name", "value": "Alice" },
+      { "op": "move", "from": "/a", "path": "/b" },
+      { "op": "copy", "from": "/b", "path": "/c" },
+      { "op": "test", "path": "/age", "value": 30 }
+    ],
+    "description": "Building add, remove, replace, move, copy, test with these arguments (in this order) must serialize to exactly this array (member order inside each object is not significant)."
+  }
+}

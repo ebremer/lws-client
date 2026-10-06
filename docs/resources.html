@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reading &amp; writing resources · LWS Client</title>
+  <meta name="description" content="Create containers and data resources, read with conditional and range requests, replace with PUT, patch with JSON Patch and delete with the LWS clients.">
+  <meta property="og:title" content="Reading &amp; writing resources · LWS Client">
+  <meta property="og:description" content="Create containers and data resources, read with conditional and range requests, replace with PUT, patch with JSON Patch and delete with the LWS clients.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="./assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="./getting-started.html">Get started</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./authentication.html">Auth</a>
+        <a href="./api-reference.html">API</a>
+        <a href="./spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="./index.html">Overview</a></li><li><a href="./getting-started.html">Getting started</a></li><li><a href="./api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1>Reading &amp; writing resources</h1>
+<p class="lead">LWS maps its four abstract operations (create, read, update, delete) onto plain HTTP.
+The clients add typed metadata, automatic URL resolution and error mapping, so you work with
+resources rather than raw requests.</p>
+<div id="toc" class="toc"></div>
+<div class="callout"><p><strong>About the samples</strong> Fragments assume <code>client</code> (an authenticated client), <code>container</code> (a container URL), <code>url</code> (a resource URL) and <code>etag</code> are in scope. See <a href="getting-started.html#first-program">Getting started</a> for a complete program.</p></div>
+
+<h2 id="create">Create</h2>
+<p>Resources are always created inside an existing container with <code>POST</code>. The server assigns the final
+URL and returns it in <code>Location</code>, which the clients surface (absolute) as the create result's
+<code>location</code>. A container is created by sending <code>Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel="type"</code>
+with an empty body, which <code>createContainer</code> does for you.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// A container (POST with Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel=&quot;type&quot;)
+URI notes = client.createContainer(container, CreateOptions.slug(&quot;notes&quot;)).location();
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+CreateResult list = client.create(notes, Body.of(&quot;milk\neggs\n&quot;), &quot;text/plain&quot;, CreateOptions.slug(&quot;shopping.txt&quot;));
+CreateResult todo = client.createJson(notes, Map.of(&quot;task&quot;, &quot;write docs&quot;), CreateOptions.builder()
+        .slug(&quot;todo.json&quot;)
+        .type(&quot;https://schema.org/Action&quot;)                                // extra rel=&quot;type&quot;
+        .link(Link.of(&quot;https://example.org/shapes/todo&quot;, &quot;describedby&quot;))  // user metadata
+        .build());
+CreateResult photo = client.create(notes, Body.ofFile(Path.of(&quot;photo.png&quot;)), &quot;image/png&quot;,
+        CreateOptions.slug(&quot;photo.png&quot;));
+
+System.out.println(list.location() + &quot; &quot; + todo.metadata().linkset() + &quot; &quot; + photo.metadata().parent());</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// A container (POST with Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel=&quot;type&quot;)
+const notes = (await client.createContainer(container, { slug: &quot;notes&quot; })).location;
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+const list = await client.createText(notes, &quot;milk\neggs\n&quot;, { slug: &quot;shopping.txt&quot; });
+const todo = await client.createJson(notes, { task: &quot;write docs&quot; }, {
+  slug: &quot;todo.json&quot;,
+  types: [&quot;https://schema.org/Action&quot;],                                    // extra rel=&quot;type&quot;
+  links: [{ href: &quot;https://example.org/shapes/todo&quot;, rel: &quot;describedby&quot; }], // user metadata
+});
+const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);                      // your image bytes
+const photo = await client.create(notes, png, &quot;image/png&quot;, { slug: &quot;photo.png&quot; });
+
+console.log(list.location, todo.metadata.linkset, photo.metadata.parent);</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// A container (POST with Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel=&quot;type&quot;)
+std::string notes = client.create_container(container, {.slug = &quot;notes&quot;}).location;
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+auto list = client.create(notes, &quot;milk\neggs\n&quot;, &quot;text/plain&quot;, {.slug = &quot;shopping.txt&quot;});
+
+lws::CreateOptions todo_options;
+todo_options.slug = &quot;todo.json&quot;;
+todo_options.types = {&quot;https://schema.org/Action&quot;};                                            // extra rel=&quot;type&quot;
+todo_options.links = {lws::Link{.href = &quot;https://example.org/shapes/todo&quot;, .rel = &quot;describedby&quot;}};  // user metadata
+auto todo = client.create_json(notes, {{&quot;task&quot;, &quot;write docs&quot;}}, todo_options);
+
+std::string png = &quot;\x89PNG&quot;;                     // your image bytes
+auto photo = client.create(notes, png, &quot;image/png&quot;, {.slug = &quot;photo.png&quot;});
+
+std::cout &lt;&lt; list.location &lt;&lt; ' ' &lt;&lt; todo.metadata.linkset.value_or(&quot;&quot;) &lt;&lt; ' '
+          &lt;&lt; photo.metadata.parent.value_or(&quot;&quot;) &lt;&lt; '\n';</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// A container (POST with Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel=&quot;type&quot;)
+let notes = client.create_container(container).slug(&quot;notes&quot;).await?.location;
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+let list = client.create(&amp;notes, &quot;milk\neggs\n&quot;, &quot;text/plain&quot;).slug(&quot;shopping.txt&quot;).await?;
+let shape = Url::parse(&quot;https://example.org/shapes/todo&quot;).expect(&quot;valid URL&quot;);
+let todo = client
+    .create_json(&amp;notes, &amp;serde_json::json!({&quot;task&quot;: &quot;write docs&quot;}))
+    .slug(&quot;todo.json&quot;)
+    .resource_type(&quot;https://schema.org/Action&quot;)      // extra rel=&quot;type&quot;
+    .link(Link::new(shape, &quot;describedby&quot;))           // user metadata
+    .await?;
+let png: Vec&lt;u8&gt; = vec![0x89, b'P', b'N', b'G'];     // your image bytes
+let photo = client.create(&amp;notes, png, &quot;image/png&quot;).slug(&quot;photo.png&quot;).await?;
+
+println!(&quot;{} {:?} {:?}&quot;, list.location, todo.metadata.linkset(), photo.metadata.parent());</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// A container (POST with Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel=&quot;type&quot;)
+notes, err := client.CreateContainer(ctx, container, lws.Slug(&quot;notes&quot;))
+if err != nil {
+	return err
+}
+
+// Text, JSON or any io.Reader. The slug is only a hint: the server picks the final URL.
+list, err := client.Create(ctx, notes.Location, strings.NewReader(&quot;milk\neggs\n&quot;), &quot;text/plain&quot;, lws.Slug(&quot;shopping.txt&quot;))
+if err != nil {
+	return err
+}
+todo, err := client.CreateJSON(ctx, notes.Location, map[string]any{&quot;task&quot;: &quot;write docs&quot;},
+	lws.Slug(&quot;todo.json&quot;),
+	lws.Types(&quot;https://schema.org/Action&quot;),                                   // extra rel=&quot;type&quot;
+	lws.Links(lws.NewLink(&quot;https://example.org/shapes/todo&quot;, &quot;describedby&quot;)), // user metadata
+)
+if err != nil {
+	return err
+}
+png := []byte{0x89, 'P', 'N', 'G'} // your image bytes
+photo, err := client.Create(ctx, notes.Location, bytes.NewReader(png), &quot;image/png&quot;, lws.Slug(&quot;photo.png&quot;))
+if err != nil {
+	return err
+}
+fmt.Println(list.Location, todo.Metadata.Linkset, photo.Metadata.Parent)</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># A container (POST with Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel=&quot;type&quot;)
+notes = client.create_container(container, slug=&quot;notes&quot;).location
+
+# Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+shopping = client.create_text(notes, &quot;milk\neggs\n&quot;, slug=&quot;shopping.txt&quot;)
+todo = client.create_json(
+    notes,
+    {&quot;task&quot;: &quot;write docs&quot;},
+    slug=&quot;todo.json&quot;,
+    types=[&quot;https://schema.org/Action&quot;],                            # extra rel=&quot;type&quot;
+    links=[Link(&quot;https://example.org/shapes/todo&quot;, &quot;describedby&quot;)],  # user metadata
+)
+png = b&quot;\x89PNG\r\n\x1a\n&quot;                                           # your image bytes
+photo = client.create(notes, png, &quot;image/png&quot;, slug=&quot;photo.png&quot;)
+
+print(shopping.location, todo.metadata.linkset, photo.metadata.parent)</code></pre>
+</div>
+<div class="table-wrap"><table><thead><tr><th>Option</th><th>Wire effect</th></tr></thead><tbody>
+<tr><td><code>slug</code></td><td><code>Slug</code> header: a <em>hint</em> for the new name (percent-encoded). The server may change it to keep names unique.</td></tr>
+<tr><td><code>types</code></td><td>Extra <code>Link: &lt;iri&gt;; rel="type"</code> headers. Type index and search use them.</td></tr>
+<tr><td><code>links</code></td><td>Any other user-managed metadata, sent as <code>Link</code> headers and stored in the resource's linkset.</td></tr>
+</tbody></table></div>
+<div class="callout warn"><p><strong>POST is not idempotent</strong> The clients never retry a <code>POST</code> automatically. The one exception is the single retry after a <code>401</code> authentication challenge, when nothing was created.</p></div>
+
+<h2 id="read">Read</h2>
+<p><code>read</code> performs a <code>GET</code> and returns the body together with the parsed metadata: ETag,
+<code>Last-Modified</code>, content type, the <code>up</code>/<code>linkset</code>/<code>type</code>/storage links, and
+<code>Allow</code>/<code>Accept-Patch</code>. <code>head</code> returns the same metadata without a body.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">record Person(String name, int age) {}
+
+Resource resource = client.read(url);
+ResourceMetadata meta = resource.metadata();
+System.out.println(resource.status() + &quot; &quot; + resource.contentType() + &quot; &quot; + resource.etag() + &quot; &quot; + meta.lastModified());
+System.out.println(meta.types() + &quot; &quot; + meta.isDataResource() + &quot; &quot; + meta.parent() + &quot; &quot; + meta.linkset());
+
+String text = resource.text();            // decoded using the Content-Type charset
+byte[] bytes = resource.body();
+JsonNode json = client.read(url, ReadOptions.accept(&quot;application/json&quot;)).json();
+Person person = client.read(url).json(Person.class);   // Jackson data binding
+
+// Headers and links only
+ResourceMetadata head = client.head(url);
+System.out.println(head.contentLength() + &quot; &quot; + head.allow() + &quot; &quot; + head.acceptPatch() + &quot; &quot; + head.links(&quot;describedby&quot;));</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const resource = await client.read(url);
+console.log(resource.status, resource.contentType, resource.etag, resource.lastModified);
+console.log(resource.types, resource.isDataResource(), resource.parent, resource.linkset);
+
+const text = await resource.text();     // the body is buffered once and can be re-read
+const bytes = await resource.bytes();
+console.log(text.length, bytes.byteLength);
+
+const data = await (await client.read(url, { accept: &quot;application/json&quot; })).json();
+console.log(data);
+
+// Headers and links only
+const meta = await client.head(url);
+console.log(meta.contentLength, meta.allow, meta.acceptPatch, meta.links(&quot;describedby&quot;));</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">lws::Resource resource = client.read(url);
+std::cout &lt;&lt; resource.status &lt;&lt; ' ' &lt;&lt; resource.content_type.value_or(&quot;&quot;) &lt;&lt; ' '
+          &lt;&lt; resource.etag.value_or(&quot;&quot;) &lt;&lt; ' ' &lt;&lt; resource.last_modified.value_or(&quot;&quot;) &lt;&lt; '\n';
+std::cout &lt;&lt; resource.is_data_resource() &lt;&lt; ' ' &lt;&lt; resource.parent.value_or(&quot;&quot;) &lt;&lt; ' '
+          &lt;&lt; resource.linkset.value_or(&quot;&quot;) &lt;&lt; '\n';
+
+const std::string&amp; bytes = resource.body;        // raw bytes (resource.text() is the same buffer)
+std::cout &lt;&lt; bytes.size() &lt;&lt; &quot; bytes\n&quot;;
+nlohmann::json json = client.read(url, {.accept = &quot;application/json&quot;}).json();
+
+// Headers and links only
+lws::ResourceMetadata meta = client.head(url);
+std::cout &lt;&lt; meta.content_length.value_or(0) &lt;&lt; ' ' &lt;&lt; meta.allow.size() &lt;&lt; ' '
+          &lt;&lt; meta.accept_patch.size() &lt;&lt; ' ' &lt;&lt; meta.links_with(&quot;describedby&quot;).size() &lt;&lt; '\n';</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let resource = client.read(url).await?;
+let meta = &amp;resource.metadata;
+println!(&quot;{} {:?} {:?} {:?}&quot;, meta.status, meta.content_type, meta.etag, meta.last_modified);
+println!(&quot;{:?} {} {:?} {:?}&quot;, meta.types(), meta.is_data_resource(), meta.parent(), meta.linkset());
+
+let text = resource.text()?;               // UTF-8
+let bytes = &amp;resource.body;                 // bytes::Bytes
+println!(&quot;{} {}&quot;, text.len(), bytes.len());
+let profile: serde_json::Value = client.read(url).accept(&quot;application/json&quot;).await?.json()?;
+
+// Headers and links only
+let head = client.head(url).await?;
+println!(&quot;{:?} {:?} {:?} {:?}&quot;, head.content_length, head.allow, head.accept_patch, head.link(&quot;describedby&quot;));</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">res, err := client.Read(ctx, url)
+if err != nil {
+	return err
+}
+fmt.Println(res.StatusCode, res.ContentType, res.ETag, res.LastModified)
+fmt.Println(res.Types, res.IsDataResource(), res.Parent, res.Linkset)
+fmt.Println(len(res.Body), res.Text()) // Body is []byte
+
+var profile map[string]any
+if err := res.JSON(&amp;profile); err != nil {
+	return err
+}
+
+// Headers and links only
+meta, err := client.Head(ctx, url)
+if err != nil {
+	return err
+}
+fmt.Println(meta.ContentLength, meta.Allow, meta.AcceptPatch, meta.LinksWithRel(&quot;describedby&quot;))</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">resource = client.read(url)
+print(resource.status, resource.content_type, resource.etag, resource.last_modified)
+print(resource.types, resource.is_data_resource, resource.parent, resource.linkset)
+
+text = resource.text           # decoded using the Content-Type charset
+data = resource.content        # raw bytes
+print(len(text), len(data))
+profile = client.read_json(url)   # GET with Accept: application/json, parsed
+
+# Headers and links only
+meta = client.head(url)
+print(meta.content_length, meta.allow, meta.accept_patch, meta.links_for(&quot;describedby&quot;))</code></pre>
+</div>
+
+<h3 id="streaming">Streaming large bodies</h3>
+<p>Where the platform supports it, the clients can hand you the body as a stream instead of buffering it.
+Streamed uploads cannot be replayed after a <code>401</code>, so the JS, Python and Go clients first send a
+<code>HEAD</code> to obtain a token. Java bodies are always replayable. C++ bodies are buffered strings,
+so use range requests to process large resources in pieces.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">try (ResourceStream stream = client.readStream(url)) {    // nothing is buffered
+    long received = stream.body().transferTo(OutputStream.nullOutputStream());
+    System.out.println(&quot;received &quot; + received + &quot; bytes&quot;);
+}
+
+// Uploads: every Body is replayable (files are re-read), so the 401 retry always works.
+client.create(container, Body.ofFile(Path.of(&quot;big.bin&quot;)), &quot;application/octet-stream&quot;,
+        CreateOptions.slug(&quot;big.bin&quot;));</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const resource = await client.read(url);
+const reader = resource.body!.getReader();   // ReadableStream&lt;Uint8Array&gt;, nothing buffered
+let received = 0;
+for (;;) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  received += value.byteLength;
+}
+console.log(`received ${received} bytes`);
+
+// Upload a stream: the client obtains a token first (HEAD) because a stream cannot be replayed.
+const upload = new Blob([&quot;large file contents&quot;]).stream();
+await client.create(container, upload, &quot;application/octet-stream&quot;, { slug: &quot;big.bin&quot; });</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// Bodies are buffered std::strings. Process large resources piecewise with range requests:
+const std::uint64_t total = client.head(url).content_length.value_or(0);
+constexpr std::uint64_t chunk = 1 &lt;&lt; 20;
+for (std::uint64_t offset = 0; offset &lt; total; offset += chunk) {
+    auto part = client.read(url, {.range = lws::byte_range(offset, std::min(total, offset + chunk) - 1)});
+    std::cout &lt;&lt; &quot;received &quot; &lt;&lt; part.body.size() &lt;&lt; &quot; bytes\n&quot;;
+}</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let mut resource = client.read(url).send_streaming().await?;   // nothing is buffered
+let mut received = 0;
+while let Some(chunk) = resource.chunk().await? {
+    received += chunk.len();
+}
+println!(&quot;received {received} bytes&quot;);</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">s, err := client.ReadStream(ctx, url) // nothing is buffered
+if err != nil {
+	return err
+}
+defer s.Body.Close()
+n, err := io.Copy(io.Discard, s.Body)
+if err != nil {
+	return err
+}
+fmt.Println(&quot;received&quot;, n, &quot;bytes&quot;)
+
+// Uploads stream from any io.Reader. Without a cached token the client sends a HEAD first,
+// because a stream cannot be replayed after a 401.
+f, err := os.Open(&quot;big.bin&quot;)
+if err != nil {
+	return err
+}
+defer f.Close()
+_, err = client.Create(ctx, container, f, &quot;application/octet-stream&quot;, lws.Slug(&quot;big.bin&quot;))
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">from collections.abc import Iterator
+
+received = 0
+with client.stream(url) as response:      # nothing is buffered
+    for chunk in response.iter_bytes():
+        received += len(chunk)
+print(f&quot;received {received} bytes&quot;)
+
+
+# Upload from an iterator: the client obtains a token first (HEAD), because a
+# generator cannot be replayed after a 401.
+def chunks() -&gt; Iterator[bytes]:
+    yield b&quot;large file &quot;
+    yield b&quot;contents&quot;
+
+
+client.create(container, chunks(), &quot;application/octet-stream&quot;, slug=&quot;big.bin&quot;)</code></pre>
+</div>
+
+<h2 id="conditional">Conditional requests</h2>
+<p>Every LWS response to <code>GET</code>/<code>HEAD</code> carries an ETag. Echo it back verbatim, quotes included:</p>
+<ul>
+  <li><code>ifNoneMatch</code> on a read revalidates a cached copy. A <code>304</code> is returned as a normal
+  result flagged <code>notModified</code>, not as an error.</li>
+  <li><code>ifMatch</code> on update, patch or delete prevents lost updates. A mismatch raises the
+  <em>precondition failed</em> error (<code>412</code>).</li>
+</ul>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">Resource first = client.read(url);
+String etag = first.etag().orElseThrow();
+
+// Revalidate: 304 Not Modified is a normal result, not an exception.
+Resource again = client.read(url, ReadOptions.ifNoneMatch(etag));
+if (again.notModified()) System.out.println(&quot;cached copy is still fresh&quot;);
+
+// Optimistic concurrency: only overwrite the version you read.
+try {
+    client.update(url, Body.of(&quot;new content&quot;), &quot;text/plain&quot;, UpdateOptions.ifMatch(etag));
+} catch (PreconditionFailedException e) {
+    // Someone else changed it (412): re-read, merge, retry.
+}</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const first = await client.read(url);
+
+// Revalidate: 304 Not Modified is a normal result, not an error.
+const again = await client.read(url, { ifNoneMatch: first.etag! });
+if (again.notModified) console.log(&quot;cached copy is still fresh&quot;);
+
+// Optimistic concurrency: only overwrite the version you read.
+try {
+  await client.update(url, &quot;new content&quot;, &quot;text/plain&quot;, { ifMatch: first.etag! });
+} catch (e) {
+  if (!(e instanceof PreconditionFailedError)) throw e;
+  // Someone else changed it (412): re-read, merge, retry.
+}</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">lws::Resource first = client.read(url);
+
+// Revalidate: 304 Not Modified is a normal result, not an exception.
+lws::Resource again = client.read(url, {.if_none_match = first.etag});
+if (again.not_modified) std::cout &lt;&lt; &quot;cached copy is still fresh\n&quot;;
+
+// Optimistic concurrency: only overwrite the version you read.
+try {
+    client.update(url, &quot;new content&quot;, &quot;text/plain&quot;, {.if_match = first.etag});
+} catch (const lws::PreconditionFailedError&amp;) {
+    // Someone else changed it (412): re-read, merge, retry.
+}</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let first = client.read(url).await?;
+let etag = first.metadata.etag.clone().unwrap_or_default();
+
+// Revalidate: 304 Not Modified is a normal result, not an error.
+let again = client.read(url).if_none_match(&amp;etag).await?;
+if again.not_modified {
+    println!(&quot;cached copy is still fresh&quot;);
+}
+
+// Optimistic concurrency: only overwrite the version you read.
+match client.update(url, &quot;new content&quot;, &quot;text/plain&quot;).if_match(&amp;etag).await {
+    Ok(_) =&gt; {}
+    Err(e) if e.is_precondition_failed() =&gt; { /* 412: re-read, merge, retry */ }
+    Err(e) =&gt; return Err(e),
+}</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">first, err := client.Read(ctx, url)
+if err != nil {
+	return err
+}
+
+// Revalidate: 304 Not Modified is a normal result, not an error.
+again, err := client.Read(ctx, url, lws.IfNoneMatch(first.ETag))
+if err != nil {
+	return err
+}
+if again.NotModified {
+	fmt.Println(&quot;cached copy is still fresh&quot;)
+}
+
+// Optimistic concurrency: only overwrite the version you read.
+_, err = client.Update(ctx, url, strings.NewReader(&quot;new content&quot;), &quot;text/plain&quot;, lws.IfMatch(first.ETag))
+if errors.Is(err, lws.ErrPreconditionFailed) {
+	// Someone else changed it (412): re-read, merge, retry.
+} else if err != nil {
+	return err
+}</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">first = client.read(url)
+
+# Revalidate: 304 Not Modified is a normal result, not an error.
+again = client.read(url, if_none_match=first.etag)
+if again.not_modified:
+    print(&quot;cached copy is still fresh&quot;)
+
+# Optimistic concurrency: only overwrite the version you read.
+try:
+    client.update(url, &quot;new content&quot;, &quot;text/plain&quot;, if_match=first.etag)
+except PreconditionFailedError:
+    pass   # someone else changed it (412): re-read, merge, retry</code></pre>
+</div>
+
+<h3 id="range">Byte ranges</h3>
+<p>Servers must support range requests for data resources. A <code>206 Partial Content</code> is a normal
+success, and the clients expose <code>Content-Range</code>.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">Resource start = client.read(url, ReadOptions.builder().range(0, 1023L).build());   // first KiB
+System.out.println(start.status() + &quot; &quot; + start.contentRange().orElse(&quot;&quot;));         // 206 bytes 0-1023/52311
+
+Resource rest = client.read(url, ReadOptions.builder().range(1024, null).build());   // to the end
+Resource tail = client.read(url, ReadOptions.builder().suffixRange(512).build());    // last 512 bytes
+System.out.println(rest.body().length + &quot; &quot; + tail.body().length);</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const start = await client.read(url, { range: { start: 0, end: 1023 } });   // first KiB
+console.log(start.partial, start.contentRange);                            // true &quot;bytes 0-1023/52311&quot;
+
+const tail = await client.read(url, { range: { suffix: 512 } });           // last 512 bytes
+const rest = await client.read(url, { range: &quot;bytes=1024-&quot; });             // raw Range value
+console.log((await tail.bytes()).byteLength, rest.status);</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">auto start = client.read(url, {.range = lws::byte_range(0, 1023)});    // first KiB
+std::cout &lt;&lt; start.status &lt;&lt; ' ' &lt;&lt; start.content_range.value_or(&quot;&quot;) &lt;&lt; '\n';   // 206 bytes 0-1023/52311
+
+auto rest = client.read(url, {.range = lws::byte_range(1024)});         // to the end
+auto tail = client.read(url, {.range = &quot;bytes=-512&quot;});                  // raw Range value: last 512 bytes
+std::cout &lt;&lt; rest.body.size() &lt;&lt; ' ' &lt;&lt; tail.body.size() &lt;&lt; '\n';</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">let start = client.read(url).range(0, Some(1023)).await?;   // first KiB
+println!(&quot;{} {:?}&quot;, start.is_partial(), start.metadata.content_range());   // true &quot;bytes 0-1023/52311&quot;
+
+let rest = client.read(url).range(1024, None).await?;       // to the end
+println!(&quot;{}&quot;, rest.body.len());</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">start, err := client.Read(ctx, url, lws.ByteRange(0, 1023)) // first KiB
+if err != nil {
+	return err
+}
+fmt.Println(start.StatusCode, start.ContentRange) // 206 &quot;bytes 0-1023/52311&quot;
+
+rest, err := client.Read(ctx, url, lws.ByteRange(1024, -1)) // from byte 1024 to the end
+if err != nil {
+	return err
+}
+tail, err := client.Read(ctx, url, lws.ByteRange(-512, 0)) // the last 512 bytes
+if err != nil {
+	return err
+}
+fmt.Println(len(rest.Body), len(tail.Body))</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">start = client.read(url, range=(0, 1023))        # first KiB
+print(start.is_partial, start.content_range)     # True &quot;bytes 0-1023/52311&quot;
+
+rest = client.read(url, range=(1024, None))      # from byte 1024 to the end
+tail = client.read(url, range=&quot;bytes=-512&quot;)      # raw Range value: the last 512 bytes
+print(len(rest.content), len(tail.content))</code></pre>
+</div>
+
+<h2 id="update">Replace (PUT)</h2>
+<p><code>update</code> replaces the whole representation, and the media type should match the existing one.
+Content updates leave the linkset untouched unless you ask for a combined update with
+<code>setLinkset</code>. That option sends <code>Prefer: set-linkset</code> plus your <code>Link</code> headers, and the server
+applies both atomically. Servers that don't support it ignore the preference or answer <code>501</code>.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// PUT replaces the whole representation.
+client.update(url, Body.ofJson(Map.of(&quot;name&quot;, &quot;Alice&quot;, &quot;age&quot;, 31)), &quot;application/json&quot;, UpdateOptions.ifMatch(etag));
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+client.update(url, Body.of(&quot;v2&quot;), &quot;text/plain&quot;, UpdateOptions.builder()
+        .setLinkset(true)
+        .link(Link.of(&quot;https://creativecommons.org/licenses/by/4.0/&quot;, &quot;license&quot;))
+        .build());</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// PUT replaces the whole representation.
+await client.update(url, JSON.stringify({ name: &quot;Alice&quot;, age: 31 }), &quot;application/json&quot;, { ifMatch: etag });
+await client.updateJson(url, { name: &quot;Alice&quot;, age: 32 });
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+await client.update(url, &quot;v2&quot;, &quot;text/plain&quot;, {
+  setLinkset: true,
+  links: [{ href: &quot;https://creativecommons.org/licenses/by/4.0/&quot;, rel: &quot;license&quot; }],
+});</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// PUT replaces the whole representation.
+client.update(url, R&quot;({&quot;name&quot;:&quot;Alice&quot;,&quot;age&quot;:31})&quot;, &quot;application/json&quot;, {.if_match = etag});
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+lws::UpdateOptions options;
+options.set_linkset = true;
+options.links = {lws::Link{.href = &quot;https://creativecommons.org/licenses/by/4.0/&quot;, .rel = &quot;license&quot;}};
+client.update(url, &quot;v2&quot;, &quot;text/plain&quot;, options);</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// PUT replaces the whole representation.
+client
+    .update(url, r#&quot;{&quot;name&quot;:&quot;Alice&quot;,&quot;age&quot;:31}&quot;#, &quot;application/json&quot;)
+    .if_match(etag)
+    .await?;
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+let license = Url::parse(&quot;https://creativecommons.org/licenses/by/4.0/&quot;).expect(&quot;valid URL&quot;);
+client
+    .update(url, &quot;v2&quot;, &quot;text/plain&quot;)
+    .set_linkset(true)
+    .link(Link::new(license, &quot;license&quot;))
+    .await?;</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// PUT replaces the whole representation.
+body := strings.NewReader(`{&quot;name&quot;:&quot;Alice&quot;,&quot;age&quot;:31}`)
+if _, err := client.Update(ctx, url, body, &quot;application/json&quot;, lws.IfMatch(etag)); err != nil {
+	return err
+}
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+_, err := client.Update(ctx, url, strings.NewReader(&quot;v2&quot;), &quot;text/plain&quot;,
+	lws.SetLinkset(),
+	lws.Links(lws.NewLink(&quot;https://creativecommons.org/licenses/by/4.0/&quot;, &quot;license&quot;)),
+)
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># PUT replaces the whole representation.
+client.update(url, '{&quot;name&quot;: &quot;Alice&quot;, &quot;age&quot;: 31}', &quot;application/json&quot;, if_match=etag)
+
+# Replace content and user-managed links atomically (Prefer: set-linkset).
+client.update(
+    url,
+    &quot;v2&quot;,
+    &quot;text/plain&quot;,
+    set_linkset=True,
+    links=[Link(&quot;https://creativecommons.org/licenses/by/4.0/&quot;, &quot;license&quot;)],
+)</code></pre>
+</div>
+
+<h2 id="patch">Partial updates (PATCH)</h2>
+<p>JSON Patch (RFC 6902, <code>application/json-patch+json</code>) is the baseline format every LWS server
+supports. It replaced JSON Merge Patch in the 2026-10-05 draft. Every client includes a <code>JsonPatch</code>
+builder with <code>add</code>, <code>remove</code>, <code>replace</code>, <code>move</code>, <code>copy</code> and <code>test</code>.
+A server may accept other formats, such as SPARQL Update for RDF, but only send them when
+<code>Accept-Patch</code> lists them. Otherwise expect <code>415</code>.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+client.patch(url, JsonPatch.builder()
+        .test(&quot;/version&quot;, 3)
+        .replace(&quot;/status&quot;, &quot;done&quot;)
+        .add(&quot;/tags/-&quot;, &quot;urgent&quot;)
+        .remove(&quot;/draft&quot;)
+        .build(), UpdateOptions.ifMatch(etag));
+
+// Other formats only when the server advertises them in Accept-Patch.
+if (client.head(url).acceptPatch().contains(&quot;application/sparql-update&quot;)) {
+    client.patch(url, Body.of(&quot;INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; \&quot;Alice\&quot; }&quot;),
+            &quot;application/sparql-update&quot;, UpdateOptions.DEFAULT);
+}</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+await client.patch(
+  url,
+  new JsonPatch().test(&quot;/version&quot;, 3).replace(&quot;/status&quot;, &quot;done&quot;).add(&quot;/tags/-&quot;, &quot;urgent&quot;).remove(&quot;/draft&quot;),
+  { ifMatch: etag },
+);
+
+// Other formats only when the server advertises them in Accept-Patch.
+const meta = await client.head(url);
+if (meta.acceptPatch.includes(&quot;application/sparql-update&quot;)) {
+  await client.patch(url, {
+    body: 'INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }',
+    contentType: &quot;application/sparql-update&quot;,
+  });
+}</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+auto patch = lws::JsonPatch{}.test(&quot;/version&quot;, 3).replace(&quot;/status&quot;, &quot;done&quot;).add(&quot;/tags/-&quot;, &quot;urgent&quot;).remove(&quot;/draft&quot;);
+client.patch(url, patch, {.if_match = etag});
+
+// Other formats only when the server advertises them in Accept-Patch.
+auto meta = client.head(url);
+if (std::ranges::find(meta.accept_patch, &quot;application/sparql-update&quot;) != meta.accept_patch.end()) {
+    client.patch(url, R&quot;(INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; })&quot;,
+                 &quot;application/sparql-update&quot;);
+}</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+let patch = JsonPatch::new()
+    .test(&quot;/version&quot;, 3)
+    .replace(&quot;/status&quot;, &quot;done&quot;)
+    .add(&quot;/tags/-&quot;, &quot;urgent&quot;)
+    .remove(&quot;/draft&quot;);
+client.patch(url, &amp;patch).if_match(etag).await?;
+
+// Other formats only when the server advertises them in Accept-Patch.
+let meta = client.head(url).await?;
+if meta.accept_patch.iter().any(|t| t == &quot;application/sparql-update&quot;) {
+    let sparql = r#&quot;INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }&quot;#;
+    client.patch_with(url, sparql, &quot;application/sparql-update&quot;).await?;
+}</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+patch := lws.JSONPatch{}.Test(&quot;/version&quot;, 3).Replace(&quot;/status&quot;, &quot;done&quot;).Add(&quot;/tags/-&quot;, &quot;urgent&quot;).Remove(&quot;/draft&quot;)
+if _, err := client.Patch(ctx, url, patch, lws.IfMatch(etag)); err != nil {
+	return err
+}
+
+// Other formats only when the server advertises them in Accept-Patch.
+meta, err := client.Head(ctx, url)
+if err != nil {
+	return err
+}
+if slices.Contains(meta.AcceptPatch, &quot;application/sparql-update&quot;) {
+	sparql := `INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }`
+	_, err = client.PatchRaw(ctx, url, strings.NewReader(sparql), &quot;application/sparql-update&quot;)
+}
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+client.patch(
+    url,
+    JsonPatch().test(&quot;/version&quot;, 3).replace(&quot;/status&quot;, &quot;done&quot;).add(&quot;/tags/-&quot;, &quot;urgent&quot;).remove(&quot;/draft&quot;),
+    if_match=etag,
+)
+
+# Other formats only when the server advertises them in Accept-Patch.
+if &quot;application/sparql-update&quot; in client.head(url).accept_patch:
+    client.patch(
+        url,
+        'INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }',
+        content_type=&quot;application/sparql-update&quot;,
+    )</code></pre>
+</div>
+
+<h2 id="delete">Delete</h2>
+<p>Deleting a resource also removes its linkset and its entry in the parent container. A non-empty
+container can only be deleted recursively, which sends <code>Depth: infinity</code>. Without it the server
+answers <code>409 Conflict</code>.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">client.delete(url, DeleteOptions.ifMatch(etag));
+
+try {
+    client.delete(container);                             // 409 Conflict when not empty
+} catch (ConflictException e) {
+    client.delete(container, DeleteOptions.recursive());  // Depth: infinity
+}</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">await client.delete(url, { ifMatch: etag });
+
+try {
+  await client.delete(container);                       // 409 Conflict when not empty
+} catch (e) {
+  if (!(e instanceof ConflictError)) throw e;
+  await client.delete(container, { recursive: true });  // Depth: infinity
+}</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">client.remove(url, {.if_match = etag});           // `delete` is a C++ keyword
+
+try {
+    client.remove(container);                      // 409 Conflict when not empty
+} catch (const lws::ConflictError&amp;) {
+    client.remove(container, {.recursive = true}); // Depth: infinity
+}</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">client.delete(url).if_match(etag).await?;
+
+match client.delete(container).await {
+    // 409 Conflict when not empty: delete recursively (Depth: infinity)
+    Err(e) if e.is_conflict() =&gt; client.delete(container).recursive(true).await?,
+    other =&gt; other?,
+}</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">if err := client.Delete(ctx, url, lws.IfMatch(etag)); err != nil {
+	return err
+}
+
+err := client.Delete(ctx, container) // 409 Conflict when not empty
+if errors.Is(err, lws.ErrConflict) {
+	err = client.Delete(ctx, container, lws.Recursive()) // Depth: infinity
+}
+return err</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">client.delete(url, if_match=etag)
+
+try:
+    client.delete(container)                  # 409 Conflict when not empty
+except ConflictError:
+    client.delete(container, recursive=True)  # Depth: infinity</code></pre>
+</div>
+
+<h2 id="status-codes">Status codes at a glance</h2>
+<div class="table-wrap"><table><thead><tr><th>Operation</th><th>Success</th><th>Typical failures</th></tr></thead><tbody>
+<tr><td>create</td><td><code>201</code> + <code>Location</code></td><td><code>404</code> container missing · <code>403</code> · <code>409</code> · <code>507</code> quota</td></tr>
+<tr><td>read / head</td><td><code>200</code>, <code>206</code>, <code>304</code></td><td><code>404</code> · <code>403</code> · <code>401</code></td></tr>
+<tr><td>update</td><td><code>200</code> / <code>204</code></td><td><code>412</code> stale ETag · <code>404</code> (no create-by-PUT) · <code>405</code> on containers</td></tr>
+<tr><td>patch</td><td><code>200</code> / <code>204</code></td><td><code>415</code> unsupported format · <code>409</code>/<code>422</code> patch failed · <code>412</code></td></tr>
+<tr><td>delete</td><td><code>204</code></td><td><code>409</code> non-empty container · <code>412</code> · <code>405</code> storage root</td></tr>
+</tbody></table></div>
+<p>See <a href="errors.html">Errors</a> for how each status maps to a typed error in every language.</p>
+<pre data-lang="http" data-title="On the wire"><code class="language-http">POST /root/notes/ HTTP/1.1
+Content-Type: text/plain
+Slug: shopping.txt
+
+milk
+
+HTTP/1.1 201 Created
+Location: /root/notes/shopping.txt
+Link: &lt;/root/notes/shopping.txt.meta&gt;; rel=&quot;linkset&quot;; type=&quot;application/linkset+json&quot;
+Link: &lt;/root/notes/&gt;; rel=&quot;up&quot;
+Link: &lt;https://www.w3.org/ns/lws#DataResource&gt;; rel=&quot;type&quot;</code></pre>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

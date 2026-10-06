@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Notifications &amp; webhooks · LWS Client</title>
+  <meta name="description" content="Subscribe to changes in a Linked Web Storage with webhooks and verify every signed delivery (RFC 9421 HTTP Message Signatures, RFC 9530 Content-Digest).">
+  <meta property="og:title" content="Notifications &amp; webhooks · LWS Client">
+  <meta property="og:description" content="Subscribe to changes in a Linked Web Storage with webhooks and verify every signed delivery (RFC 9421 HTTP Message Signatures, RFC 9530 Content-Digest).">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="./assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="./getting-started.html">Get started</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./authentication.html">Auth</a>
+        <a href="./api-reference.html">API</a>
+        <a href="./spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="./index.html">Overview</a></li><li><a href="./getting-started.html">Getting started</a></li><li><a href="./api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1>Notifications &amp; webhooks</h1>
+<p class="lead">A storage that advertises a <code>NotificationService</code> can POST change notifications to an
+inbox you control. The clients manage subscriptions, and verify each delivery's signature against
+the key the storage publishes before you act on it.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="subscribe">Managing subscriptions</h2>
+<p>A subscription names one or more <code>topic</code> resources and an <code>inbox</code> URL. Subscribing to a container is
+recursive: you receive events for everything below it that you are allowed to read, both when you
+subscribe and when each event is delivered. The service's <code>subscriptionType</code> must include
+<code>WebhookSubscription</code>. The storage-description overloads check this for you.</p>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// subscribe(StorageDescription, …) checks that the NotificationService supports webhooks.
+Subscription subscription = client.subscribe(storage,
+        WebhookSubscriptionRequest.of(URI.create(&quot;https://my-app.example/hooks/lws&quot;), container)  // recursive
+                .withExpires(Instant.now().plus(Duration.ofDays(1))));
+System.out.println(subscription.subscription() + &quot; &quot; + subscription.expires());
+
+URI service = storage.notificationService().orElseThrow().serviceEndpoint();
+client.listSubscriptions(service).forEach(s -&gt; System.out.println(s.id()));
+Subscription current = client.getSubscription(subscription.subscription());
+System.out.println(current.type());
+client.unsubscribe(subscription.subscription());</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">const service = storage.notificationService();
+if (!service?.supportsWebhooks()) throw new Error(&quot;this storage has no webhook notifications&quot;);
+
+const subscription = await client.subscribe(service, {
+  topics: [container],                            // a container topic is recursive
+  inbox: &quot;https://my-app.example/hooks/lws&quot;,
+  expires: new Date(Date.now() + 24 * 3600_000),
+});
+console.log(subscription.subscription, subscription.expires);
+
+for await (const s of client.listSubscriptions(service)) console.log(s.id);
+const current = await client.getSubscription(subscription.subscription);
+console.log(current.type);
+await client.unsubscribe(subscription.subscription);</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">lws::WebhookSubscriptionRequest request{
+    .topics = {container},                       // a container topic is recursive
+    .inbox = &quot;https://my-app.example/hooks/lws&quot;,
+    .expires = &quot;2026-12-31T00:00:00Z&quot;,           // RFC 3339
+};
+// subscribe(StorageDescription, …) checks that the NotificationService supports webhooks.
+lws::Subscription subscription = client.subscribe(storage, request);
+std::cout &lt;&lt; subscription.subscription &lt;&lt; ' ' &lt;&lt; subscription.expires.value_or(&quot;&quot;) &lt;&lt; '\n';
+
+const std::string service = storage.notification_service()-&gt;service_endpoint;
+for (const auto&amp; s : client.list_subscriptions(service)) std::cout &lt;&lt; s.id &lt;&lt; '\n';
+auto current = client.get_subscription(subscription.subscription);
+std::cout &lt;&lt; current.type &lt;&lt; '\n';
+client.unsubscribe(subscription.subscription);</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// subscribe_storage checks that the NotificationService supports WebhookSubscription.
+let inbox = Url::parse(&quot;https://my-app.example/hooks/lws&quot;).expect(&quot;valid URL&quot;);
+let request = WebhookSubscriptionRequest::new([container.clone()], inbox) // recursive for containers
+    .expires(SystemTime::now() + Duration::from_secs(24 * 3600));
+let subscription = client.subscribe_storage(storage, &amp;request).await?;
+println!(&quot;{} {:?}&quot;, subscription.subscription, subscription.expires);
+
+let service = storage.notification_service().expect(&quot;NotificationService&quot;);
+let mut subs = client.list_subscriptions(&amp;service.service_endpoint);
+while let Some(s) = subs.try_next().await? {
+    println!(&quot;{}&quot;, s.id);
+}
+let current = client.get_subscription(&amp;subscription.subscription).await?;
+println!(&quot;{}&quot;, current.subscription_type);
+client.unsubscribe(&amp;subscription.subscription).await?;</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// SubscribeWebhook checks that the NotificationService supports WebhookSubscription.
+sub, err := client.SubscribeWebhook(ctx, storage, lws.WebhookSubscriptionRequest{
+	Topics:  []string{container}, // a container topic is recursive
+	Inbox:   &quot;https://my-app.example/hooks/lws&quot;,
+	Expires: time.Now().Add(24 * time.Hour),
+})
+if err != nil {
+	return err
+}
+fmt.Println(sub.URL, sub.Expires)
+
+svc, _ := storage.NotificationService()
+for item, err := range client.ListSubscriptions(ctx, svc.ServiceEndpoint) {
+	if err != nil {
+		return err
+	}
+	fmt.Println(item.ID)
+}
+current, err := client.GetSubscription(ctx, sub.URL)
+if err != nil {
+	return err
+}
+fmt.Println(current.Type)
+return client.Unsubscribe(ctx, sub.URL)</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">from datetime import datetime, timedelta, timezone
+
+service = storage.service(&quot;NotificationService&quot;)
+if service is None or &quot;WebhookSubscription&quot; not in service.subscription_types:
+    raise RuntimeError(&quot;this storage has no webhook notifications&quot;)
+
+subscription = client.subscribe(
+    service,
+    [container],                                  # a container topic is recursive
+    &quot;https://my-app.example/hooks/lws&quot;,
+    expires=datetime.now(timezone.utc) + timedelta(days=1),
+)
+print(subscription.subscription, subscription.expires)
+
+for s in client.list_subscriptions(service):
+    print(s.id)
+current = client.get_subscription(subscription.subscription)
+print(current.type)
+client.unsubscribe(subscription)</code></pre>
+</div>
+<pre data-lang="http" data-title="On the wire"><code class="language-http">POST /notifications/ HTTP/1.1
+Content-Type: application/lws+json
+Authorization: Bearer eyJ…
+
+{&quot;@context&quot;:[&quot;https://www.w3.org/ns/lws/v1&quot;],&quot;type&quot;:&quot;WebhookSubscription&quot;,
+ &quot;topic&quot;:[&quot;https://storage.example/root/notes/&quot;],&quot;inbox&quot;:&quot;https://my-app.example/hooks/lws&quot;,
+ &quot;expires&quot;:&quot;2026-12-31T00:00:00Z&quot;}</code></pre>
+
+<h2 id="model">The notification model</h2>
+<pre data-lang="json"><code class="language-json">{
+  &quot;@context&quot;: [&quot;https://www.w3.org/ns/lws/v1&quot;, &quot;https://www.w3.org/ns/activitystreams&quot;],
+  &quot;type&quot;: &quot;Notification&quot;,
+  &quot;storage&quot;: &quot;https://storage.example/&quot;,
+  &quot;activity&quot;: [{
+    &quot;id&quot;: &quot;urn:uuid:a1b2c3d4-…&quot;,
+    &quot;type&quot;: [&quot;Create&quot;],
+    &quot;object&quot;: { &quot;id&quot;: &quot;https://storage.example/root/notes/meeting.txt&quot;, &quot;type&quot;: [&quot;DataResource&quot;] },
+    &quot;target&quot;: &quot;https://storage.example/root/notes/&quot;,
+    &quot;published&quot;: &quot;2026-09-21T11:33:20Z&quot;
+  }]
+}</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>storage</code></td><td>The storage the events belong to (checked against the signing key)</td></tr>
+<tr><td><code>activities</code></td><td>Always a list, even when the server sent a single object (servers may batch)</td></tr>
+<tr><td><code>types</code></td><td><code>Create</code>, <code>Update</code> (content or metadata) or <code>Delete</code>; helpers <code>isCreate()</code>, <code>isUpdate()</code>, <code>isDelete()</code></td></tr>
+<tr><td><code>object</code></td><td>The resource's <code>id</code> and types</td></tr>
+<tr><td><code>target</code> / <code>origin</code></td><td>Container a resource was added to (Create) or removed from (Delete)</td></tr>
+<tr><td><code>actor</code>, <code>published</code></td><td>Who acted (optional) and when</td></tr>
+</tbody></table></div>
+<p><code>parseNotification</code> parses a body you have already verified, or trust for another reason.</p>
+
+<h2 id="verify">Receiving and verifying deliveries</h2>
+<p>Anyone can POST to your inbox, so verify every delivery before you trust it. The verifier is
+framework-agnostic: it takes the method, the <strong>registered inbox URL</strong>, the headers and the raw
+body bytes. Most languages also ship a small adapter for their standard server:</p>
+<div class="table-wrap"><table><thead><tr><th>Language</th><th>Adapter</th></tr></thead><tbody>
+<tr><td>Java</td><td><code>HttpExchangeWebhooks.verify(verifier, exchange, inbox)</code> for <code>com.sun.net.httpserver</code> (optional module)</td></tr>
+<tr><td>TypeScript</td><td><code>verifier.verify(request)</code> for Fetch <code>Request</code>s; <code>createWebhookHandler</code> from <code>lws-client/node</code> for <code>node:http</code></td></tr>
+<tr><td>C++</td><td><code>verifier.verify(method, url, headers, body)</code>, callable from any server</td></tr>
+<tr><td>Rust</td><td><code>verify_request(&amp;inbox, &amp;http::Request)</code> for any <code>http</code>-based framework</td></tr>
+<tr><td>Go</td><td><code>verifier.Handler(inbox, fn)</code> as an <code>http.Handler</code>, or <code>VerifyRequest(r, inbox)</code></td></tr>
+<tr><td>Python</td><td><code>WebhookVerifier.verify(…)</code>; <code>AsyncWebhookVerifier.verify_asgi(scope, receive, inbox)</code> for ASGI</td></tr>
+</tbody></table></div>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">import com.ebremer.lws.LwsClient;
+import com.ebremer.lws.SignatureVerificationException;
+import com.ebremer.lws.notify.HttpExchangeWebhooks;
+import com.ebremer.lws.notify.Notification;
+import com.ebremer.lws.notify.VerifiedNotification;
+import com.ebremer.lws.notify.WebhookVerifier;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.util.List;
+
+public class Inbox {
+    public static void main(String[] args) throws Exception {
+        WebhookVerifier verifier = WebhookVerifier.builder()
+                .client(LwsClient.create())                                         // fetches storage descriptions
+                .trustedStorages(List.of(URI.create(&quot;https://storage.example/&quot;)))  // only this storage's keys
+                .build();
+        URI inbox = URI.create(&quot;https://my-app.example/hooks/lws&quot;);  // the registered (public) URL
+
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        server.createContext(&quot;/hooks/lws&quot;, exchange -&gt; {
+            try {
+                VerifiedNotification verified = HttpExchangeWebhooks.verify(verifier, exchange, inbox);
+                for (Notification.Activity a : verified.notification().activities()) {
+                    System.out.println(a.types() + &quot; &quot; + a.object().id() + &quot; &quot; + a.published());
+                }
+                exchange.sendResponseHeaders(204, -1);
+            } catch (SignatureVerificationException e) {
+                exchange.sendResponseHeaders(401, -1);
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        // Other frameworks: verifier.verify(method, inbox, headers, body)
+    }
+}</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">import { createServer } from &quot;node:http&quot;;
+import { LwsClient, WebhookVerifier } from &quot;lws-client&quot;;
+import { createWebhookHandler } from &quot;lws-client/node&quot;;
+
+const client = new LwsClient();
+const verifier = new WebhookVerifier({
+  resolveStorageDescription: (id) =&gt; client.getStorageDescription(id),
+  trustedStorages: [&quot;https://storage.example/&quot;],   // only this storage's signatures
+});
+
+const handler = createWebhookHandler(
+  verifier,
+  (notification) =&gt; {
+    for (const a of notification.activities) console.log(a.types, a.object.id, a.published);
+  },
+  { inboxUrl: &quot;https://my-app.example/hooks/lws&quot;, onError: (e) =&gt; console.warn(&quot;rejected&quot;, e) },
+);
+createServer((req, res) =&gt; void handler(req, res)).listen(8080);
+
+// Fetch-style runtimes (Deno, Bun, workers):
+//   const { notification } = await verifier.verify(request, { inboxUrl });</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">#include &lt;iostream&gt;
+#include &lt;lws/lws.hpp&gt;
+
+// Call from your HTTP server (Boost.Beast, Drogon, cpp-httplib, …) with the raw request.
+int handle_delivery(lws::WebhookVerifier&amp; verifier, std::string_view method,
+                    const lws::HttpHeaders&amp; headers, std::string_view body) {
+    // The URL you registered (your public URL when behind a proxy), not the Host header.
+    constexpr std::string_view inbox = &quot;https://my-app.example/hooks/lws&quot;;
+    try {
+        lws::VerifiedNotification verified = verifier.verify(method, inbox, headers, body);
+        for (const lws::Activity&amp; a : verified.notification.activities) {
+            std::cout &lt;&lt; a.object.id &lt;&lt; (a.is_update() ? &quot; updated&quot; : &quot;&quot;) &lt;&lt; '\n';
+        }
+        return 204;
+    } catch (const lws::SignatureVerificationError&amp; e) {
+        std::cerr &lt;&lt; &quot;rejected: &quot; &lt;&lt; e.what() &lt;&lt; '\n';
+        return 401;
+    }
+}
+
+int main() {
+    lws::WebhookVerifierOptions options;
+    options.trusted_storages = {&quot;https://storage.example/&quot;};   // only this storage's signatures
+    lws::WebhookVerifier verifier(lws::Client{}, options);     // the client fetches storage descriptions
+    // … route POST requests for the inbox path to handle_delivery(verifier, …) …
+}</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">use lws_client::{Client, Result, Url, WebhookVerifier};
+
+/// Builds a verifier that only accepts deliveries signed by one storage.
+fn verifier() -&gt; WebhookVerifier {
+    let storage = Url::parse(&quot;https://storage.example/&quot;).expect(&quot;valid URL&quot;);
+    WebhookVerifier::builder()
+        .client(Client::new())        // fetches storage descriptions (and their keys)
+        .trusted_storage(storage)     // only this storage's signatures
+        .build()
+}
+
+/// Call this from your web framework's handler with the raw request; returns the status to send.
+async fn handle(verifier: &amp;WebhookVerifier, request: http::Request&lt;Vec&lt;u8&gt;&gt;) -&gt; Result&lt;u16&gt; {
+    // The URL you registered (your public URL when behind a proxy), not the Host header.
+    let inbox = Url::parse(&quot;https://my-app.example/hooks/lws&quot;).expect(&quot;valid URL&quot;);
+    match verifier.verify_request(&amp;inbox, &amp;request).await {
+        Ok(verified) =&gt; {
+            for a in &amp;verified.notification.activities {
+                println!(&quot;{:?} {} {:?}&quot;, a.types, a.object.id, a.published);
+            }
+            Ok(204)
+        }
+        Err(e) if e.is_signature_verification() =&gt; Ok(401),
+        Err(e) =&gt; Err(e),
+    }
+}</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">package main
+
+import (
+	&quot;context&quot;
+	&quot;fmt&quot;
+	&quot;log&quot;
+	&quot;net/http&quot;
+
+	lws &quot;github.com/ebremer/lws-client/go&quot;
+)
+
+func main() {
+	verifier := lws.NewWebhookVerifier(&amp;lws.WebhookVerifierOptions{
+		TrustedStorages: []string{&quot;https://storage.example/&quot;}, // only this storage's signatures
+	})
+	inbox := &quot;https://my-app.example/hooks/lws&quot; // the registered URL (your public URL behind a proxy)
+
+	// Handler answers 204 for verified deliveries and 401 otherwise.
+	http.Handle(&quot;/hooks/lws&quot;, verifier.Handler(inbox, func(ctx context.Context, n *lws.VerifiedNotification) {
+		for _, a := range n.Notification.Activities {
+			fmt.Println(a.Types, a.Object.ID, a.Published)
+		}
+	}))
+	log.Fatal(http.ListenAndServe(&quot;:8080&quot;, nil))
+
+	// In your own handler: verified, err := verifier.VerifyRequest(r, inbox)
+}</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python">from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from lws_client import LwsClient, SignatureVerificationError, WebhookVerifier
+
+INBOX = &quot;https://my-app.example/hooks/lws&quot;   # the registered URL (your public URL behind a proxy)
+verifier = WebhookVerifier(client=LwsClient(), trusted_storages=[&quot;https://storage.example/&quot;])
+
+
+class Inbox(BaseHTTPRequestHandler):
+    def do_POST(self) -&gt; None:
+        body = self.rfile.read(int(self.headers.get(&quot;Content-Length&quot;, &quot;0&quot;)))
+        try:
+            verified = verifier.verify(&quot;POST&quot;, INBOX, list(self.headers.items()), body)
+        except SignatureVerificationError as exc:
+            print(&quot;rejected:&quot;, exc)
+            self.send_response(401)
+        else:
+            for activity in verified.notification.activities:
+                print(activity.types, activity.object.id, activity.published)
+            self.send_response(204)
+        self.end_headers()
+
+
+ThreadingHTTPServer((&quot;0.0.0.0&quot;, 8080), Inbox).serve_forever()
+# ASGI apps: await AsyncWebhookVerifier(...).verify_asgi(scope, receive, INBOX)</code></pre>
+</div>
+<div class="callout warn"><p><strong>Use the URL you registered</strong> Verify against the inbox URL you gave the storage, not one rebuilt from the <code>Host</code> header. Behind a reverse proxy, that is your public URL. The signature covers <code>@scheme</code>, <code>@authority</code> and <code>@path</code>, and this is what stops a delivery meant for someone else from being replayed at you.</p></div>
+
+<h2 id="checks">What the verifier checks</h2>
+<ol class="steps">
+  <li><code>Content-Digest</code> (RFC 9530) matches the body: every <code>sha-256</code>/<code>sha-512</code> value present must match.</li>
+  <li><code>Signature-Input</code> covers at least <code>@method</code>, <code>@scheme</code>, <code>@authority</code>, <code>@path</code>,
+  <code>content-type</code> and <code>content-digest</code>, and carries <code>created</code> and <code>keyid</code>.</li>
+  <li><code>created</code> is within the allowed window (default 300 s either way), and <code>expires</code>, if present, has not passed.</li>
+  <li>The <code>keyid</code> is a URL with a fragment. Without the fragment it names the storage, which must be in
+  <code>trustedStorages</code> when you set it.</li>
+  <li>The storage description is fetched (and cached). Its <code>id</code> must equal that storage, the
+  verification method must exist, and it must be referenced from <code>authentication</code>.</li>
+  <li>The RFC 9421 signature base is rebuilt and verified with the published JWK (<code>ecdsa-p256-sha256</code>
+  or <code>ed25519</code>). A matching <code>alg</code> parameter is required when present. On failure with a cached key,
+  the description is fetched once more to handle key rotation.</li>
+  <li>The body is parsed, and its <code>storage</code> must equal the signing key's storage, so one storage cannot
+  speak for another.</li>
+</ol>
+<p>All six verifiers pass the same <a href="testing.html#fixtures">13 shared test vectors</a>. They include tampered
+bodies, recomputed digests, wrong hosts, replays, missing components, unauthorised keys, storage spoofing and
+algorithm confusion.</p>
+
+<h2 id="delivery">Delivery semantics</h2>
+<ul>
+  <li>Answer with any <code>2xx</code> to acknowledge. Servers may retry failed deliveries and deactivate a
+  subscription after repeated failures.</li>
+  <li>Retries can deliver the same activity twice, so de-duplicate on the activity <code>id</code>.</li>
+  <li>Use a unique, hard-to-guess inbox URL per subscription. It limits correlation, and lets you
+  revoke a single feed.</li>
+</ul>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

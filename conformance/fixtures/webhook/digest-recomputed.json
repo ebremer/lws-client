@@ -1,0 +1,18 @@
+{
+  "method": "POST",
+  "url": "https://receiver.example/hooks/lws?subscription=9e8d7c6b5a4f",
+  "now": 1790000030,
+  "name": "digest-recomputed",
+  "description": "Attacker modified body and recomputed Content-Digest; signature no longer verifies",
+  "headers": {
+    "content-type": "application/lws+json",
+    "content-digest": "sha-256=:vgXsWdC+fRXU+ziFLagSP9At65H/H83YRsB8DJIx5yY=:",
+    "signature-input": "sig1=(\"@method\" \"@scheme\" \"@authority\" \"@path\" \"content-type\" \"content-digest\");created=1790000000;keyid=\"https://storage.example/#key-p256\";alg=\"ecdsa-p256-sha256\"",
+    "signature": "sig1=:GxIUpflHZCg37FqYsS8VRGlcW3Os2/wBpM8BaC8KLyiKzZC2tR1SxZiWpNfXGiPGjMkJfq+1actGZR+OtdN3UA==:"
+  },
+  "body": "{\"@context\":[\"https://www.w3.org/ns/lws/v1\",\"https://www.w3.org/ns/activitystreams\"],\"type\":\"Notification\",\"storage\":\"https://storage.example/\",\"activity\":[{\"id\":\"urn:uuid:a1b2c3d4-5678-4abc-8ef0-1234567890ab\",\"type\":[\"Create\"],\"object\":{\"id\":\"https://storage.example/root/notes/evil.txt\",\"type\":[\"DataResource\"]},\"target\":\"https://storage.example/root/notes/\",\"published\":\"2026-09-21T11:33:20Z\"},{\"id\":\"urn:uuid:b2c3d4e5-6789-4bcd-9f01-234567890abc\",\"type\":[\"Update\"],\"object\":{\"id\":\"https://storage.example/root/profile\",\"type\":[\"DataResource\"]},\"published\":\"2026-09-21T11:33:21Z\"}]}",
+  "expected": {
+    "valid": false,
+    "reason": "signature mismatch"
+  }
+}

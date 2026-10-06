@@ -1,0 +1,409 @@
+@@@ install bash
+# Until it is on Maven Central: build and install into your local repository (~/.m2)
+git clone https://github.com/ebremer/lws-client.git
+cd lws-client/java && mvn install
+
+# Maven
+#   <dependency>
+#     <groupId>com.ebremer</groupId>
+#     <artifactId>lws-client</artifactId>
+#     <version>0.1.0</version>
+#   </dependency>
+# Gradle (with mavenLocal())
+#   implementation("com.ebremer:lws-client:0.1.0")
+@@@ first-program
+import com.ebremer.lws.Body;
+import com.ebremer.lws.CreateOptions;
+import com.ebremer.lws.LwsClient;
+import com.ebremer.lws.Resource;
+import com.ebremer.lws.StorageDescription;
+import com.ebremer.lws.auth.KeyPairs;
+import com.ebremer.lws.auth.SelfSignedCredentials;
+import com.ebremer.lws.auth.TokenExchangeAuthenticator;
+import java.net.URI;
+
+public class HelloLws {
+    public static void main(String[] args) {
+        SelfSignedCredentials credentials = SelfSignedCredentials.didKey(KeyPairs.generateP256());
+        LwsClient client = LwsClient.builder()
+                .authenticator(TokenExchangeAuthenticator.of(credentials))
+                .build();
+        System.out.println("agent:   " + credentials.agent());
+
+        StorageDescription storage = client.discoverStorage(URI.create("http://localhost:8787/root/"));
+        System.out.println("storage: " + storage.id() + "  root: " + storage.storageRoot());
+
+        URI folder = client.createContainer(storage.storageRoot(), CreateOptions.slug("hello-world")).location();
+        URI file = client.create(folder, Body.of("Hello, LWS!"), "text/plain", CreateOptions.slug("hello.txt")).location();
+        System.out.println("created: " + file);
+
+        Resource resource = client.read(file);
+        System.out.println(resource.text() + "  (etag " + resource.etag().orElse("-")
+                + ", parent " + resource.metadata().parent().orElse(null) + ")");
+    }
+}
+@@@ hero
+var credentials = SelfSignedCredentials.didKey(KeyPairs.generateP256());
+LwsClient client = LwsClient.builder().authenticator(TokenExchangeAuthenticator.of(credentials)).build();
+
+StorageDescription storage = client.discoverStorage(URI.create("https://storage.example/root/"));
+URI todo = client.createJson(storage.storageRoot(), Map.of("task", "write docs", "done", false),
+        CreateOptions.DEFAULT).location();
+client.patch(todo, JsonPatch.builder().replace("/done", true).build());
+
+client.listContainer(storage.storageRoot())
+        .forEach(item -> System.out.println(item.id() + " " + item.format().orElse("container")));
+@@@ client-config
+LwsClient client = LwsClient.builder()
+        .authenticator(TokenExchangeAuthenticator.of(credentials))
+        .userAgent("my-app/1.0")                  // default "lws-client-java/0.1.0"
+        .header("Accept-Language", "en")          // added to every request
+        .timeout(Duration.ofSeconds(20))          // per request
+        .connectTimeout(Duration.ofSeconds(5))
+        // .httpClient(myHttpClient)              // bring your own java.net.http.HttpClient
+        .build();
+
+// Per-call headers and timeouts
+ContainerPage page = client.readContainer(container,
+        ReadOptions.builder().header("X-Trace", "1").timeout(Duration.ofSeconds(5)).build());
+System.out.println(page.totalItems());
+
+// Core operations have CompletableFuture variants
+client.readAsync(url).thenAccept(resource -> System.out.println(resource.text()));
+@@@ discover
+// Any URL inside the storage is a valid starting point.
+StorageDescription storage = client.discoverStorage(URI.create("https://storage.example/root/notes/"));
+URI root = storage.storageRoot();                  // the required StorageRoot service
+System.out.println(storage.id() + " " + storage.types() + " " + root);
+
+storage.notificationService().ifPresent(svc ->
+        System.out.println(svc.serviceEndpoint() + " " + svc.subscriptionTypes()));
+for (StorageDescription.Service svc : storage.services()) {
+    System.out.println(svc.types() + " → " + svc.serviceEndpoint());
+}
+storage.capability("https://feature.example/PatchSupport")
+        .flatMap(capability -> capability.property("format"))
+        .ifPresent(System.out::println);
+
+// When you already know the storage URL:
+StorageDescription same = client.getStorageDescription(storage.id());
+@@@ create
+// A container (POST with Link: <https://www.w3.org/ns/lws#Container>; rel="type")
+URI notes = client.createContainer(container, CreateOptions.slug("notes")).location();
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+CreateResult list = client.create(notes, Body.of("milk\neggs\n"), "text/plain", CreateOptions.slug("shopping.txt"));
+CreateResult todo = client.createJson(notes, Map.of("task", "write docs"), CreateOptions.builder()
+        .slug("todo.json")
+        .type("https://schema.org/Action")                                // extra rel="type"
+        .link(Link.of("https://example.org/shapes/todo", "describedby"))  // user metadata
+        .build());
+CreateResult photo = client.create(notes, Body.ofFile(Path.of("photo.png")), "image/png",
+        CreateOptions.slug("photo.png"));
+
+System.out.println(list.location() + " " + todo.metadata().linkset() + " " + photo.metadata().parent());
+@@@ read
+record Person(String name, int age) {}
+
+Resource resource = client.read(url);
+ResourceMetadata meta = resource.metadata();
+System.out.println(resource.status() + " " + resource.contentType() + " " + resource.etag() + " " + meta.lastModified());
+System.out.println(meta.types() + " " + meta.isDataResource() + " " + meta.parent() + " " + meta.linkset());
+
+String text = resource.text();            // decoded using the Content-Type charset
+byte[] bytes = resource.body();
+JsonNode json = client.read(url, ReadOptions.accept("application/json")).json();
+Person person = client.read(url).json(Person.class);   // Jackson data binding
+
+// Headers and links only
+ResourceMetadata head = client.head(url);
+System.out.println(head.contentLength() + " " + head.allow() + " " + head.acceptPatch() + " " + head.links("describedby"));
+@@@ stream
+try (ResourceStream stream = client.readStream(url)) {    // nothing is buffered
+    long received = stream.body().transferTo(OutputStream.nullOutputStream());
+    System.out.println("received " + received + " bytes");
+}
+
+// Uploads: every Body is replayable (files are re-read), so the 401 retry always works.
+client.create(container, Body.ofFile(Path.of("big.bin")), "application/octet-stream",
+        CreateOptions.slug("big.bin"));
+@@@ conditional
+Resource first = client.read(url);
+String etag = first.etag().orElseThrow();
+
+// Revalidate: 304 Not Modified is a normal result, not an exception.
+Resource again = client.read(url, ReadOptions.ifNoneMatch(etag));
+if (again.notModified()) System.out.println("cached copy is still fresh");
+
+// Optimistic concurrency: only overwrite the version you read.
+try {
+    client.update(url, Body.of("new content"), "text/plain", UpdateOptions.ifMatch(etag));
+} catch (PreconditionFailedException e) {
+    // Someone else changed it (412): re-read, merge, retry.
+}
+@@@ range
+Resource start = client.read(url, ReadOptions.builder().range(0, 1023L).build());   // first KiB
+System.out.println(start.status() + " " + start.contentRange().orElse(""));         // 206 bytes 0-1023/52311
+
+Resource rest = client.read(url, ReadOptions.builder().range(1024, null).build());   // to the end
+Resource tail = client.read(url, ReadOptions.builder().suffixRange(512).build());    // last 512 bytes
+System.out.println(rest.body().length + " " + tail.body().length);
+@@@ update
+// PUT replaces the whole representation.
+client.update(url, Body.ofJson(Map.of("name", "Alice", "age", 31)), "application/json", UpdateOptions.ifMatch(etag));
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+client.update(url, Body.of("v2"), "text/plain", UpdateOptions.builder()
+        .setLinkset(true)
+        .link(Link.of("https://creativecommons.org/licenses/by/4.0/", "license"))
+        .build());
+@@@ patch
+// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+client.patch(url, JsonPatch.builder()
+        .test("/version", 3)
+        .replace("/status", "done")
+        .add("/tags/-", "urgent")
+        .remove("/draft")
+        .build(), UpdateOptions.ifMatch(etag));
+
+// Other formats only when the server advertises them in Accept-Patch.
+if (client.head(url).acceptPatch().contains("application/sparql-update")) {
+    client.patch(url, Body.of("INSERT DATA { <#me> <http://xmlns.com/foaf/0.1/name> \"Alice\" }"),
+            "application/sparql-update", UpdateOptions.DEFAULT);
+}
+@@@ delete
+client.delete(url, DeleteOptions.ifMatch(etag));
+
+try {
+    client.delete(container);                             // 409 Conflict when not empty
+} catch (ConflictException e) {
+    client.delete(container, DeleteOptions.recursive());  // Depth: infinity
+}
+@@@ read-container
+ContainerPage page = client.readContainer(container);
+System.out.println(page.id() + " " + page.totalItems() + " " + page.etag());
+for (ContainedResource item : page.items()) {
+    System.out.println(item.id() + " " + (item.isContainer() ? "container" : item.format().orElse("?"))
+            + " " + item.size() + " " + item.modified());
+}
+page.next().ifPresent(next ->                        // opaque, server-issued URL
+        System.out.println(client.readContainer(next).items().size()));
+@@@ list-container
+// A lazy Stream: pages are fetched only as the stream is consumed.
+client.listContainer(container)
+        .filter(item -> item.hasType("https://schema.org/Person"))
+        .forEach(item -> System.out.println(item.id()));
+
+List<URI> ids = client.listContainer(container).map(ContainedResource::id).toList();
+@@@ read-linkset
+LinksetDocument doc = client.readLinkset(url);      // HEAD for rel="linkset", then GET
+System.out.println(doc.url() + " " + doc.etag() + " " + doc.allow() + " " + doc.acceptPatch());
+
+for (Link link : doc.linkset().links()) System.out.println(link.rel() + " → " + link.href());
+List<String> shapes = doc.linkset().targets("describedby").stream().map(Linkset.LinkTarget::href).toList();
+@@@ patch-linkset
+LinksetDocument doc = client.readLinkset(url);
+String rel = "https://example.org/rel/reviewer";          // extension relation types are URIs
+Map<String, String> reviewer = Map.of("href", "https://id.example/bob");
+
+// JsonPointer escapes "/" in the relation URI as "~1".
+// "add" on an existing member replaces it, so append with "/-" when the relation exists.
+JsonPatch patch = doc.linkset().targets(rel).isEmpty()
+        ? JsonPatch.builder().add(JsonPointer.of("linkset", "0", rel), List.of(reviewer)).build()
+        : JsonPatch.builder().add(JsonPointer.of("linkset", "0", rel, "-"), reviewer).build();
+client.patchLinkset(doc.url(), patch, UpdateOptions.ifMatch(doc.etag().orElseThrow()));
+@@@ put-linkset
+LinksetDocument doc = client.readLinkset(url);
+if (doc.supportsPut()) {                              // Allow lists PUT
+    Linkset updated = doc.linkset()                   // Linkset is immutable: add returns a copy
+            .add(url.toString(), "license", URI.create("https://creativecommons.org/licenses/by/4.0/"));
+    client.updateLinkset(doc.url(), updated, UpdateOptions.ifMatch(doc.etag().orElseThrow()));
+}
+@@@ auth-didkey
+// A did:key agent: the identifier is derived from the public key, nothing to host.
+KeyPair keys = KeyPairs.generateP256();                 // or KeyPairs.generateEd25519()
+SelfSignedCredentials credentials = SelfSignedCredentials.didKey(keys);
+System.out.println(credentials.agent());                 // did:key:zDn…
+
+LwsClient client = LwsClient.builder().authenticator(TokenExchangeAuthenticator.of(credentials)).build();
+client.head(url);   // 401 → AS metadata → token exchange → retried with a Bearer token
+@@@ auth-cid
+// An HTTPS agent publishes a controlled identifier document listing its key…
+KeyPair keys = KeyPairs.generateP256();
+URI agent = URI.create("https://bot.example/agent");
+ObjectNode cid = ControlledIdentifiers.document(agent, keys.getPublic(), "key-1");
+System.out.println(cid.toPrettyString());          // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key.
+SelfSignedCredentials credentials = SelfSignedCredentials.forAgent(agent, keys.getPrivate(), "key-1");
+LwsClient client = LwsClient.builder().authenticator(TokenExchangeAuthenticator.of(credentials)).build();
+@@@ keys
+KeyPair keys = KeyPairs.generateP256();
+ObjectNode privateJwk = Jwk.fromKeyPair(keys);          // includes "d": store securely
+KeyPair restored = new KeyPair(Jwk.toPublicKey(privateJwk), Jwk.toPrivateKey(privateJwk));
+SelfSignedCredentials credentials = SelfSignedCredentials.didKey(restored);
+
+// did:key <-> public key
+String did = DidKey.fromPublicKey(keys.getPublic());   // did:key:zDn…
+String kid = DidKey.keyId(did);                         // did:key:zDn…#zDn…
+PublicKey fromDid = DidKey.toPublicKey(did);
+System.out.println(credentials.agent() + " " + kid + " " + fromDid.getAlgorithm());
+@@@ auth-openid
+// The ID token from your OpenID Connect login (any OIDC library). OpenIdCredentials.from(supplier)
+// supplies a fresh token whenever a new access token is needed.
+OpenIdCredentials credentials = OpenIdCredentials.of(idToken);
+LwsClient client = LwsClient.builder()
+        .authenticator(TokenExchangeAuthenticator.builder(credentials)
+                // ID tokens are not always audience-restricted: only send them to servers you trust.
+                .authorizationServerFilter((asUri, realm) -> asUri.equals(URI.create("https://auth.example")))
+                .build())
+        .build();
+@@@ auth-saml
+// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+SamlCredentials credentials = SamlCredentials.ofXml(samlAssertionXml);
+LwsClient client = LwsClient.builder().authenticator(TokenExchangeAuthenticator.of(credentials)).build();
+@@@ auth-bearer
+// An access token you obtained yourself; it is only sent to URLs inside the realm.
+LwsClient client = LwsClient.builder()
+        .authenticator(BearerTokenAuthenticator.of(accessToken, URI.create("https://storage.example/")))
+        .build();
+@@@ auth-options
+Set<URI> trusted = Set.of(URI.create("https://auth.example"));
+TokenExchangeAuthenticator authenticator = TokenExchangeAuthenticator.builder(credentials)
+        .allowInsecureHttp(false)                         // plain-http AS only on loopback (default)
+        .authorizationServerFilter((asUri, realm) -> trusted.contains(asUri))
+        .refreshSkew(Duration.ofSeconds(30))              // refresh 30 s before expiry (default)
+        .build();
+LwsClient client = LwsClient.builder().authenticator(authenticator).build();
+@@@ custom-authenticator
+// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator interface.
+Authenticator apiKeyAuth = new Authenticator() {
+    @Override
+    public void authorize(AuthRequest request) {
+        if ("storage.example".equals(request.uri().getHost())) request.setHeader("X-Api-Key", apiKey);
+    }
+
+    @Override
+    public boolean handleChallenge(AuthRequest request, AuthResponse response) {
+        return false;   // nothing to refresh: the 401 surfaces as UnauthorizedException
+    }
+};
+LwsClient client = LwsClient.builder().authenticator(apiKeyAuth).build();
+@@@ subscribe
+// subscribe(StorageDescription, …) checks that the NotificationService supports webhooks.
+Subscription subscription = client.subscribe(storage,
+        WebhookSubscriptionRequest.of(URI.create("https://my-app.example/hooks/lws"), container)  // recursive
+                .withExpires(Instant.now().plus(Duration.ofDays(1))));
+System.out.println(subscription.subscription() + " " + subscription.expires());
+
+URI service = storage.notificationService().orElseThrow().serviceEndpoint();
+client.listSubscriptions(service).forEach(s -> System.out.println(s.id()));
+Subscription current = client.getSubscription(subscription.subscription());
+System.out.println(current.type());
+client.unsubscribe(subscription.subscription());
+@@@ webhook
+import com.ebremer.lws.LwsClient;
+import com.ebremer.lws.SignatureVerificationException;
+import com.ebremer.lws.notify.HttpExchangeWebhooks;
+import com.ebremer.lws.notify.Notification;
+import com.ebremer.lws.notify.VerifiedNotification;
+import com.ebremer.lws.notify.WebhookVerifier;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.util.List;
+
+public class Inbox {
+    public static void main(String[] args) throws Exception {
+        WebhookVerifier verifier = WebhookVerifier.builder()
+                .client(LwsClient.create())                                         // fetches storage descriptions
+                .trustedStorages(List.of(URI.create("https://storage.example/")))  // only this storage's keys
+                .build();
+        URI inbox = URI.create("https://my-app.example/hooks/lws");  // the registered (public) URL
+
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        server.createContext("/hooks/lws", exchange -> {
+            try {
+                VerifiedNotification verified = HttpExchangeWebhooks.verify(verifier, exchange, inbox);
+                for (Notification.Activity a : verified.notification().activities()) {
+                    System.out.println(a.types() + " " + a.object().id() + " " + a.published());
+                }
+                exchange.sendResponseHeaders(204, -1);
+            } catch (SignatureVerificationException e) {
+                exchange.sendResponseHeaders(401, -1);
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        // Other frameworks: verifier.verify(method, inbox, headers, body)
+    }
+}
+@@@ access-request
+AccessRequest request = AccessRequest.builder()
+        .storage(storage.id())
+        .inbox(URI.create("https://id.example/agent/inbox/"))
+        .access(AccessPolicy.builder()
+                .actions(Lws.Access.ACTION_READ, Lws.Access.ACTION_CREATE)
+                .assignee(URI.create("https://id.example/agent"))
+                .target(AccessTarget.storageResources(container))
+                .constraint(Constraint.purpose(URI.create("https://purpose.example/collaboration")))
+                .constraint(Constraint.notAfter(Instant.parse("2026-12-31T23:59:59Z")))
+                .build())
+        .build();
+URI requests = storage.accessRequestService().orElseThrow().serviceEndpoint();
+URI requestUrl = client.requestAccess(requests, request);
+
+client.listAccessRequests(requests).forEach(r -> System.out.println(r.id()));
+AccessRequest pending = client.getAccessRequest(requestUrl);
+System.out.println(pending.access().get(0).actions());
+client.cancelAccessRequest(requestUrl);
+@@@ access-grant
+// A storage controller approves a request by recording a grant with the same policy model.
+AccessRequest pending = client.getAccessRequest(requestUrl);
+URI grants = storage.accessGrantService().orElseThrow().serviceEndpoint();
+URI grantUrl = client.grantAccess(grants, AccessGrant.approving(pending));
+
+client.listAccessGrants(grants).forEach(g -> System.out.println(g.id()));
+client.revokeAccessGrant(grantUrl);   // the server withdraws the underlying permissions
+@@@ list-types
+storage.typeIndexService().ifPresent(index ->
+        client.listTypes(index.serviceEndpoint()).forEach(System.out::println));  // e.g. https://schema.org/Person
+@@@ search
+URI search = storage.typeSearchService().orElseThrow().serviceEndpoint();
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+TypeQuery query = TypeQuery.builder()
+        .anyOf("https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person")
+        .allOf(Lws.Type.DATA_RESOURCE)
+        .build();
+ContainerPage first = client.searchTypes(search, query);         // HTTP QUERY
+System.out.println(first.totalItems() + " " + first.next());
+
+client.searchAll(search, TypeQuery.allOf("https://schema.org/Event"))
+        .forEach(hit -> System.out.println(hit.id() + " " + hit.types()));
+
+// Indexed descriptive relations use the same grammar.
+TypeQuery shaped = TypeQuery.builder().relationAllOf("describedby", "https://example.org/shapes/person").build();
+System.out.println(client.searchTypes(search, shaped).items().size());
+
+System.out.println(client.acceptedQueryFormats(search));        // [application/lws-query+json, …]
+@@@ errors
+try {
+    client.read(url);
+} catch (NotFoundException e) {
+    System.out.println("no such resource");
+} catch (UnauthorizedException e) {
+    System.out.println("not authenticated " + e.challenges());
+} catch (HttpStatusException e) {
+    System.out.println(e.status() + " " + e.problem().flatMap(ProblemDetails::title).orElse(e.getMessage()));
+} catch (AuthenticationException e) {
+    System.out.println("token exchange failed: " + e.error().orElse("?") + " " + e.errorDescription().orElse(""));
+}
+@@@ problem
+try {
+    client.delete(container);
+} catch (ConflictException e) {
+    e.problem().ifPresent(p -> System.out.println(p.type() + " " + p.title() + " " + p.detail()
+            + " " + p.instance() + " " + p.extensions().get("itemCount")));
+}

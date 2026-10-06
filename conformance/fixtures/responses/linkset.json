@@ -1,0 +1,43 @@
+{
+  "description": "GET of a linkset resource (application/linkset+json, RFC 9264).",
+  "url": "https://storage.example/alice/personalinfo.json.meta",
+  "status": 200,
+  "headers": {
+    "content-type": "application/linkset+json",
+    "etag": "\"ls-7\"",
+    "allow": "GET, HEAD, PUT, PATCH",
+    "accept-patch": "application/json-patch+json"
+  },
+  "body": {
+    "linkset": [
+      {
+        "anchor": "https://storage.example/alice/personalinfo.json",
+        "describedby": [{ "href": "https://storage.example/schemas/personal-info.json", "type": "application/schema+json" }],
+        "license": [{ "href": "https://creativecommons.org/licenses/by/4.0/" }],
+        "https://example.org/rel/reviewer": [
+          { "href": "https://id.example/bob", "title": "Bob" },
+          { "href": "https://id.example/carol", "hreflang": ["en", "de"], "title*": [{ "value": "Carol", "language": "en" }] }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "url": "https://storage.example/alice/personalinfo.json.meta",
+    "etag": "\"ls-7\"",
+    "allow": ["GET", "HEAD", "PUT", "PATCH"],
+    "acceptPatch": ["application/json-patch+json"],
+    "contexts": 1,
+    "anchor": "https://storage.example/alice/personalinfo.json",
+    "linkCount": 4,
+    "targets": {
+      "describedby": ["https://storage.example/schemas/personal-info.json"],
+      "license": ["https://creativecommons.org/licenses/by/4.0/"],
+      "https://example.org/rel/reviewer": ["https://id.example/bob", "https://id.example/carol"]
+    },
+    "afterAdd": {
+      "operation": { "anchor": "https://storage.example/alice/personalinfo.json", "rel": "license", "href": "https://example.org/license-2" },
+      "licenseTargets": ["https://creativecommons.org/licenses/by/4.0/", "https://example.org/license-2"]
+    },
+    "roundTrip": "Serializing the parsed linkset must reproduce 'body' exactly as a JSON value (including hreflang and title* members)."
+  }
+}

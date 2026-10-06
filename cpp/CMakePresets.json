@@ -1,0 +1,62 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "vcpkg-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_MANIFEST_FEATURES": "tests",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug (vcpkg, Ninja)",
+      "inherits": "vcpkg-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (vcpkg, Ninja)",
+      "inherits": "vcpkg-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "mingw-debug",
+      "displayName": "Debug (vcpkg, MinGW-w64 static)",
+      "inherits": "debug",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-mingw-static",
+        "VCPKG_HOST_TRIPLET": "x64-mingw-static",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "minimal",
+      "displayName": "Core only (no curl/OpenSSL, FetchContent deps)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "LWS_WITH_CURL": "OFF",
+        "LWS_WITH_OPENSSL": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "mingw-debug", "configurePreset": "mingw-debug" },
+    { "name": "minimal", "configurePreset": "minimal" }
+  ],
+  "testPresets": [
+    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "mingw-debug", "configurePreset": "mingw-debug", "output": { "outputOnFailure": true } },
+    { "name": "minimal", "configurePreset": "minimal", "output": { "outputOnFailure": true } }
+  ]
+}

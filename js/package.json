@@ -1,0 +1,64 @@
+{
+  "name": "lws-client",
+  "version": "0.1.0",
+  "description": "W3C Linked Web Storage (LWS) client for JavaScript and TypeScript — browsers, Node.js, Deno and Bun. Zero runtime dependencies.",
+  "keywords": [
+    "lws",
+    "linked-web-storage",
+    "w3c",
+    "solid",
+    "storage",
+    "linkset",
+    "oauth",
+    "token-exchange",
+    "webhooks",
+    "http-message-signatures"
+  ],
+  "license": "MIT",
+  "author": "Erich Bremer and the lws-client contributors",
+  "homepage": "https://ebremer.github.io/lws-client/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ebremer/lws-client.git",
+    "directory": "js"
+  },
+  "bugs": {
+    "url": "https://github.com/ebremer/lws-client/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "build:test": "tsc -p tsconfig.test.json",
+    "test": "npm run build:test && node --test --test-reporter=spec \"build-test/test/**/*.test.js\"",
+    "test:interop": "npm run build:test && node --test --test-reporter=spec build-test/test/interop.test.js",
+    "clean": "node -e \"for (const d of ['dist','build-test']) require('fs').rmSync(d,{recursive:true,force:true})\"",
+    "prepack": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2"
+  }
+}

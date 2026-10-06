@@ -1,0 +1,35 @@
+{
+  "description": "Access request and access grant documents (lws10-core Access Requests and Grants).",
+  "request": {
+    "@context": ["https://www.w3.org/ns/lws/v1"],
+    "type": ["AccessRequest"],
+    "inbox": "https://id.example/agent/inbox/",
+    "storage": "https://storage.example/",
+    "access": [{
+      "type": ["AccessPolicy"],
+      "action": ["read", "create"],
+      "assignee": "https://id.example/agent",
+      "target": { "type": "StorageResource", "value": ["https://storage.example/root/projects/"] },
+      "constraint": [
+        { "leftOperand": "purpose", "operator": "eq", "rightOperand": "https://purpose.example/collaboration" },
+        { "leftOperand": "dateTime", "operator": "lteq", "rightOperand": "2026-06-09T10:00:00Z" }
+      ]
+    }]
+  },
+  "grant": {
+    "@context": ["https://www.w3.org/ns/lws/v1"],
+    "type": ["AccessGrant"],
+    "storage": "https://storage.example/",
+    "access": [{
+      "type": ["AccessPolicy"],
+      "action": ["read"],
+      "assignee": "https://id.example/agent",
+      "target": { "type": "StorageResource", "value": ["https://storage.example/root/projects/"] },
+      "constraint": [
+        { "leftOperand": "format", "operator": "isAnyOf", "rightOperand": ["image/jpeg", "image/png"] },
+        { "leftOperand": "client", "operator": "eq", "rightOperand": "https://app.example/client-id" }
+      ]
+    }]
+  },
+  "builderExpectation": "Building an access request with storage=https://storage.example/, inbox=https://id.example/agent/inbox/, and one policy (actions read+create, assignee https://id.example/agent, target type StorageResource with value [https://storage.example/root/projects/], constraints purpose eq https://purpose.example/collaboration then notAfter 2026-06-09T10:00:00Z) must serialize to a document equal (as a JSON value) to 'request'."
+}

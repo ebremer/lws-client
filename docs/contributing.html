@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en" data-root="./">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contributing &amp; license · LWS Client</title>
+  <meta name="description" content="Repository layout, build and test commands for all six LWS clients, the shared conformance process, documentation workflow and the MIT license.">
+  <meta property="og:title" content="Contributing &amp; license · LWS Client">
+  <meta property="og:description" content="Repository layout, build and test commands for all six LWS clients, the shared conformance process, documentation workflow and the MIT license.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="./assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="./getting-started.html">Get started</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./authentication.html">Auth</a>
+        <a href="./api-reference.html">API</a>
+        <a href="./spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="./index.html">Overview</a></li><li><a href="./getting-started.html">Getting started</a></li><li><a href="./api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1>Contributing &amp; license</h1>
+<p class="lead">The six clients evolve together. A behaviour change starts in the shared contract and
+fixtures, then lands in every language, and the interop scenario keeps them honest.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="layout">Repository layout</h2>
+<div class="table-wrap"><table><thead><tr><th>Path</th><th>Contents</th></tr></thead><tbody>
+<tr><td><code>design/client-api.md</code></td><td>The cross-language API contract: concepts, wire behaviour, interpretation decisions</td></tr>
+<tr><td><code>conformance/</code></td><td>Shared JSON fixtures, their generator, and the interop scenario (<code>scenario.md</code>)</td></tr>
+<tr><td><code>testing/mock-server/</code></td><td>Zero-dependency Node.js LWS server used by interop tests</td></tr>
+<tr><td><code>java/</code> <code>js/</code> <code>cpp/</code> <code>rust/</code> <code>go/</code> <code>python/</code></td><td>The clients, each with a README, tests and examples</td></tr>
+<tr><td><code>docs-src/</code></td><td>Sources of this website: page modules, snippet books, layout</td></tr>
+<tr><td><code>docs/</code></td><td>The generated GitHub Pages site (do not edit the HTML by hand)</td></tr>
+<tr><td><code>.github/workflows/ci.yml</code></td><td>CI: builds and tests every client and runs the interop scenario</td></tr>
+</tbody></table></div>
+
+<h2 id="building">Building and testing each client</h2>
+<div class="table-wrap"><table><thead><tr><th>Language</th><th>Toolchain</th><th>Build and test</th></tr></thead><tbody>
+<tr><td>Java</td><td>JDK 17+ (built with <code>--release 17</code>), Maven 3.9</td><td><code>cd java &amp;&amp; mvn verify</code></td></tr>
+<tr><td>JavaScript</td><td>Node.js 22+ for the test suite (library: 20+)</td><td><code>cd js &amp;&amp; npm install &amp;&amp; npm run build &amp;&amp; npm test</code></td></tr>
+<tr><td>C++</td><td>C++20 compiler, CMake 3.21+, Ninja, vcpkg (or system packages)</td><td><code>cd cpp &amp;&amp; cmake --preset debug &amp;&amp; cmake --build --preset debug &amp;&amp; ctest --preset debug</code></td></tr>
+<tr><td>Rust</td><td>Rust 1.85+</td><td><code>cd rust &amp;&amp; cargo test &amp;&amp; cargo clippy --all-targets -- -D warnings</code></td></tr>
+<tr><td>Go</td><td>Go 1.23+</td><td><code>cd go &amp;&amp; go vet ./... &amp;&amp; go test ./...</code></td></tr>
+<tr><td>Python</td><td>Python 3.10+</td><td><code>cd python &amp;&amp; python -m venv .venv &amp;&amp; .venv/bin/pip install -e ".[dev]" &amp;&amp; .venv/bin/pytest</code></td></tr>
+</tbody></table></div>
+<p>Every suite runs the cross-language interop scenario when <code>LWS_TEST_SERVER</code> points at a running
+<a href="testing.html#mock-server">mock server</a>:</p>
+<pre data-lang="bash"><code class="language-bash">node testing/mock-server/server.mjs --port 8787 &amp;
+export LWS_TEST_SERVER=http://localhost:8787</code></pre>
+
+<h2 id="process">Changing behaviour</h2>
+<ol class="steps">
+  <li><strong>Contract first.</strong> Update <code>design/client-api.md</code>, and record a <strong>Decision:</strong> whenever
+  the LWS drafts leave something open.</li>
+  <li><strong>Fixtures next.</strong> Add or adjust the vectors in <code>conformance/fixtures/</code>. Cryptographic fixtures are
+  regenerated with <code>node conformance/tools/generate-fixtures.mjs</code>.</li>
+  <li><strong>Mock server.</strong> Teach <code>testing/mock-server</code> the server side, with tests.</li>
+  <li><strong>All six clients.</strong> Implement the change idiomatically in each language, run its tests, then run
+  the interop scenario.</li>
+  <li><strong>Docs.</strong> Update the snippet books and pages, and re-run the sample checks (below).</li>
+</ol>
+
+<h2 id="spec-tracking">Tracking the specifications</h2>
+<p>The baseline is pinned to a commit of <a href="https://github.com/w3c/lws-protocol">w3c/lws-protocol</a> (currently
+<code>ef02548</code>, 2026-10-05). To move it, diff the spec repository from the pinned commit, list the normative
+changes in a pull request, then follow the process above and update the <a href="spec-coverage.html">spec coverage</a> page.</p>
+
+<h2 id="conventions">Conventions</h2>
+<ul>
+  <li>Every source file starts with <code>SPDX-License-Identifier: MIT</code>.</li>
+  <li>Keep the canonical concept names from the contract, and adapt only casing and language idioms.</li>
+  <li>Return absolute URLs only: resolve every id, <code>Location</code> and link target against the response URL.</li>
+  <li>Never auto-retry non-idempotent requests, except the single post-401 authentication retry.</li>
+  <li>Each client runs with no network access to third parties in its unit tests. HTTP tests use in-process servers or mock transports.</li>
+</ul>
+
+<h2 id="docs">Documentation</h2>
+<p>The site is generated with a zero-dependency Node script:</p>
+<pre data-lang="bash"><code class="language-bash">node docs-src/build.mjs              # writes docs/*.html from docs-src/pages/**/*.mjs
+node docs-src/check-samples.mjs      # compiles / type-checks every code sample (needs the toolchains)</code></pre>
+<ul>
+  <li>Pages are ES modules in <code>docs-src/pages/</code> that export <code>{ path, title, description, body }</code>. The sidebar
+  order lives in <code>docs/assets/site.js</code>.</li>
+  <li>Code samples live in per-language snippet books, <code>docs-src/samples/&lt;lang&gt;.txt</code>, one
+  <code>@@@ topic</code> section per sample. A page shows all six languages of a topic with
+  <code>tabs(S.topic)</code>.</li>
+  <li><code>check-samples.mjs</code> wraps every snippet in a harness and runs the real compilers: <code>tsc</code> against
+  <code>js/dist</code>, <code>mypy</code>, <code>go build</code>, <code>javac</code>, <code>cargo check</code> and
+  <code>g++ -fsyntax-only</code>. Fragments may use the shared names <code>client</code>, <code>storage</code>, <code>container</code>,
+  <code>url</code>, <code>etag</code>, <code>credentials</code>, and so on.</li>
+  <li>GitHub Pages serves the committed <code>docs/</code> folder (Settings → Pages → <em>Deploy from a branch</em>,
+  <code>main</code> / <code>docs</code>). CI fails if <code>docs/</code> is out of date with <code>docs-src/</code>.</li>
+</ul>
+
+<h2 id="license">License</h2>
+<p>Everything in the repository is released under the <strong>MIT License</strong>: the six clients, the mock server, the
+fixtures, the tools and this documentation. Each package manifest (<code>pom.xml</code>, <code>package.json</code>,
+<code>Cargo.toml</code>, <code>pyproject.toml</code>, <code>vcpkg.json</code>) declares <code>MIT</code>.</p>
+<pre data-lang="text" data-title="LICENSE"><code class="language-text">MIT License
+
+Copyright (c) 2026 Erich Bremer and the lws-client contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</code></pre>
+<div class="callout"><p><strong>Not a W3C publication</strong> This is an independent implementation of the W3C Linked Web Storage Working Group's drafts. The specifications themselves are published by the W3C under its own document license.</p></div>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

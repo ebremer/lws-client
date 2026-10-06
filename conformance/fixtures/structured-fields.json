@@ -1,0 +1,79 @@
+{
+  "description": "RFC 8941 / RFC 9651 dictionary parsing (the subset used by Signature-Input, Signature and Content-Digest). Typed values: {\"string\":…}, {\"token\":…}, {\"integer\":…}, {\"decimal\":…}, {\"boolean\":…}, {\"bytes\": base64}. A member is either {\"item\": value, \"params\": {…}} or {\"innerList\": [{\"item\":…, \"params\":{…}}…], \"params\": {…}}. 'serialized' gives the canonical serialization of selected members (used to rebuild @signature-params). Cases with \"error\": true must fail to parse.",
+  "cases": [
+    {
+      "name": "signature-input",
+      "input": "sig1=(\"@method\" \"@authority\" \"@path\" \"content-digest\");created=1618884473;keyid=\"test-key-ecc-p256\"",
+      "expected": {
+        "sig1": {
+          "innerList": [
+            { "item": { "string": "@method" }, "params": {} },
+            { "item": { "string": "@authority" }, "params": {} },
+            { "item": { "string": "@path" }, "params": {} },
+            { "item": { "string": "content-digest" }, "params": {} }
+          ],
+          "params": { "created": { "integer": 1618884473 }, "keyid": { "string": "test-key-ecc-p256" } }
+        }
+      },
+      "serialized": {
+        "sig1": "(\"@method\" \"@authority\" \"@path\" \"content-digest\");created=1618884473;keyid=\"test-key-ecc-p256\""
+      }
+    },
+    {
+      "name": "inner-list-whitespace",
+      "input": "sig1=(  \"@method\"   \"@path\" );created=1;alg=\"ed25519\", sig2=();created=2",
+      "expected": {
+        "sig1": {
+          "innerList": [
+            { "item": { "string": "@method" }, "params": {} },
+            { "item": { "string": "@path" }, "params": {} }
+          ],
+          "params": { "created": { "integer": 1 }, "alg": { "string": "ed25519" } }
+        },
+        "sig2": { "innerList": [], "params": { "created": { "integer": 2 } } }
+      },
+      "serialized": {
+        "sig1": "(\"@method\" \"@path\");created=1;alg=\"ed25519\"",
+        "sig2": "();created=2"
+      }
+    },
+    {
+      "name": "signature",
+      "input": "sig1=:dGVzdA==:, sig-b=:AAEC:",
+      "expected": {
+        "sig1": { "item": { "bytes": "dGVzdA==" }, "params": {} },
+        "sig-b": { "item": { "bytes": "AAEC" }, "params": {} }
+      }
+    },
+    {
+      "name": "content-digest",
+      "input": "sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:,sha-512=:WZDPaVn/7XgHaAy8pmojAkGWoRx2UFChF41A2svX+TaPm+AbwAgBWnrIiYllu7BNNyealdVLvRwEmTHWXvJwew==:",
+      "expected": {
+        "sha-256": { "item": { "bytes": "X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=" }, "params": {} },
+        "sha-512": { "item": { "bytes": "WZDPaVn/7XgHaAy8pmojAkGWoRx2UFChF41A2svX+TaPm+AbwAgBWnrIiYllu7BNNyealdVLvRwEmTHWXvJwew==" }, "params": {} }
+      }
+    },
+    {
+      "name": "bare-item-types",
+      "input": "a=?1, b=?0, c, d=tok/en, e=42, f=-3.5, g=\"str \\\"q\\\"\";p=1;q",
+      "expected": {
+        "a": { "item": { "boolean": true }, "params": {} },
+        "b": { "item": { "boolean": false }, "params": {} },
+        "c": { "item": { "boolean": true }, "params": {} },
+        "d": { "item": { "token": "tok/en" }, "params": {} },
+        "e": { "item": { "integer": 42 }, "params": {} },
+        "f": { "item": { "decimal": -3.5 }, "params": {} },
+        "g": { "item": { "string": "str \"q\"" }, "params": { "p": { "integer": 1 }, "q": { "boolean": true } } }
+      }
+    },
+    {
+      "name": "duplicate-key-last-wins",
+      "input": "a=1, a=2",
+      "expected": { "a": { "item": { "integer": 2 }, "params": {} } }
+    },
+    { "name": "error-unterminated-string", "input": "a=\"abc", "error": true },
+    { "name": "error-uppercase-key", "input": "A=1", "error": true },
+    { "name": "error-unterminated-inner-list", "input": "sig1=(\"@method\"", "error": true },
+    { "name": "error-trailing-comma", "input": "a=1,", "error": true }
+  ]
+}

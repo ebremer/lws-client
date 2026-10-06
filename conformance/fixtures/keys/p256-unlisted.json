@@ -1,0 +1,16 @@
+{
+  "description": "TEST KEY ONLY - never use outside the conformance fixtures",
+  "privateJwk": {
+    "kty": "EC",
+    "x": "pJv8MAiMsl_0MrvjPS8WvDEPffd6EFjN-N1CeCbLB_4",
+    "y": "dhxmxZ08xHJVY6GFhHN1uZnAV8D3x-UnUgWSIRIse7E",
+    "crv": "P-256",
+    "d": "teU2fBfossTKc9WdTRcBDDu9xmhs0eBJZZmWvEJN5q4"
+  },
+  "publicJwk": {
+    "kty": "EC",
+    "x": "pJv8MAiMsl_0MrvjPS8WvDEPffd6EFjN-N1CeCbLB_4",
+    "y": "dhxmxZ08xHJVY6GFhHN1uZnAV8D3x-UnUgWSIRIse7E",
+    "crv": "P-256"
+  }
+}
