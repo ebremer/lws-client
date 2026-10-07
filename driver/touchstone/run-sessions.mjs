@@ -43,6 +43,7 @@ if (opts.out) await mkdir(opts.out, { recursive: true });
 
 let mustFailures = 0;
 const summaries = [];
+const started = new Date().toISOString();
 for (const language of languages) {
   try {
     const summary = await drive(language);
@@ -54,6 +55,14 @@ for (const language of languages) {
   }
 }
 await mcp.close();
+if (opts.out) {
+  const summary = {
+    started, finished: new Date().toISOString(), touchstone: opts.touchstone, driver: opts.driver,
+    // Never the session page: with --keep it carries the session key.
+    languages: summaries.map(({ failed, page, ...s }) => ({ ...s, failed: failed?.map((r) => r.rule) })),
+  };
+  await writeFile(join(opts.out, "summary.json"), JSON.stringify(summary, null, 2));
+}
 
 console.log("");
 for (const s of summaries) {
