@@ -1,0 +1,47 @@
+{
+    "name": "ebremer/lws-client",
+    "description": "Client for the W3C Linked Web Storage (LWS) Protocol 1.0: storage discovery, containers, resources, linksets, OAuth 2.0 token exchange authentication, webhooks, access requests and type search.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["lws", "linked web storage", "solid", "w3c", "oauth", "token exchange", "webhooks", "http message signatures"],
+    "homepage": "https://github.com/ebremer/lws-client/tree/main/php",
+    "authors": [
+        {"name": "Erich Bremer", "email": "erich@ebremer.com"}
+    ],
+    "support": {
+        "issues": "https://github.com/ebremer/lws-client/issues",
+        "source": "https://github.com/ebremer/lws-client"
+    },
+    "require": {
+        "php": ">=8.2",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-openssl": "*",
+        "ext-sodium": "*"
+    },
+    "require-dev": {
+        "nyholm/psr7": "^1.8",
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^11.5 || ^12.0",
+        "psr/http-client": "^1.0",
+        "psr/http-factory": "^1.0",
+        "psr/http-message": "^1.1 || ^2.0"
+    },
+    "suggest": {
+        "psr/http-client": "To send requests with any PSR-18 client (Guzzle, Symfony HttpClient, …) through Psr18Transport",
+        "psr/http-message": "To verify webhook deliveries from a PSR-7 server request"
+    },
+    "autoload": {
+        "psr-4": {"Ebremer\\Lws\\": "php/src/"}
+    },
+    "autoload-dev": {
+        "psr-4": {"Ebremer\\Lws\\Tests\\": "php/tests/"}
+    },
+    "scripts": {
+        "test": "phpunit -c php/phpunit.xml.dist",
+        "analyse": "phpstan analyse -c php/phpstan.neon.dist --memory-limit=1G"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

@@ -52,3 +52,9 @@ CMakeUserPresets.json
 
 # Docs
 docs/_site/
+
+# PHP (composer.json at the root builds php/)
+/vendor/
+/composer.lock
+/.phpunit.cache/
+.phpunit.result.cache
