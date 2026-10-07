@@ -228,6 +228,33 @@ jobs:
       - name: Check the C# driver adapter
         run: node driver/adapters/check.mjs -- driver/adapters/csharp/bin/lws-driver-adapter-csharp
 
+  swift:
+    name: Swift ${{ matrix.swift }}
+    runs-on: ubuntu-latest
+    # The official toolchain images; 6.0 is the minimum the manifest declares.
+    container: swift:${{ matrix.swift }}-noble
+    strategy:
+      fail-fast: false
+      matrix:
+        swift: ["6.0", "6.4"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install curl (for the mock server's start script)
+        run: apt-get update && apt-get install -y --no-install-recommends curl
+      - name: Start mock LWS server
+        run: bash .github/scripts/start-mock-server.sh
+      # The package's manifest is the root Package.swift: the library (swift/), its tests and examples, and the
+      # driver adapter (driver/adapters/swift).
+      - run: swift build -Xswiftc -warnings-as-errors
+      - run: swift test
+      - name: Build the Swift driver adapter
+        run: swift build -c release --product lws-driver-adapter-swift
+      - name: Check the Swift driver adapter
+        run: node driver/adapters/check.mjs -- .build/release/lws-driver-adapter-swift
+
   wasm:
     name: WebAssembly component (wasm32-wasip2)
     runs-on: ubuntu-latest

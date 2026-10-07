@@ -1,6 +1,6 @@
 # Conformance fixtures
 
-Shared, language-neutral test data used by all six clients so that they parse, build and verify
+Shared, language-neutral test data used by every client so that they parse, build and verify
 exactly the same things. Each client's test suite loads these files directly from this directory
 (relative path `../conformance/fixtures` from the language folder).
 

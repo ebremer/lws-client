@@ -1,6 +1,6 @@
 # LWS Client — Cross-Language API Contract
 
-Status: v0.1.0 design contract for all seven clients (Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#),
+Status: v0.1.0 design contract for all eight clients (Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift),
 and for the WebAssembly component built from the Rust one (section 13).
 
 Every client in this repository implements the **same capabilities** described here, using the
@@ -33,7 +33,7 @@ Where the spec is silent or ambiguous, this contract records the decision (look 
 Every client exposes these values as named constants (grouped idiomatically: Java `final class`
 constants, TS `const` objects, Python module constants/`StrEnum`, Rust `pub const` in modules,
 Go `const` blocks, C++ `inline constexpr std::string_view` in namespaces, C# `const` members of nested
-static classes).
+static classes, Swift `static let` members of caseless enums such as `LinkRelation`, `MediaType`, `ResourceType`).
 
 ```
 # Namespaces / contexts
@@ -159,7 +159,7 @@ Protocol precedent). Non-ASCII and `%` characters are percent-encoded as UTF-8.
 ## 4. Client construction and configuration
 
 The entry point is **`LwsClient`** (Go: `lws.Client`, Rust: `lws_client::Client`, C++:
-`lws::Client`). It is immutable after construction and safe to share between threads/tasks.
+`lws::Client`, Swift: `LWSClient`, after the Swift API Design Guidelines' upper-case acronyms). It is immutable after construction and safe to share between threads/tasks.
 
 Configuration (builder / options object / functional options, idiomatically):
 
@@ -177,7 +177,7 @@ Names below are the canonical concept names. Languages apply their own case
 (`readContainer` / `read_container` / `ReadContainer`). Every operation accepts an
 optional per-call options value with at least `headers` (extra request headers) and, where
 the language has a cancellation idiom (Go `context.Context`, C# `CancellationToken`, JS `AbortSignal`, Rust future
-drop, Python asyncio cancellation), support for it.
+drop, Python asyncio cancellation, Swift task cancellation), support for it.
 
 URLs supplied by the caller may be relative only where the language's URL type allows it;
 **every URL returned to the caller is absolute** (resolved against the response URL). This
@@ -211,7 +211,7 @@ headers and relative `Link` targets.
 | `head(url)` | `HEAD` | `ResourceMetadata` |
 | `read(url, opts)` | `GET` (opts: `accept`, `range` (`bytes=` start/end), `ifNoneMatch`, `ifModifiedSince`, `prefer`) | `Resource` |
 | `readContainer(url, opts)` | `GET` with `Accept: application/lws+json` | `ContainerPage` |
-| `listContainer(url)` | follows `rel="next"` from `readContainer` lazily | lazy sequence of `ContainedResource` (Java `Stream`/`Iterable`, JS `AsyncIterable`, Python generator / async generator, Rust `Stream`, Go `iter.Seq2`, C++ input range, C# `IAsyncEnumerable`) |
+| `listContainer(url)` | follows `rel="next"` from `readContainer` lazily | lazy sequence of `ContainedResource` (Java `Stream`/`Iterable`, JS `AsyncIterable`, Python generator / async generator, Rust `Stream`, Go `iter.Seq2`, C++ input range, C# `IAsyncEnumerable`, Swift `AsyncSequence`) |
 
 `ResourceMetadata` (parsed response headers):
 `url` (final URL), `status`, `etag` (raw, including quotes / `W/` — echo it verbatim in
@@ -369,7 +369,7 @@ CredentialProvider
   * claims: `sub = iss = client_id = <agent URI>`, `aud = [<AS issuer>]`, `iat = now`,
     `exp = now + lifetime` (default 300 s), `jti = random UUID`.
   * Algorithms: **ES256 (P-256) required**, **EdDSA (Ed25519) required where the platform
-    provides it** (all seven do, via the chosen crypto stacks; C# takes Ed25519 from BouncyCastle, as
+    provides it** (all eight do, via the chosen crypto stacks; Swift takes both from swift-crypto, which is CryptoKit on Apple platforms; C# takes Ed25519 from BouncyCastle, as
     .NET 10 has none). ECDSA signatures are JOSE raw
     `r‖s` (64 bytes), never DER.
   * Factories: `forAgent(agentUri, privateKey, kid)` (HTTPS/DID agent whose CID document lists
@@ -523,7 +523,9 @@ Python exception classes; Rust `enum Error` + `status()` + `is_not_found()`-styl
 Go `*HTTPError` + sentinels usable with `errors.Is` (`ErrNotFound`, `ErrConflict`, …) and
 `errors.As`; C++ exception classes deriving from `lws::Error : std::runtime_error`; C# exceptions
 deriving from `Ebremer.Lws.LwsException` (the 501 one is `HttpNotImplementedException`, so as not to clash
-with `System.NotImplementedException`); the WebAssembly component one `error` record whose `error-kind`
+with `System.NotImplementedException`); Swift one `enum LWSError: Error` with a case per class (`.notFound`,
+`.preconditionFailed`, …, each carrying the `HTTPError`; `.http`, `.authentication`, `.protocolError`,
+`.signatureVerification`, `.transport`, and `.invalidArgument` for caller input); the WebAssembly component one `error` record whose `error-kind`
 names the class (`not-found`, `precondition-failed`, …, `authentication`, `protocol`, `transport`).
 
 ## 11. Testing requirements (all languages)
@@ -550,6 +552,7 @@ names the class (`not-found`, `precondition-failed`, …, `authentication`, `pro
 | Go | `github.com/ebremer/lws-client/go` | package `lws` | Go 1.23 |
 | Python | `lws-client` (PyPI) | `import lws_client` | Python 3.10 |
 | C# | `Ebremer.Lws.Client` (NuGet) | `namespace Ebremer.Lws` | .NET 10 |
+| Swift | `lws-client` (SwiftPM; the manifest is the repository's root `Package.swift`) | `import LWS` | Swift 6.0, macOS 13 / iOS 16 / Linux |
 | WebAssembly | `lws_client.wasm`, a WASI 0.2 component | WIT package `ebremer:lws@0.1.0`, world `lws-client` | a component host with `wasi:http` |
 
 All code is MIT licensed; every package manifest declares `MIT` and every source tree points to

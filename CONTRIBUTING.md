@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. This repository holds seven clients that must stay behaviourally identical, and a
+Thanks for helping. This repository holds eight clients that must stay behaviourally identical, and a
 WebAssembly component built from the Rust one, so changes follow a fixed order:
 
 1. **Contract first.** If a change affects behaviour (wire format, a new operation, an
@@ -10,13 +10,13 @@ WebAssembly component built from the Rust one, so changes follow a fixed order:
    `node conformance/tools/generate-fixtures.mjs`.
 3. **Mock server.** Teach [`testing/mock-server`](testing/mock-server) the server side if needed
    (`npm test` there).
-4. **All seven clients.** Implement the change idiomatically in each language and run its tests,
+4. **All eight clients.** Implement the change idiomatically in each language and run its tests,
    including the interop scenario
    (`LWS_TEST_SERVER=http://localhost:8787` with the mock server running). If it changes the Rust
    client's API, carry it into the component's interface, [`wasm/wit/lws.wit`](wasm/wit/lws.wit).
 5. **Driver adapters.** If the change adds or alters an operation, update
-   [`driver/PROTOCOL.md`](driver/PROTOCOL.md), the tool catalog and all eight adapters in
-   [`driver/adapters`](driver/adapters) (the seven clients' and the component's), and check each with
+   [`driver/PROTOCOL.md`](driver/PROTOCOL.md), the tool catalog and all nine adapters in
+   [`driver/adapters`](driver/adapters) (the eight clients' and the component's), and check each with
    `node driver/adapters/check.mjs -- <adapter>`.
 6. **Docs.** Update `docs-src/` and regenerate the site with `node docs-src/build.mjs`.
    Commit the generated `docs/`; CI checks that it is up to date.
@@ -30,6 +30,7 @@ WebAssembly component built from the Rust one, so changes follow a fixed order:
 | Go | `cd go && go vet ./... && go test ./...` |
 | Python | `cd python && python -m venv .venv && .venv/bin/pip install -e ".[dev]" && .venv/bin/pytest` |
 | C# | `dotnet test csharp` (.NET 10 SDK) |
+| Swift | `swift build && swift test` at the repository root, where `Package.swift` is (Swift 6.0+) |
 | WebAssembly | `cd wasm && cargo build --release --target wasm32-wasip2 && cargo clippy --release --target wasm32-wasip2 -- -D warnings` (Rust 1.87+, `rustup target add wasm32-wasip2`); the component is tested through its driver adapter, see [`wasm/README.md`](wasm/README.md) |
 
 Every source file starts with `SPDX-License-Identifier: MIT`. By contributing you agree that your
