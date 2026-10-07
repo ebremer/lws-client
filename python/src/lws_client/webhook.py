@@ -19,7 +19,7 @@ import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Union
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -162,6 +162,22 @@ async def read_asgi_request(
     return str(scope.get("method", "POST")), headers, bytes(body)
 
 
+def _normal_url(url: str) -> str:
+    """A URL as two spellings of it share it: scheme and host lower-cased, no default port, path ``/``."""
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        port = parts.port
+    except ValueError:
+        return url
+    if ":" in host:
+        host = f"[{host}]"
+    scheme = parts.scheme.lower()
+    if port is not None and (scheme, port) not in (("http", 80), ("https", 443)):
+        host = f"{host}:{port}"
+    return urlunsplit((scheme, host, parts.path or "/", parts.query, parts.fragment))
+
+
 class _VerifierCore:
     def __init__(
         self,
@@ -174,7 +190,10 @@ class _VerifierCore:
         key_cache_ttl: float,
     ) -> None:
         self._fetch = fetch
-        self.trusted_storages = frozenset(trusted_storages) if trusted_storages else None
+        # Given at all, the list is an allow-list: an empty one trusts no storage.
+        self.trusted_storages = (
+            frozenset(_normal_url(u) for u in trusted_storages) if trusted_storages is not None else None
+        )
         self.max_age = max_age
         self.clock_skew = clock_skew
         self.clock = clock
@@ -266,7 +285,7 @@ class _VerifierCore:
         if "#" not in keyid or not keyid.split("#", 1)[1]:
             raise SignatureVerificationError("keyid must be a URL with a fragment")
         storage_id = keyid.split("#", 1)[0]
-        if self.trusted_storages is not None and storage_id not in self.trusted_storages:
+        if self.trusted_storages is not None and _normal_url(storage_id) not in self.trusted_storages:
             raise SignatureVerificationError(f"storage {storage_id} is not trusted")
 
         base = signature_base(method, url, hdrs, params)

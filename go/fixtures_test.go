@@ -976,6 +976,9 @@ func TestFixtureTypeIndex(t *testing.T) {
 	if page.TotalItems != wantS.TotalItems || !reflect.DeepEqual(ids, wantS.IDs) || page.Next != wantS.Next {
 		t.Errorf("search page = %+v", page)
 	}
+	if page.ID == "" {
+		t.Error("a search page without an id in its body has no ID; want the page URL")
+	}
 }
 
 func TestFixtureOAuth(t *testing.T) {

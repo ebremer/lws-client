@@ -40,7 +40,8 @@ public record ContainerPage(Optional<URI> id, List<String> types, OptionalLong t
     public static ContainerPage parse(ObjectNode body, ResourceMetadata metadata) {
         URI base = metadata.url();
         String idText = Json.text(body, "id");
-        Optional<URI> id = idText == null ? Optional.empty() : Optional.ofNullable(Uris.resolveOrNull(base, idText));
+        // The page's own URL when the body names no id, as for a page of search results.
+        Optional<URI> id = Optional.ofNullable(idText == null ? base : Uris.resolveOrNull(base, idText));
         JsonNode itemsNode = body.get("items");
         List<ContainedResource> items = new ArrayList<>();
         if (itemsNode != null && itemsNode.isArray()) {

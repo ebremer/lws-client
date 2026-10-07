@@ -215,6 +215,14 @@ class ModelFixturesTest {
         assertEquals(f.get("request"), built.toJson());
         AccessGrant approved = AccessGrant.approving(built);
         assertEquals(List.of("AccessGrant"), approved.types());
+
+        // A malformed document from the server is a protocol error, not an argument error.
+        ObjectNode badStorage = f.get("request").deepCopy();
+        badStorage.put("storage", "not a uri");
+        assertThrows(LwsProtocolException.class, () -> AccessRequest.parse(badStorage));
+        ObjectNode noAction = f.get("grant").deepCopy();
+        ((ObjectNode) noAction.withArray("access").get(0)).putArray("action");
+        assertThrows(LwsProtocolException.class, () -> AccessGrant.parse(noAction));
     }
 
     @Test
@@ -234,6 +242,8 @@ class ModelFixturesTest {
         assertEquals(ids, results.items().stream().map(i -> i.id().toString()).toList());
         assertEquals(s.get("expected").get("next").asText(), results.next().orElseThrow().toString());
         assertTrue(results.hasType("ContainerPage"));
+        // The body names no id: the page's own URL stands in.
+        assertEquals(URI.create(s.get("url").asText()), results.id().orElseThrow());
     }
 
     @Test

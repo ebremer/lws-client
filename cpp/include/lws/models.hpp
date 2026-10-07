@@ -81,7 +81,7 @@ struct ContainedResource {
 
 /// One page of a container listing (or of a Type Search result set).
 struct ContainerPage {
-    std::string id{};  ///< absolute (empty for synthetic search pages without id)
+    std::string id{};  ///< absolute (the page URL for a search page whose body names no id)
     std::vector<std::string> types{};
     std::optional<std::int64_t> total_items{};
     std::vector<ContainedResource> items{};

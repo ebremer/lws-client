@@ -131,10 +131,10 @@ pub(crate) fn container_page(p: &ContainerPage) -> Value {
         .into()
 }
 
-/// Page, for a page of search results (`SearchPage`). The library's `SearchPage` has no `id`,
-/// so the result has none either.
+/// Page, for a page of search results (`SearchPage`).
 pub(crate) fn search_page(p: &SearchPage) -> Value {
     Object::new()
+        .set("id", p.id.as_str())
         .set("types", p.types.clone())
         .opt("totalItems", p.total_items)
         .set("items", items(&p.items))

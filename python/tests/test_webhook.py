@@ -97,6 +97,13 @@ def test_trusted_storages_and_cache() -> None:
                              trusted_storages=["https://other.example/"])
     with pytest.raises(SignatureVerificationError, match="not trusted"):
         strict.verify(v["method"], v["url"], v["headers"], v["body"])
+    # An empty allow-list trusts no storage; spellings of the same URL are the same storage.
+    nobody = WebhookVerifier(fetch=lambda _: DESCRIPTION, clock=lambda: v["now"], trusted_storages=[])
+    with pytest.raises(SignatureVerificationError, match="not trusted"):
+        nobody.verify(v["method"], v["url"], v["headers"], v["body"])
+    spelled = WebhookVerifier(fetch=lambda _: DESCRIPTION, clock=lambda: v["now"],
+                              trusted_storages=["HTTPS://Storage.Example:443/"])
+    assert spelled.verify(v["method"], v["url"], v["headers"], v["body"]).storage == "https://storage.example/"
 
 
 def test_content_digest_rules() -> None:

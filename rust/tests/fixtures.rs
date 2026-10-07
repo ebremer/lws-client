@@ -618,6 +618,10 @@ fn type_index_and_search_pages() {
     )
     .unwrap();
     assert_eq!(page.total_items, s["expected"]["totalItems"].as_u64());
+    let page_id = s["body"]["id"]
+        .as_str()
+        .unwrap_or_else(|| s["url"].as_str().unwrap());
+    assert_eq!(page.id.as_str(), page_id);
     let ids: Vec<&str> = page.items.iter().map(|i| i.id.as_str()).collect();
     assert_eq!(ids, strs(&s["expected"]["ids"]));
     assert_eq!(page.next.unwrap().as_str(), s["expected"]["next"]);

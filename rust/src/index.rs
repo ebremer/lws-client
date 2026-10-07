@@ -206,6 +206,8 @@ impl TypeIndexPage {
 /// One page of Type Search results (a synthetic `ContainerPage`).
 #[derive(Debug, Clone)]
 pub struct SearchPage {
+    /// The page's `id`, absolute; the page's own URL when the body names none.
+    pub id: Url,
     /// Number of matching resources visible to the client.
     pub total_items: Option<u64>,
     /// Raw type values of the page (`ContainerPage`).
@@ -232,7 +234,14 @@ impl SearchPage {
         let raw: Value = serde_json::from_slice(body)?;
         let items = parse_items(&raw, &metadata.url)?;
         let p = Pagination::from_metadata(&metadata);
+        let id = raw
+            .get("id")
+            .or_else(|| raw.get("@id"))
+            .and_then(Value::as_str)
+            .and_then(|id| metadata.url.join(id).ok())
+            .unwrap_or_else(|| metadata.url.clone());
         Ok(Self {
+            id,
             total_items: raw.get("totalItems").and_then(Value::as_u64),
             types: string_list(raw.get("type")),
             items,

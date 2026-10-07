@@ -159,8 +159,9 @@ ContainerPage ContainerPage::from_response(const HttpResponse& response, bool re
     }
     page.raw = parse_json_body(response, "container listing");
     if (!page.raw.is_object()) throw ProtocolError("container listing is not a JSON object: " + response.url);
+    // The page's own URL when the body names no id, as for a page of search results.
     if (auto id = string_member(page.raw, "id")) page.id = resolve_url(response.url, *id);
-    else if (require_container) page.id = response.url;
+    else page.id = response.url;
     if (page.raw.contains("type")) page.types = json_types(page.raw["type"]);
     if (require_container && !page.types.empty() && !page.is_container())
         throw ProtocolError("resource is not a container: " + response.url);

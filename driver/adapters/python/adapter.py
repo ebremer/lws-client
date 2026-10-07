@@ -339,7 +339,7 @@ def item_result(i: ContainedResource) -> Json:
 
 def page_result(p: ContainerPage | SearchPage) -> Json:
     return members(
-        id=p.id if isinstance(p, ContainerPage) else None,
+        id=p.id or None,
         types=list(p.types),
         totalItems=p.total_items,
         items=[item_result(i) for i in p.items],

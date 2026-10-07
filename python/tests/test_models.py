@@ -229,6 +229,7 @@ def test_type_index_and_search_fixture() -> None:
     assert [i.id for i in sp.items] == se["expected"]["ids"]
     assert sp.next == se["expected"]["next"]
     assert sp.items[2].is_container
+    assert sp.id == (se["body"].get("id") or se["url"])
 
 
 def test_oauth_fixture() -> None:

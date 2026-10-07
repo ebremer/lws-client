@@ -214,6 +214,16 @@ TEST(AccessModel, ParseAndBuild) {
     EXPECT_EQ(grant.access[0].constraints[0].right_operand, nlohmann::json::array({"image/jpeg", "image/png"}));
     EXPECT_EQ(grant.to_json(), f["grant"]);
     EXPECT_THROW(AccessGrant::from_json(f["request"]), ProtocolError);
+    // A malformed document from the server is a protocol error.
+    auto no_storage = f["request"];
+    no_storage.erase("storage");
+    EXPECT_THROW(AccessRequest::from_json(no_storage), ProtocolError);
+    auto no_access = f["grant"];
+    no_access["access"] = nlohmann::json::array();
+    EXPECT_THROW(AccessGrant::from_json(no_access), ProtocolError);
+    auto no_action = f["grant"];
+    no_action["access"][0]["action"] = nlohmann::json::array();
+    EXPECT_THROW(AccessGrant::from_json(no_action), ProtocolError);
 
     // Builder expectation (designated initializers).
     AccessRequest built{
@@ -249,6 +259,7 @@ TEST(TypeIndexModel, IndexAndSearchPages) {
     std::vector<std::string> ids;
     for (const auto& i : search.items) ids.push_back(i.id);
     EXPECT_EQ(ids, f["search"]["expected"]["ids"].get<std::vector<std::string>>());
+    EXPECT_EQ(search.id, f["search"]["url"].get<std::string>());  // the body names no id: the page URL stands in
     EXPECT_EQ(search.next, f["search"]["expected"]["next"].get<std::string>());
     EXPECT_TRUE(search.has_type("ContainerPage"));
 }

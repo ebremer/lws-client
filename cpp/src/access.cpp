@@ -60,6 +60,13 @@ Doc document_from_json(const nlohmann::json& json, std::string_view required_typ
             doc.access.push_back(AccessPolicy::from_json(*it));
         }
     }
+    // A document from the server must be one the model can hold: its fault otherwise, not the caller's.
+    if (doc.storage.empty()) throw ProtocolError(std::string(required_type) + " has no storage");
+    if (doc.access.empty()) throw ProtocolError(std::string(required_type) + " has no access policies");
+    for (const auto& p : doc.access) {
+        if (p.actions.empty()) throw ProtocolError(std::string(required_type) + " has a policy without actions");
+        if (p.assignee.empty()) throw ProtocolError(std::string(required_type) + " has a policy without an assignee");
+    }
     doc.extra = nlohmann::json::object();
     for (auto m = json.begin(); m != json.end(); ++m) {
         const auto& k = m.key();

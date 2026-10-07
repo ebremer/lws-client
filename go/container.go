@@ -14,7 +14,8 @@ import (
 // ContainerPage is one page of a container representation (or of a
 // container-shaped result such as a type search).
 type ContainerPage struct {
-	// ID is the absolute URI of the container (empty for synthetic results).
+	// ID is the absolute URI of the container; for a page of search results
+	// without one, the page's own URL.
 	ID    string
 	Types TypeList
 	// TotalItems is the number of members visible to the client across all
@@ -73,8 +74,12 @@ func ParseContainerPage(data []byte, baseURL string, linkHeaders ...string) (*Co
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, &ProtocolError{Message: "malformed container representation", Err: err}
 	}
+	id := resolveURL(baseURL, doc.ID)
+	if id == "" {
+		id = baseURL // the page's own URL when the body names no id, as for a page of search results
+	}
 	p := &ContainerPage{
-		ID:         resolveURL(baseURL, doc.ID),
+		ID:         id,
 		Types:      doc.Type,
 		TotalItems: -1,
 		Raw:        append(json.RawMessage(nil), data...),

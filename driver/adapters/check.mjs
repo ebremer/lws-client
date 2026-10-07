@@ -494,6 +494,7 @@ try {
     expect(types.types.includes(PERSON), `types ${JSON.stringify(types.types)}`);
     const found = await adapter.call("search_types", { serviceUrl: searchUrl, query: { type: [PERSON] } });
     expect(found.items.some((i) => i.id === state.profile), `items ${JSON.stringify(found.items)}`);
+    expect(typeof found.id === "string" && found.id.startsWith(base), `a search page has an id: ${found.id}`);
     const all = await adapter.call("search_all", { serviceUrl: searchUrl, query: { type: [[PERSON, "http://xmlns.com/foaf/0.1/Person"]] } });
     expect(all.items.some((i) => i.id === state.profile), `items ${JSON.stringify(all.items)}`);
     const formats = await adapter.call("accepted_query_formats", { serviceUrl: searchUrl });

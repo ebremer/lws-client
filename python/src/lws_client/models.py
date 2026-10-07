@@ -299,11 +299,13 @@ class ContainerPage:
 
 @dataclass(frozen=True, slots=True)
 class SearchPage:
-    """One page of Type Search results — a synthetic ``ContainerPage`` (no container ``id``)."""
+    """One page of Type Search results — a synthetic ``ContainerPage``, whose ``id`` is the page's own URL
+    when the body names none."""
 
     total_items: int | None
     items: tuple[ContainedResource, ...]
     metadata: ResourceMetadata
+    id: str = ""
     types: tuple[str, ...] = ()
     first: str | None = None
     next: str | None = None
@@ -314,7 +316,9 @@ class SearchPage:
     @classmethod
     def parse(cls, metadata: ResourceMetadata, body: bytes) -> SearchPage:
         data = _check_json_listing(metadata, body, "search result page")
+        raw_id = data.get("id", data.get("@id"))
         return cls(
+            id=resolve(metadata.url, raw_id) if isinstance(raw_id, str) else metadata.url,
             total_items=_int_or_none(data.get("totalItems")),
             items=_items(data, metadata.url),
             metadata=metadata,

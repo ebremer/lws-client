@@ -42,6 +42,16 @@ public sealed interface AccessDocument permits AccessRequest, AccessGrant {
     record Parts(List<String> types, URI storage, Optional<URI> inbox, List<AccessPolicy> access, ObjectNode raw) {}
 
     static Parts parseParts(JsonNode json, String requiredType) {
+        try {
+            return parsePartsChecked(json, requiredType);
+        } catch (IllegalArgumentException e) {
+            // A document from the server that breaks the model (a value that is not a URI, a policy with
+            // no action, a target with no value) is the server's fault, not the caller's.
+            throw new LwsProtocolException("Malformed " + requiredType + ": " + e.getMessage(), e);
+        }
+    }
+
+    private static Parts parsePartsChecked(JsonNode json, String requiredType) {
         ObjectNode o = Json.requireObject(json, requiredType);
         List<String> types = Json.stringOrArray(o.get("type"));
         if (!Lws.hasType(types, requiredType)) throw new LwsProtocolException("Document type " + types + " does not include " + requiredType);
