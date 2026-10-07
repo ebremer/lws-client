@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: MIT
+# The lws-client driver. Every setting can be overridden on the command line (--lws.driver.home=...) or with
+# environment variables (LWS_DRIVER_TOKEN=...).
+
+server:
+  # Loopback only, unless lws.driver.token is set: whoever reaches the MCP endpoint drives the clients.
+  address: 127.0.0.1
+  port: 18095
+
+spring:
+  application:
+    name: lws-client-driver
+  main:
+    banner-mode: off
+  ai:
+    mcp:
+      server:
+        name: lws-client-driver
+        version: 0.1.0
+        type: SYNC
+        protocol: STREAMABLE
+        streamable-http:
+          mcp-endpoint: /mcp
+        instructions: >-
+          Drives the lws-client libraries (Java, JavaScript, Python, Go, Rust, C++) as LWS clients. Start a client
+          with start_client (a language and an identity), then call the operation tools (discover_storage, read,
+          create, patch, delete, read_linkset, subscribe, search_types, ...) with its id. Each operation tool
+          returns {ok: true, result} or {ok: false, error: {kind, status, message}}: an error outcome, such as a
+          ConflictError, is what the client did, not a failure of the driver. Unsupported means that language's
+          library lacks the operation. open_inbox gives a client a webhook inbox whose deliveries it verifies.
+
+lws:
+  driver:
+    # The driver directory. Run the server from driver/, or set this to it.
+    home: .
+    # URL prefixes the clients may be pointed at, such as a Touchstone session base. Empty allows any.
+    allowed-targets: []
+    # The bearer token that guards /mcp. Required when server.address is not loopback.
+    token:
+    allowed-origins: []
+    # The driver's URL as a storage reaches it, for inbox URLs. Defaults to http://<server.address>:<port>.
+    public-base-url:
+    operation-timeout: 60s
+    startup-timeout: 90s
+    max-clients: 16
+    idle-timeout: 2h
+    languages:
+      java:
+        description: lws-client for Java (java/)
+        command: [java, -jar, adapters/java/target/lws-driver-adapter-java.jar]
+      js:
+        description: lws-client for JavaScript/TypeScript (js/), on Node.js 20 or later
+        command: [node, adapters/js/adapter.mjs]
+      python:
+        description: lws-client for Python (python/), in a Python where it is installed
+        command: [python3, adapters/python/adapter.py]
+      go:
+        description: lws-client for Go (go/)
+        command: [adapters/go/bin/lws-driver-adapter-go]
+      rust:
+        description: lws-client for Rust (rust/)
+        command: [adapters/rust/target/release/lws-driver-adapter-rust]
+      cpp:
+        description: lws-client for C++ (cpp/)
+        command: [adapters/cpp/build/lws-driver-adapter-cpp]
+
+logging:
+  level:
+    com.ebremer.lws.driver: INFO

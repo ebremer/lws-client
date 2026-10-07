@@ -48,6 +48,10 @@ jobs:
         run: bash .github/scripts/start-mock-server.sh
       - run: mvn -B verify
         working-directory: java
+      - name: Driver (the Java adapter and the MCP server)
+        run: mvn -B -f driver/pom.xml verify
+      - name: Check the Java driver adapter
+        run: node driver/adapters/check.mjs -- java -jar driver/adapters/java/target/lws-driver-adapter-java.jar
 
   javascript:
     name: JavaScript (Node ${{ matrix.node }})
@@ -73,6 +77,8 @@ jobs:
         working-directory: js
       - run: npm test
         working-directory: js
+      - name: Check the JavaScript driver adapter
+        run: node driver/adapters/check.mjs -- node driver/adapters/js/adapter.mjs
 
   python:
     name: Python ${{ matrix.python }}
@@ -99,6 +105,10 @@ jobs:
         working-directory: python
       - run: pytest
         working-directory: python
+      - name: Check the Python driver adapter
+        run: |
+          ruff check --config python/pyproject.toml driver/adapters/python
+          node driver/adapters/check.mjs -- python driver/adapters/python/adapter.py
 
   go:
     name: Go ${{ matrix.go }}
@@ -124,6 +134,14 @@ jobs:
         working-directory: go
       - run: go test -race ./...
         working-directory: go
+      - name: Build the Go driver adapter
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go build -o bin/lws-driver-adapter-go .
+        working-directory: driver/adapters/go
+      - name: Check the Go driver adapter
+        run: node driver/adapters/check.mjs -- driver/adapters/go/bin/lws-driver-adapter-go
 
   rust:
     name: Rust
@@ -138,7 +156,9 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust
+          workspaces: |
+            rust
+            driver/adapters/rust
       - name: Start mock LWS server
         run: bash .github/scripts/start-mock-server.sh
       - run: cargo fmt --check
@@ -147,6 +167,14 @@ jobs:
         working-directory: rust
       - run: cargo test
         working-directory: rust
+      - name: Build the Rust driver adapter
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo build --release
+        working-directory: driver/adapters/rust
+      - name: Check the Rust driver adapter
+        run: node driver/adapters/check.mjs -- driver/adapters/rust/target/release/lws-driver-adapter-rust
 
   cpp:
     name: C++ (${{ matrix.config }})
@@ -172,6 +200,14 @@ jobs:
           cmake -S cpp -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug $EXTRA
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
+      - name: Build the C++ driver adapter
+        if: matrix.config == 'full'
+        run: |
+          cmake -S driver/adapters/cpp -B build-adapter -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-adapter
+      - name: Check the C++ driver adapter
+        if: matrix.config == 'full'
+        run: node driver/adapters/check.mjs -- build-adapter/lws-driver-adapter-cpp
 
   docs:
     name: Docs are up to date

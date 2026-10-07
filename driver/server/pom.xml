@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.1</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.ebremer</groupId>
+  <artifactId>lws-client-driver</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <name>LWS Client Driver</name>
+  <description>An MCP server that drives the six lws-client libraries (Java, JavaScript/TypeScript, C++, Rust, Go,
+    Python) through their adapters, so that a test service such as Touchstone can make each client do what a test
+    needs and judge what it sends.</description>
+  <url>https://github.com/ebremer/lws-client</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/license/mit</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>Erich Bremer</name>
+      <url>https://github.com/ebremer</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <url>https://github.com/ebremer/lws-client</url>
+    <connection>scm:git:https://github.com/ebremer/lws-client.git</connection>
+  </scm>
+
+  <properties>
+    <java.version>17</java.version>
+    <spring-ai.version>2.0.1</spring-ai.version>
+    <!-- The driver's home: adapter commands are relative to it. -->
+    <driver.home>${project.basedir}/..</driver.home>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.ai</groupId>
+        <artifactId>spring-ai-bom</artifactId>
+        <version>${spring-ai.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>lws-client-driver</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <lws.driver.home>${driver.home}</lws.driver.home>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

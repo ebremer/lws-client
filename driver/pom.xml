@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<!--
+  Builds the driver: the Java library it drives, the Java adapter, and the MCP server.
+  The other languages' adapters build with their own tools (see README.md).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.ebremer</groupId>
+  <artifactId>lws-client-driver-build</artifactId>
+  <version>0.1.0</version>
+  <packaging>pom</packaging>
+
+  <name>LWS Client Driver (build)</name>
+
+  <modules>
+    <module>../java</module>
+    <module>adapters/java</module>
+    <module>server</module>
+  </modules>
+</project>

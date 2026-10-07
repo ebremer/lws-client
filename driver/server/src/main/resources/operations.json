@@ -1,0 +1,300 @@
+{
+  "$comment": "SPDX-License-Identifier: MIT. One MCP tool per operation of driver/PROTOCOL.md section 4. Each tool takes the client to use and the operation's arguments, passes them to the client's adapter unchanged, and returns its response: {ok: true, result} or {ok: false, error: {kind, message, status?, ...}}. A param whose value is a string naming a def (\"$def\") takes that def's schema; its own description, when given, replaces the def's.",
+  "defs": {
+    "url": { "type": "string", "description": "An absolute URL." },
+    "etag": { "type": "string", "description": "An entity tag, verbatim: quotes and W/ included." },
+    "body": {
+      "type": "object",
+      "description": "The request body, one of: {\"text\": string} (UTF-8), {\"base64\": string} (bytes), {\"json\": any} (serialized; the content type defaults to application/json).",
+      "properties": {
+        "text": { "type": "string" },
+        "base64": { "type": "string", "contentEncoding": "base64" },
+        "json": {}
+      },
+      "additionalProperties": false
+    },
+    "patch": {
+      "type": "array",
+      "description": "A JSON Patch (RFC 6902) operations array. The client rebuilds it with its own JsonPatch builder and sends it as application/json-patch+json.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "op": { "type": "string", "enum": ["add", "remove", "replace", "move", "copy", "test"] },
+          "path": { "type": "string" },
+          "from": { "type": "string" },
+          "value": {}
+        },
+        "required": ["op", "path"]
+      }
+    },
+    "query": {
+      "type": "object",
+      "description": "An application/lws-query+json filter: keys are \"type\" or a relation IRI, each a list of AND groups, where a group is an IRI or a list of IRIs (an OR group). {} matches everything.",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] }
+      }
+    },
+    "limit": { "type": "integer", "minimum": 0, "description": "Return at most this many (default 1000); truncated says whether there were more." },
+    "document": { "type": "object", "description": "A JSON-LD document, as the specification shows it." }
+  },
+  "operations": [
+    {
+      "name": "discover_storage", "title": "Discover a storage", "readOnly": true,
+      "description": "Find the storage a resource belongs to: HEAD the resource, follow its Link rel=\"https://www.w3.org/ns/lws#storage\", and read the storage description. Returns the description's id, types, storage root, services and verification methods, and the raw document.",
+      "params": { "url": { "$def": "url", "description": "Any resource of the storage." } },
+      "required": ["url"]
+    },
+    {
+      "name": "get_storage_description", "title": "Read a storage description", "readOnly": true,
+      "description": "Read a storage description directly, by the storage's URL.",
+      "params": { "url": { "$def": "url", "description": "The storage URL." } },
+      "required": ["url"]
+    },
+    {
+      "name": "head", "title": "HEAD a resource", "readOnly": true,
+      "description": "Send HEAD to a resource and return its metadata: status, ETag, content type, links (linkset, up, type, storage), Allow and Accept-Patch.",
+      "params": { "url": { "$def": "url" } },
+      "required": ["url"]
+    },
+    {
+      "name": "read", "title": "Read a resource", "readOnly": true,
+      "description": "GET a resource. Returns its metadata, whether it was not modified (a 304 to ifNoneMatch), the Content-Range of a range request, and the body: {text} for textual types, {base64} otherwise.",
+      "params": {
+        "url": { "$def": "url" },
+        "accept": { "type": "string", "description": "The Accept header." },
+        "rangeStart": { "type": "integer", "minimum": 0, "description": "The first byte of a range request." },
+        "rangeEnd": { "type": "integer", "minimum": 0, "description": "The last byte of a range request, inclusive." },
+        "ifNoneMatch": { "$def": "etag", "description": "Read only if the ETag changed." },
+        "prefer": { "type": "string", "description": "The Prefer header." }
+      },
+      "required": ["url"]
+    },
+    {
+      "name": "read_container", "title": "Read a container page", "readOnly": true,
+      "description": "GET a container as application/lws+json: its id, types, totalItems, the items on this page, and the first/next/prev/last page links.",
+      "params": { "url": { "$def": "url", "description": "The container, or a page URL the storage gave." } },
+      "required": ["url"]
+    },
+    {
+      "name": "list_container", "title": "List a container", "readOnly": true,
+      "description": "List a container's members, following its next links page by page.",
+      "params": { "url": { "$def": "url" }, "limit": { "$def": "limit" } },
+      "required": ["url"]
+    },
+    {
+      "name": "create", "title": "Create a resource",
+      "description": "POST a new data resource into a container. Returns its Location and the metadata of the 201.",
+      "params": {
+        "container": { "$def": "url", "description": "The container to create it in." },
+        "body": { "$def": "body" },
+        "contentType": { "type": "string", "description": "Its media type; text defaults to text/plain, base64 to application/octet-stream, json to application/json." },
+        "slug": { "type": "string", "description": "A name hint, sent as Slug." },
+        "types": { "type": "array", "items": { "type": "string" }, "description": "Extra type IRIs, sent as Link rel=\"type\"." },
+        "links": {
+          "type": "array", "description": "Extra links to send, as Link headers.",
+          "items": { "type": "object", "properties": { "href": { "type": "string" }, "rel": { "type": "string" } }, "required": ["href", "rel"] }
+        }
+      },
+      "required": ["container"]
+    },
+    {
+      "name": "create_container", "title": "Create a container",
+      "description": "POST a new container into a container, with Link: <https://www.w3.org/ns/lws#Container>; rel=\"type\".",
+      "params": {
+        "parent": { "$def": "url", "description": "The container to create it in." },
+        "slug": { "type": "string", "description": "A name hint, sent as Slug." }
+      },
+      "required": ["parent"]
+    },
+    {
+      "name": "update", "title": "Replace a resource", "idempotent": true,
+      "description": "PUT a data resource's new content. Returns the status, the new ETag and the metadata.",
+      "params": {
+        "url": { "$def": "url" },
+        "body": { "$def": "body" },
+        "contentType": { "type": "string", "description": "The media type." },
+        "ifMatch": { "$def": "etag", "description": "Replace only if the ETag still matches." },
+        "ifNoneMatch": { "type": "string", "description": "If-None-Match, such as *." }
+      },
+      "required": ["url", "body"]
+    },
+    {
+      "name": "patch", "title": "Patch a resource",
+      "description": "PATCH a JSON resource with a JSON Patch.",
+      "params": {
+        "url": { "$def": "url" },
+        "patch": { "$def": "patch" },
+        "ifMatch": { "$def": "etag", "description": "Patch only if the ETag still matches." }
+      },
+      "required": ["url", "patch"]
+    },
+    {
+      "name": "delete", "title": "Delete a resource", "destructive": true, "idempotent": true,
+      "description": "DELETE a resource. A non-empty container needs recursive, which sends Depth: infinity.",
+      "params": {
+        "url": { "$def": "url" },
+        "recursive": { "type": "boolean", "description": "Delete a container with everything in it." },
+        "ifMatch": { "$def": "etag", "description": "Delete only if the ETag still matches." }
+      },
+      "required": ["url"]
+    },
+    {
+      "name": "linkset_url", "title": "Find a linkset", "readOnly": true,
+      "description": "Find a resource's linkset through its Link rel=\"linkset\".",
+      "params": { "url": { "$def": "url", "description": "The resource." } },
+      "required": ["url"]
+    },
+    {
+      "name": "read_linkset", "title": "Read a linkset", "readOnly": true,
+      "description": "Find and read a resource's linkset (RFC 9264). Returns its URL, ETag, the document, and its Allow and Accept-Patch.",
+      "params": { "url": { "$def": "url", "description": "The resource, not the linkset." } },
+      "required": ["url"]
+    },
+    {
+      "name": "update_linkset", "title": "Replace a linkset", "idempotent": true,
+      "description": "PUT a linkset's new document, as application/linkset+json.",
+      "params": {
+        "linksetUrl": { "$def": "url", "description": "The linkset's URL, from linkset_url or read_linkset." },
+        "linkset": { "type": "object", "description": "The document: {\"linkset\": [{\"anchor\": …, \"<rel>\": [{\"href\": …}]}]}." },
+        "ifMatch": { "$def": "etag" }
+      },
+      "required": ["linksetUrl", "linkset"]
+    },
+    {
+      "name": "patch_linkset", "title": "Patch a linkset",
+      "description": "PATCH a linkset with a JSON Patch on its document, such as add /linkset/0/describedby.",
+      "params": {
+        "linksetUrl": { "$def": "url", "description": "The linkset's URL." },
+        "patch": { "$def": "patch" },
+        "ifMatch": { "$def": "etag" }
+      },
+      "required": ["linksetUrl", "patch"]
+    },
+    {
+      "name": "subscribe", "title": "Subscribe to notifications",
+      "description": "Subscribe to webhook notifications about some resources. The inbox defaults to the client's own, from open_inbox.",
+      "params": {
+        "serviceUrl": { "$def": "url", "description": "The notification service's endpoint, from the storage description." },
+        "topics": { "type": "array", "items": { "type": "string" }, "description": "The resources to watch." },
+        "inbox": { "$def": "url", "description": "Where the storage delivers notifications." },
+        "expires": { "type": "string", "description": "When the subscription should end, RFC 3339." }
+      },
+      "required": ["serviceUrl", "topics"]
+    },
+    {
+      "name": "list_subscriptions", "title": "List subscriptions", "readOnly": true,
+      "description": "List the subscriptions of a notification service.",
+      "params": { "serviceUrl": { "$def": "url" }, "limit": { "$def": "limit" } },
+      "required": ["serviceUrl"]
+    },
+    {
+      "name": "get_subscription", "title": "Read a subscription", "readOnly": true,
+      "description": "Read a subscription.",
+      "params": { "url": { "$def": "url" } },
+      "required": ["url"]
+    },
+    {
+      "name": "unsubscribe", "title": "Unsubscribe", "destructive": true, "idempotent": true,
+      "description": "Delete a subscription.",
+      "params": { "url": { "$def": "url" } },
+      "required": ["url"]
+    },
+    {
+      "name": "verify_notification", "title": "Verify a notification", "readOnly": true,
+      "description": "Verify a webhook delivery with the client's WebhookVerifier (RFC 9421 signature, Content-Digest, the storage's published key) and parse its notification. Deliveries to the client's own inbox are verified this way already; see inbox_deliveries.",
+      "params": {
+        "method": { "type": "string" },
+        "url": { "$def": "url", "description": "The inbox URL as it was registered." },
+        "headers": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } }, "description": "Every header field, name to list of values." },
+        "bodyBase64": { "type": "string", "contentEncoding": "base64" },
+        "trustedStorages": { "type": "array", "items": { "type": "string" }, "description": "Accept notifications from these storages only." }
+      },
+      "required": ["method", "url", "headers", "bodyBase64"]
+    },
+    {
+      "name": "request_access", "title": "Request access",
+      "description": "POST an access request to an access request service. Returns its Location.",
+      "params": {
+        "serviceUrl": { "$def": "url", "description": "The AccessRequestService endpoint." },
+        "request": { "$def": "document", "description": "The AccessRequest: @context, type, storage, access policies, inbox." }
+      },
+      "required": ["serviceUrl", "request"]
+    },
+    {
+      "name": "get_access_request", "title": "Read an access request", "readOnly": true,
+      "description": "Read an access request.",
+      "params": { "url": { "$def": "url" } },
+      "required": ["url"]
+    },
+    {
+      "name": "list_access_requests", "title": "List access requests", "readOnly": true,
+      "description": "List the requests of an access request service.",
+      "params": { "serviceUrl": { "$def": "url" }, "limit": { "$def": "limit" } },
+      "required": ["serviceUrl"]
+    },
+    {
+      "name": "cancel_access_request", "title": "Cancel an access request", "destructive": true, "idempotent": true,
+      "description": "Delete an access request.",
+      "params": { "url": { "$def": "url" } },
+      "required": ["url"]
+    },
+    {
+      "name": "grant_access", "title": "Grant access",
+      "description": "POST an access grant to an access grant service. Returns its Location.",
+      "params": {
+        "serviceUrl": { "$def": "url", "description": "The AccessGrantService endpoint." },
+        "grant": { "$def": "document", "description": "The AccessGrant: @context, type, storage, access policies." }
+      },
+      "required": ["serviceUrl", "grant"]
+    },
+    {
+      "name": "get_access_grant", "title": "Read an access grant", "readOnly": true,
+      "description": "Read an access grant.",
+      "params": { "url": { "$def": "url" } },
+      "required": ["url"]
+    },
+    {
+      "name": "list_access_grants", "title": "List access grants", "readOnly": true,
+      "description": "List the grants of an access grant service.",
+      "params": { "serviceUrl": { "$def": "url" }, "limit": { "$def": "limit" } },
+      "required": ["serviceUrl"]
+    },
+    {
+      "name": "revoke_access_grant", "title": "Revoke an access grant", "destructive": true, "idempotent": true,
+      "description": "Delete an access grant.",
+      "params": { "url": { "$def": "url" } },
+      "required": ["url"]
+    },
+    {
+      "name": "read_type_index", "title": "Read the type index", "readOnly": true,
+      "description": "Read a page of a type index: the types and the page links.",
+      "params": { "url": { "$def": "url", "description": "The TypeIndexService endpoint, or a page URL it gave." } },
+      "required": ["url"]
+    },
+    {
+      "name": "list_types", "title": "List indexed types", "readOnly": true,
+      "description": "List every type a type index holds, following its pages.",
+      "params": { "serviceUrl": { "$def": "url" }, "limit": { "$def": "limit" } },
+      "required": ["serviceUrl"]
+    },
+    {
+      "name": "search_types", "title": "Search by type", "readOnly": true,
+      "description": "Search a type search service with HTTP QUERY (application/lws-query+json) and return the first page of results.",
+      "params": { "serviceUrl": { "$def": "url", "description": "The TypeSearchService endpoint." }, "query": { "$def": "query" } },
+      "required": ["serviceUrl", "query"]
+    },
+    {
+      "name": "search_all", "title": "Search by type, every page", "readOnly": true,
+      "description": "Search a type search service and follow the results' next links.",
+      "params": { "serviceUrl": { "$def": "url" }, "query": { "$def": "query" }, "limit": { "$def": "limit" } },
+      "required": ["serviceUrl", "query"]
+    },
+    {
+      "name": "accepted_query_formats", "title": "Query formats", "readOnly": true,
+      "description": "Ask a type search service, with OPTIONS, which query formats it accepts (Accept-Query).",
+      "params": { "serviceUrl": { "$def": "url" } },
+      "required": ["serviceUrl"]
+    }
+  ]
+}

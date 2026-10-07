@@ -13,7 +13,10 @@ changes follow a fixed order:
 4. **All six clients.** Implement the change idiomatically in each language and run its tests,
    including the interop scenario
    (`LWS_TEST_SERVER=http://localhost:8787` with the mock server running).
-5. **Docs.** Update `docs-src/` and regenerate the site with `node docs-src/build.mjs`.
+5. **Driver adapters.** If the change adds or alters an operation, update
+   [`driver/PROTOCOL.md`](driver/PROTOCOL.md), the tool catalog and all six adapters in
+   [`driver/adapters`](driver/adapters), and check each with `node driver/adapters/check.mjs -- <adapter>`.
+6. **Docs.** Update `docs-src/` and regenerate the site with `node docs-src/build.mjs`.
    Commit the generated `docs/`; CI checks that it is up to date.
 
 | Language | Build and test |

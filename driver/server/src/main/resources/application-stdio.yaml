@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+# The stdio profile (--spring.profiles.active=stdio): MCP over the process's standard streams, for an MCP
+# client that starts the driver itself. stdout carries MCP messages only, so nothing else may write there.
+# There is no HTTP server, so no inboxes either.
+
+spring:
+  main:
+    web-application-type: none
+    banner-mode: off
+  ai:
+    mcp:
+      server:
+        stdio: true
+
+logging:
+  pattern:
+    console:
+  file:
+    name: ${java.io.tmpdir}/lws-client-driver.log

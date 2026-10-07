@@ -172,6 +172,12 @@ node testing/mock-server/server.mjs --port 8787
 
 Each language directory has a `README.md` with build, test and example commands.
 
+## Driving the clients
+
+[`driver/`](driver) is an MCP server (Spring AI) that controls all six clients through a small adapter per
+language, so that a test service such as [Touchstone](https://github.com/ebremer/touchstone) can make any
+of them perform LWS operations and judge what it sends. See [`driver/README.md`](driver/README.md).
+
 ## Repository layout
 
 ```
@@ -179,6 +185,7 @@ design/            Cross-language API contract (client-api.md)
 conformance/       Shared fixtures (JSON test vectors) and the interop scenario
 testing/           Mock LWS server used for interop tests
 java/ js/ cpp/ rust/ go/ python/   The six clients
+driver/            MCP server that drives every client, and one adapter per language
 docs/              GitHub Pages site (generated from docs-src/ with `node docs-src/build.mjs`)
 ```
 

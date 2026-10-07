@@ -1,0 +1,7 @@
+# Build output of the driver server and the adapters
+server/target/
+adapters/java/target/
+adapters/rust/target/
+adapters/go/bin/
+adapters/cpp/build*/
+adapters/python/**/__pycache__/
