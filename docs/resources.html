@@ -195,6 +195,20 @@ $png = file_get_contents('photo.png') ?: throw new RuntimeException('cannot read
 $photo = $client-&gt;create($notes, $png, 'image/png', slug: 'photo.png');
 
 echo $list-&gt;location, ' ', $todo-&gt;linkset ?? '-', ' ', $photo-&gt;metadata-&gt;parent ?? '-', &quot;\n&quot;;</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// A container (POST with Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel=&quot;type&quot;)
+val notes = client.createContainer(container, slug = &quot;notes&quot;).location
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+val list = client.createText(notes, &quot;milk\neggs\n&quot;, slug = &quot;shopping.txt&quot;)
+val todo = client.createJson(
+    notes, buildJsonObject { put(&quot;task&quot;, &quot;write docs&quot;) },
+    slug = &quot;todo.json&quot;,
+    types = listOf(URI(&quot;https://schema.org/Action&quot;)),                             // extra rel=&quot;type&quot;
+    links = listOf(Link(URI(&quot;https://example.org/shapes/todo&quot;), &quot;describedby&quot;)),  // user metadata
+)
+val photo = client.create(notes, File(&quot;photo.png&quot;).readBytes(), &quot;image/png&quot;, slug = &quot;photo.png&quot;)
+
+println(&quot;${list.location} ${todo.linkset} ${photo.metadata.parent}&quot;)</code></pre>
 </div>
 <div class="table-wrap"><table><thead><tr><th>Option</th><th>Wire effect</th></tr></thead><tbody>
 <tr><td><code>slug</code></td><td><code>Slug</code> header: a <em>hint</em> for the new name (percent-encoded). The server may change it to keep names unique.</td></tr>
@@ -345,13 +359,26 @@ echo $head-&gt;contentLength ?? 0, ' ', implode(', ', $head-&gt;allow), ' ', imp
 foreach ($head-&gt;links('describedby') as $shape) {
     echo $shape-&gt;href, &quot;\n&quot;;
 }</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val resource = client.read(url)
+val meta = resource.metadata
+println(&quot;${resource.status} ${resource.contentType} ${resource.etag} ${meta.lastModified}&quot;)
+println(&quot;${meta.types} ${meta.isDataResource} ${meta.parent} ${meta.linkset}&quot;)
+
+val text = resource.text()                             // decoded using the Content-Type charset
+val bytes = resource.bytes                             // a copy of the raw bytes
+val json = client.read(url, accept = &quot;application/json&quot;).json()   // a JsonElement
+// Into a @Serializable class: val person = client.read(url).decode&lt;Person&gt;()
+
+// Headers and links only
+val head = client.head(url)
+println(&quot;${head.contentLength} ${head.allow} ${head.acceptPatch} ${head.links(&quot;describedby&quot;)}&quot;)</code></pre>
 </div>
 
 <h3 id="streaming">Streaming large bodies</h3>
 <p>Where the platform supports it, the clients can hand you the body as a stream instead of buffering it.
 Streamed uploads cannot be replayed after a <code>401</code>, so the JS, Python, Go and C# clients first send a
-<code>HEAD</code> to obtain a token. Java bodies are always replayable. C++ and PHP bodies are buffered strings and Swift
-bodies are buffered <code>Data</code>, so use range requests to process large resources in pieces.</p>
+<code>HEAD</code> to obtain a token. Java bodies are always replayable. C++ and PHP bodies are buffered strings, Swift
+bodies are buffered <code>Data</code> and Kotlin bodies buffered <code>ByteArray</code>s, so use range requests to process large resources in pieces.</p>
 <div class="code-tabs">
 <pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">try (ResourceStream stream = client.readStream(url)) {    // nothing is buffered
     long received = stream.body().transferTo(OutputStream.nullOutputStream());
@@ -574,6 +601,18 @@ try {
 } catch (PreconditionFailedException) {
     // Someone else changed it (412): re-read, merge, retry.
 }</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val first = client.read(url)
+val etag = first.etag ?: error(&quot;the server sent no ETag&quot;)
+
+// Revalidate: 304 Not Modified is a normal result, not an exception.
+if (client.read(url, ifNoneMatch = etag).notModified) println(&quot;cached copy is still fresh&quot;)
+
+// Optimistic concurrency: only overwrite the version you read.
+try {
+    client.updateText(url, &quot;new content&quot;, ifMatch = etag)
+} catch (_: PreconditionFailedException) {
+    // Someone else changed it (412): re-read, merge, retry.
+}</code></pre>
 </div>
 
 <h3 id="range">Byte ranges</h3>
@@ -642,6 +681,12 @@ echo $start-&gt;status, ' ', $start-&gt;contentRange ?? '', &quot;\n&quot;;     
 $rest = $client-&gt;read($url, range: ByteRange::from(1024));      // to the end
 $tail = $client-&gt;read($url, range: ByteRange::last(512));       // last 512 bytes
 echo strlen($rest-&gt;body), ' ', strlen($tail-&gt;body), &quot;\n&quot;;</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val start = client.read(url, range = ByteRange.of(0, 1023))   // first KiB
+println(&quot;${start.status} ${start.contentRange}&quot;)               // 206 bytes 0-1023/52311
+
+val rest = client.read(url, range = ByteRange.from(1024))      // to the end
+val tail = client.read(url, range = ByteRange.last(512))       // last 512 bytes
+println(&quot;${rest.size} ${tail.size}&quot;)</code></pre>
 </div>
 
 <h2 id="update">Replace (PUT)</h2>
@@ -738,6 +783,15 @@ $client-&gt;update($url, 'v2', 'text/plain',
     links: [new Link('https://creativecommons.org/licenses/by/4.0/', 'license')],
     setLinkset: true,
 );</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// PUT replaces the whole representation.
+client.updateJson(url, buildJsonObject { put(&quot;name&quot;, &quot;Alice&quot;); put(&quot;age&quot;, 31) }, ifMatch = etag)
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+client.updateText(
+    url, &quot;v2&quot;,
+    links = listOf(Link(URI(&quot;https://creativecommons.org/licenses/by/4.0/&quot;), &quot;license&quot;)),
+    setLinkset = true,
+)</code></pre>
 </div>
 
 <h2 id="patch">Partial updates (PATCH)</h2>
@@ -868,6 +922,20 @@ $client-&gt;patch($url, $patch, ifMatch: $etag);
 if (in_array('application/sparql-update', $client-&gt;head($url)-&gt;acceptPatch, true)) {
     $client-&gt;patch($url, 'INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }', 'application/sparql-update');
 }</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+val patch = jsonPatch {
+    test(&quot;/version&quot;, 3)
+    replace(&quot;/status&quot;, &quot;done&quot;)
+    add(&quot;/tags/-&quot;, &quot;urgent&quot;)
+    remove(&quot;/draft&quot;)
+}
+client.patch(url, patch, ifMatch = etag)
+
+// Other formats only when the server advertises them in Accept-Patch.
+if (&quot;application/sparql-update&quot; in client.head(url).acceptPatch) {
+    val update = &quot;&quot;&quot;INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }&quot;&quot;&quot;
+    client.patch(url, update.toByteArray(), &quot;application/sparql-update&quot;)
+}</code></pre>
 </div>
 
 <h2 id="delete">Delete</h2>
@@ -942,6 +1010,13 @@ try {
     $client-&gt;delete($container);                     // 409 Conflict when not empty
 } catch (ConflictException) {
     $client-&gt;delete($container, recursive: true);    // Depth: infinity
+}</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">client.delete(url, ifMatch = etag)
+
+try {
+    client.delete(container)                           // 409 Conflict when not empty
+} catch (_: ConflictException) {
+    client.delete(container, recursive = true)         // Depth: infinity
 }</code></pre>
 </div>
 

@@ -1,0 +1,409 @@
+@@@ install bash
+# Until it is on Maven Central: build and install into your local Maven repository (~/.m2)
+git clone https://github.com/ebremer/lws-client.git
+cd lws-client/kotlin && ./gradlew publishToMavenLocal
+
+# build.gradle.kts
+#   repositories { mavenLocal(); mavenCentral() }
+#   dependencies { implementation("com.ebremer:lws-client-kotlin:0.1.0") }
+# Or build against the checkout, in settings.gradle.kts:
+#   includeBuild("path/to/lws-client/kotlin")
+
+# Kotlin 2.2+ on JDK 17+; the only dependencies are kotlinx-coroutines and kotlinx-serialization-json.
+@@@ first-program
+import com.ebremer.lws.kotlin.LwsClient
+import com.ebremer.lws.kotlin.auth.SelfSignedCredentials
+import com.ebremer.lws.kotlin.auth.SigningKey
+import com.ebremer.lws.kotlin.auth.TokenExchangeAuthenticator
+import kotlinx.coroutines.runBlocking
+import java.net.URI
+
+fun main() = runBlocking {
+    val credentials = SelfSignedCredentials.didKey(SigningKey.generateP256())
+    val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))
+    println("agent:   ${credentials.agent}")
+
+    val storage = client.discoverStorage(URI("http://localhost:8787/root/"))
+    println("storage: ${storage.id}  root: ${storage.storageRoot()}")
+
+    val folder = client.createContainer(storage.storageRoot(), slug = "hello-world").location
+    val file = client.createText(folder, "Hello, LWS!", slug = "hello.txt").location
+    println("created: $file")
+
+    val resource = client.read(file)
+    println("${resource.text()}  (etag ${resource.etag ?: "-"}, parent ${resource.metadata.parent ?: "-"})")
+}
+@@@ hero
+val credentials = SelfSignedCredentials.didKey(SigningKey.generateP256())
+val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))
+
+val storage = client.discoverStorage(URI("https://storage.example/root/"))
+val todo = client.createJson(storage.storageRoot(), buildJsonObject { put("task", "write docs"); put("done", false) })
+client.patch(todo.location, jsonPatch { replace("/done", true) })
+
+client.listContainer(storage.storageRoot()).collect { item ->
+    println("${item.id} ${item.format ?: "container"}")
+}
+@@@ client-config
+val client = LwsClient(
+    authenticator = TokenExchangeAuthenticator(credentials),
+    userAgent = "my-app/1.0",                           // default "lws-client-kotlin/0.1.0"
+    defaultHeaders = mapOf("Accept-Language" to "en"),  // added to every request
+    timeout = 20.seconds,                               // per request (each redirect hop)
+    maxRedirects = 5,                                   // followed by the client itself (default 10)
+    // transport = JdkHttpTransport(myHttpClient),      // or any HttpTransport
+)
+
+// Per-call headers and time limits, as named arguments of every operation.
+val page = client.readContainer(container, headers = mapOf("X-Trace" to "1"), timeout = 5.seconds)
+println(page.totalItems)
+
+// Operations are suspend functions: cancelling the coroutine cancels the request in flight.
+val maybe = withTimeoutOrNull(2.seconds) { client.read(url) }
+
+// Another identity over the same transport:
+val anonymous = client.withAuthenticator(null)
+@@@ discover
+// Any URL inside the storage is a valid starting point.
+val storage = client.discoverStorage(URI("https://storage.example/root/notes/"))
+val root = storage.storageRoot()                       // the required StorageRoot service
+println("${storage.id} ${storage.types} $root")
+
+storage.notificationService()?.let { println("${it.serviceEndpoint} ${it.subscriptionTypes}") }
+for (service in storage.services) {
+    println("${service.types} → ${service.serviceEndpoint}")
+}
+val format = storage.capability("https://feature.example/PatchSupport")?.property("format")
+
+// When you already know the storage URL:
+val same = client.getStorageDescription(storage.id)
+@@@ create
+// A container (POST with Link: <https://www.w3.org/ns/lws#Container>; rel="type")
+val notes = client.createContainer(container, slug = "notes").location
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+val list = client.createText(notes, "milk\neggs\n", slug = "shopping.txt")
+val todo = client.createJson(
+    notes, buildJsonObject { put("task", "write docs") },
+    slug = "todo.json",
+    types = listOf(URI("https://schema.org/Action")),                             // extra rel="type"
+    links = listOf(Link(URI("https://example.org/shapes/todo"), "describedby")),  // user metadata
+)
+val photo = client.create(notes, File("photo.png").readBytes(), "image/png", slug = "photo.png")
+
+println("${list.location} ${todo.linkset} ${photo.metadata.parent}")
+@@@ read
+val resource = client.read(url)
+val meta = resource.metadata
+println("${resource.status} ${resource.contentType} ${resource.etag} ${meta.lastModified}")
+println("${meta.types} ${meta.isDataResource} ${meta.parent} ${meta.linkset}")
+
+val text = resource.text()                             // decoded using the Content-Type charset
+val bytes = resource.bytes                             // a copy of the raw bytes
+val json = client.read(url, accept = "application/json").json()   // a JsonElement
+// Into a @Serializable class: val person = client.read(url).decode<Person>()
+
+// Headers and links only
+val head = client.head(url)
+println("${head.contentLength} ${head.allow} ${head.acceptPatch} ${head.links("describedby")}")
+@@@ conditional
+val first = client.read(url)
+val etag = first.etag ?: error("the server sent no ETag")
+
+// Revalidate: 304 Not Modified is a normal result, not an exception.
+if (client.read(url, ifNoneMatch = etag).notModified) println("cached copy is still fresh")
+
+// Optimistic concurrency: only overwrite the version you read.
+try {
+    client.updateText(url, "new content", ifMatch = etag)
+} catch (_: PreconditionFailedException) {
+    // Someone else changed it (412): re-read, merge, retry.
+}
+@@@ range
+val start = client.read(url, range = ByteRange.of(0, 1023))   // first KiB
+println("${start.status} ${start.contentRange}")               // 206 bytes 0-1023/52311
+
+val rest = client.read(url, range = ByteRange.from(1024))      // to the end
+val tail = client.read(url, range = ByteRange.last(512))       // last 512 bytes
+println("${rest.size} ${tail.size}")
+@@@ update
+// PUT replaces the whole representation.
+client.updateJson(url, buildJsonObject { put("name", "Alice"); put("age", 31) }, ifMatch = etag)
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+client.updateText(
+    url, "v2",
+    links = listOf(Link(URI("https://creativecommons.org/licenses/by/4.0/"), "license")),
+    setLinkset = true,
+)
+@@@ patch
+// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+val patch = jsonPatch {
+    test("/version", 3)
+    replace("/status", "done")
+    add("/tags/-", "urgent")
+    remove("/draft")
+}
+client.patch(url, patch, ifMatch = etag)
+
+// Other formats only when the server advertises them in Accept-Patch.
+if ("application/sparql-update" in client.head(url).acceptPatch) {
+    val update = """INSERT DATA { <#me> <http://xmlns.com/foaf/0.1/name> "Alice" }"""
+    client.patch(url, update.toByteArray(), "application/sparql-update")
+}
+@@@ delete
+client.delete(url, ifMatch = etag)
+
+try {
+    client.delete(container)                           // 409 Conflict when not empty
+} catch (_: ConflictException) {
+    client.delete(container, recursive = true)         // Depth: infinity
+}
+@@@ read-container
+val page = client.readContainer(container)
+println("${page.id} ${page.totalItems} ${page.etag}")
+for (item in page.items) {
+    println("${item.id} ${if (item.isContainer) "container" else item.format} ${item.size} ${item.modified ?: item.modifiedRaw}")
+}
+page.next?.let { next ->                               // opaque, server-issued URL
+    println(client.readContainer(next).items.size)
+}
+@@@ list-container
+// A cold Flow: pages are fetched only as it is collected, and each collection starts over.
+client.listContainer(container)
+    .filter { it.hasType("https://schema.org/Person") }
+    .collect { println(it.id) }
+
+// Every page, collected; or just the first few members (fetching only the pages needed).
+val ids = client.listContainer(container).map { it.id }.toList()
+val firstTen = client.listContainer(container).take(10).toList()
+@@@ read-linkset
+val doc = client.readLinkset(url)                      // HEAD for rel="linkset", then GET
+println("${doc.url} ${doc.etag} ${doc.allow} ${doc.acceptPatch}")
+
+for (link in doc.linkset.links()) println("${link.rel} → ${link.href}")
+val shapes = doc.linkset.hrefs("describedby")
+@@@ patch-linkset
+val doc = client.readLinkset(url)
+val rel = "https://example.org/rel/reviewer"           // extension relation types are URIs
+val reviewer = buildJsonObject { put("href", "https://id.example/bob") }
+
+// JsonPointer escapes "/" in the relation URI as "~1".
+// "add" on an existing member replaces it, so append with "/-" when the relation exists.
+val patch = if (doc.linkset.targets(rel).isEmpty()) {
+    jsonPatch { add(JsonPointer.fromSegments("linkset", 0, rel), JsonArray(listOf(reviewer))) }
+} else {
+    jsonPatch { add(JsonPointer.fromSegments("linkset", 0, rel, "-"), reviewer) }
+}
+client.patchLinkset(doc.url, patch, ifMatch = doc.etag)
+@@@ put-linkset
+val doc = client.readLinkset(url)
+if (doc.supportsPut) {                                 // Allow lists PUT
+    doc.linkset.add(url.toString(), "license", "https://creativecommons.org/licenses/by/4.0/")   // changes it in place
+    client.updateLinkset(doc.url, doc.linkset, ifMatch = doc.etag)
+}
+@@@ auth-didkey
+// A did:key agent: the identifier is derived from the public key, nothing to host.
+val key = SigningKey.generateP256()                    // or SigningKey.generateEd25519()
+val credentials = SelfSignedCredentials.didKey(key)
+println(credentials.agent)                             // did:key:zDn…
+
+val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))
+client.head(url)   // 401 → AS metadata → token exchange → retried with a Bearer token
+@@@ auth-cid
+// An HTTPS agent publishes a controlled identifier document listing its key…
+val key = SigningKey.generateP256()
+val agent = "https://bot.example/agent"
+val cid = ControlledIdentifierDocument.create(agent, key.publicKey, "key-1")
+println(cid)                                           // serve this JSON at the agent URL
+
+// …and signs credentials with the matching private key (kid = the verification method id).
+val credentials = SelfSignedCredentials.forAgent(agent, key, "https://bot.example/agent#key-1")
+val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))
+@@@ keys
+val key = SigningKey.generateP256()
+val privateJwk = key.jwk()                             // includes "d": store securely
+val restored = SigningKey.fromJwk(privateJwk)
+val credentials = SelfSignedCredentials.didKey(restored)
+
+// did:key <-> public key
+val did = DidKey.did(key.publicKey)                    // did:key:zDn…
+val kid = DidKey.keyIdForDid(did)                      // did:key:zDn…#zDn…
+val fromDid = DidKey.publicKey(did)
+println("${credentials.agent} $kid ${fromDid.algorithm}")
+
+// JCA interop: SigningKey.of(keyPair), key.toKeyPair(), key.publicKey.javaKey
+val pair = restored.toKeyPair()
+@@@ auth-openid
+// The ID token from your OpenID Connect login (any OIDC library). OpenIdCredentials also takes a
+// suspend lambda, { context -> … }, asked for a fresh token whenever one is needed.
+val credentials = OpenIdCredentials(idToken)
+val authenticator = TokenExchangeAuthenticator(
+    credentials,
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    authorizationServerFilter = { asUri, _ -> asUri == "https://auth.example" },
+)
+val client = LwsClient(authenticator = authenticator)
+@@@ auth-saml
+// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+val credentials = SamlCredentials.fromXml(samlAssertionXml)
+val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))
+@@@ auth-bearer
+// An access token you obtained yourself; it is only sent to URLs inside the realm.
+val client = LwsClient(authenticator = BearerTokenAuthenticator(accessToken, realm = URI("https://storage.example/")))
+@@@ auth-options
+val trusted = setOf("https://auth.example")
+val authenticator = TokenExchangeAuthenticator(
+    credentials.withLifetime(5.minutes),               // self-signed JWT lifetime (default 300 s)
+    allowInsecureHttp = false,                         // plain-http AS only on loopback (default)
+    authorizationServerFilter = { asUri, _ -> asUri in trusted },
+    refreshMargin = 30.seconds,                        // refresh 30 s before expiry (default)
+    timeout = 10.seconds,                              // metadata and token requests
+)
+val client = LwsClient(authenticator = authenticator)
+@@@ custom-authenticator
+import com.ebremer.lws.kotlin.LwsClient
+import com.ebremer.lws.kotlin.auth.AuthRequest
+import com.ebremer.lws.kotlin.auth.AuthResponse
+import com.ebremer.lws.kotlin.auth.Authenticator
+
+// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator interface.
+class ApiKeyAuthenticator(private val key: String) : Authenticator {
+    override suspend fun authorize(request: AuthRequest): AuthRequest =
+        if (request.url.host == "storage.example") request.withHeaders(request.headers.with("X-Api-Key", key)) else request
+
+    // Nothing to refresh: the 401 surfaces as UnauthorizedException.
+    override suspend fun handleChallenge(request: AuthRequest, response: AuthResponse): Boolean = false
+
+    override fun toString(): String = "ApiKeyAuthenticator"   // keeps the key out of logs
+}
+
+val client = LwsClient(authenticator = ApiKeyAuthenticator("my-api-key"))
+@@@ subscribe
+// subscribe(Service, …) checks that the NotificationService supports webhooks.
+val service = storage.notificationService() ?: error("no notification service")
+val subscription = client.subscribe(
+    service,
+    WebhookSubscriptionRequest(
+        topics = listOf(container),                    // a container topic is recursive
+        inbox = URI("https://my-app.example/hooks/lws"),
+        expires = Instant.now().plusSeconds(24 * 3600),
+    ),
+)
+println("${subscription.url} ${subscription.expires}")
+
+client.listSubscriptions(service.serviceEndpoint).collect { println(it.id) }
+val current = client.getSubscription(subscription.url)
+println(current.type)
+client.unsubscribe(subscription.url)
+@@@ webhook
+import com.ebremer.lws.kotlin.LwsClient
+import com.ebremer.lws.kotlin.SignatureVerificationException
+import com.ebremer.lws.kotlin.notify.WebhookVerifier
+import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.runBlocking
+import java.net.InetSocketAddress
+import java.net.URI
+
+fun main() {
+    val verifier = WebhookVerifier(
+        client = LwsClient(),                                       // fetches storage descriptions
+        trustedStorages = listOf(URI("https://storage.example/")),  // only this storage's keys
+    )
+    val inbox = URI("https://my-app.example/hooks/lws")             // the registered (public) URL
+
+    val server = HttpServer.create(InetSocketAddress(8080), 0)
+    server.createContext("/hooks/lws") { exchange ->
+        val status = runBlocking {
+            try {
+                val verified = verifier.verifyExchange(exchange, inbox)
+                for (a in verified.notification.activities) println("${a.types} ${a.`object`.id} ${a.published}")
+                204
+            } catch (e: SignatureVerificationException) {
+                System.err.println("rejected: ${e.message}")
+                401
+            }
+        }
+        exchange.sendResponseHeaders(status, -1)
+        exchange.close()
+    }
+    server.start()
+    // Ktor, Spring, …: verifier.verify(method, inbox, headers, body) with the request's parts
+}
+@@@ access-request
+val policy = AccessPolicy(
+    actions = listOf(AccessAction.READ, AccessAction.CREATE),
+    assignee = "https://id.example/agent",
+    target = AccessTarget.storageResources(container.toString()),
+    constraints = listOf(
+        Constraint.purpose("https://purpose.example/collaboration"),
+        Constraint.notAfter(Instant.parse("2026-12-31T23:59:59Z")),
+    ),
+)
+val request = AccessRequest(storage.id, listOf(policy), inbox = URI("https://id.example/agent/inbox/"))
+val requests = storage.accessRequestService()?.serviceEndpoint ?: error("no access request service")
+val requestUrl = client.requestAccess(requests, request)
+
+client.listAccessRequests(requests).collect { println(it.id) }
+val pending = client.getAccessRequest(requestUrl)
+println(pending.access[0].actions)
+client.cancelAccessRequest(requestUrl)
+@@@ access-grant
+// A storage controller approves a request by recording a grant with the same policy model.
+val pending = client.getAccessRequest(requestUrl)
+val grants = storage.accessGrantService()?.serviceEndpoint ?: error("no access grant service")
+val grantUrl = client.grantAccess(grants, AccessGrant(pending.storage, pending.access, pending.inbox))
+
+client.listAccessGrants(grants).collect { println(it.id) }
+client.revokeAccessGrant(grantUrl)   // the server withdraws the underlying permissions
+@@@ list-types
+storage.typeIndexService()?.let { index ->
+    client.listTypes(index.serviceEndpoint).collect { println(it) }   // e.g. https://schema.org/Person
+}
+@@@ search
+val search = storage.typeSearchService()?.serviceEndpoint ?: error("no type search service")
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+val query = TypeQuery()
+    .anyOf("https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person")
+    .allOf(ResourceType.DATA_RESOURCE)
+val first = client.searchTypes(search, query)          // HTTP QUERY
+println("${first.totalItems} ${first.next}")
+
+client.searchAll(search, TypeQuery().allOf("https://schema.org/Event"))
+    .collect { hit -> println("${hit.id} ${hit.types}") }
+
+// Indexed descriptive relations use the same grammar.
+val shaped = TypeQuery().relation("describedby").allOf("https://example.org/shapes/person")
+println(client.searchTypes(search, shaped).items.size)
+
+println(client.acceptedQueryFormats(search))           // [application/lws-query+json, …]
+@@@ errors
+try {
+    client.read(url)
+} catch (_: NotFoundException) {
+    println("no such resource")
+} catch (e: UnauthorizedException) {
+    println("not authenticated: ${e.challenges.size} challenge(s)")
+} catch (e: HttpException) {                           // any other error status
+    println("${e.status} ${e.problem?.title ?: e.message}")
+} catch (e: AuthenticationException) {
+    println("token exchange failed: ${e.oauthError ?: "?"} ${e.oauthErrorDescription ?: ""}")
+} catch (e: TransportException) {
+    println(if (e.isTimeout) "timed out" else e.message)
+}
+
+// LwsException is sealed, so a when over it is exhaustive.
+fun describe(e: LwsException): String = when (e) {
+    is HttpException -> "HTTP ${e.status}"
+    is AuthenticationException -> "authorization failed"
+    is ProtocolException -> "the server broke the protocol"
+    is SignatureVerificationException -> "a forged notification"
+    is TransportException -> "no response"
+}
+@@@ problem
+try {
+    client.delete(container)
+} catch (e: ConflictException) {
+    e.problem?.let { p -> println("${p.type} ${p.title} ${p.detail} ${p.instance} ${p.extensions["itemCount"]}") }
+}

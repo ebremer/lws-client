@@ -63,6 +63,7 @@ ${table(
     ["C#", "<code>IAsyncEnumerable&lt;ContainedResource&gt;</code> (<code>await foreach</code>, <code>System.Linq.AsyncEnumerable</code> operators)"],
     ["Swift", "<code>PagedSequence&lt;ContainedResource&gt;</code>, an <code>AsyncSequence</code> (<code>for try await</code>, <code>where</code>, <code>collect()</code>)"],
     ["PHP", "<code>PagedSequence</code>, an <code>IteratorAggregate</code> (<code>foreach</code>, <code>toArray()</code>, <code>take($n)</code>)"],
+    ["Kotlin", "<code>Flow&lt;ContainedResource&gt;</code>, a cold flow (<code>collect</code>, <code>filter</code>, <code>take(n)</code>, <code>toList()</code>)"],
   ],
 )}
 ${tabs(S["list-container"])}

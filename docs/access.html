@@ -257,6 +257,23 @@ foreach ($client-&gt;listAccessRequests($requests) as $r) {
 $pending = $client-&gt;getAccessRequest($requestUrl);
 echo implode(', ', $pending-&gt;access[0]-&gt;actions), &quot;\n&quot;;
 $client-&gt;cancelAccessRequest($requestUrl);</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val policy = AccessPolicy(
+    actions = listOf(AccessAction.READ, AccessAction.CREATE),
+    assignee = &quot;https://id.example/agent&quot;,
+    target = AccessTarget.storageResources(container.toString()),
+    constraints = listOf(
+        Constraint.purpose(&quot;https://purpose.example/collaboration&quot;),
+        Constraint.notAfter(Instant.parse(&quot;2026-12-31T23:59:59Z&quot;)),
+    ),
+)
+val request = AccessRequest(storage.id, listOf(policy), inbox = URI(&quot;https://id.example/agent/inbox/&quot;))
+val requests = storage.accessRequestService()?.serviceEndpoint ?: error(&quot;no access request service&quot;)
+val requestUrl = client.requestAccess(requests, request)
+
+client.listAccessRequests(requests).collect { println(it.id) }
+val pending = client.getAccessRequest(requestUrl)
+println(pending.access[0].actions)
+client.cancelAccessRequest(requestUrl)</code></pre>
 </div>
 
 <h2 id="grant">Granting and revoking</h2>
@@ -350,6 +367,13 @@ foreach ($client-&gt;listAccessGrants($grants) as $g) {
     echo $g-&gt;id, &quot;\n&quot;;
 }
 $client-&gt;revokeAccessGrant($grantUrl);   // the server withdraws the underlying permissions</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// A storage controller approves a request by recording a grant with the same policy model.
+val pending = client.getAccessRequest(requestUrl)
+val grants = storage.accessGrantService()?.serviceEndpoint ?: error(&quot;no access grant service&quot;)
+val grantUrl = client.grantAccess(grants, AccessGrant(pending.storage, pending.access, pending.inbox))
+
+client.listAccessGrants(grants).collect { println(it.id) }
+client.revokeAccessGrant(grantUrl)   // the server withdraws the underlying permissions</code></pre>
 </div>
 <div class="callout"><p><strong>Notifications</strong> If a request or grant has an <code>inbox</code>, the server should notify it: the controller about new requests, and the requester when a grant is created. These deliveries use the LWS notification format, so you can verify them with the same <a href="notifications.html#verify">webhook verifier</a>.</p></div>
 

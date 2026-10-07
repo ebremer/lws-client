@@ -4,7 +4,7 @@
 // Compiles / type-checks every code sample in docs-src/samples/<lang>.txt against the real
 // clients, so the documentation never shows an API that does not exist.
 //
-//   node docs-src/check-samples.mjs [java] [ts] [cpp] [rust] [go] [python] [csharp] [swift] [php]
+//   node docs-src/check-samples.mjs [java] [ts] [cpp] [rust] [go] [python] [csharp] [swift] [php] [kotlin]
 //
 // Each language is skipped (not failed) when its toolchain or build output is missing:
 //   ts      js/dist and js/node_modules (npm install && npm run build in js/)
@@ -22,12 +22,15 @@
 //           and builds in <tmpdir>/lws-docs-check/swift-build
 //   php     php (PHP 8.2+) on PATH lints every sample; with vendor/ at the repository root (composer install),
 //           PHPStan (level 8, as for the library) also type-checks them against php/src
+//   kotlin  java (a JDK 17+) on PATH or $JAVA_HOME; the harness, a Gradle build that includes kotlin/ (built with
+//           kotlin/gradlew), goes to ~/.cache/lws-docs-check/kotlin rather than <tmpdir>, which can be a slow
+//           Windows drive under WSL
 //
 // Harness projects are written to <tmpdir>/lws-docs-check/<lang>.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -493,7 +496,64 @@ ${indent(code, "    ")}
   return run("php", [phpstan, "analyse", "-c", join(dir, "phpstan.neon"), "--no-progress", "--memory-limit=1G", "--error-format=raw"], { cwd: dir, shell: false });
 }
 
-const CHECKS = { java: checkJava, ts: checkTs, cpp: checkCpp, rust: checkRust, go: checkGo, python: checkPython, csharp: checkCsharp, swift: checkSwift, php: checkPhp };
+// ---------------------------------------------------------------------------- Kotlin
+// A sample that starts with an import is a whole file, in a package of its own; the others are fragments, each the
+// body of a suspend function whose parameters are the shared variables, in a file that star-imports the library.
+function checkKotlin() {
+  const gradlew = join(REPO, "kotlin", isWin ? "gradlew.bat" : "gradlew");
+  if (!existsSync(gradlew)) return { skipped: "kotlin/gradlew is missing" };
+  if (!process.env.JAVA_HOME && !has("java")) return { skipped: "java (JDK 17+) not on PATH, and no JAVA_HOME" };
+  const dir = join(homedir(), ".cache", "lws-docs-check", "kotlin");
+  // Keep Gradle's caches between runs; only the sources are written afresh.
+  rmSync(join(dir, "src"), { recursive: true, force: true });
+  const src = join(dir, "src/main/kotlin");
+  mkdirSync(src, { recursive: true });
+  const plugin = /kotlin\("jvm"\) version "([^"]+)"/.exec(readFileSync(join(REPO, "kotlin/build.gradle.kts"), "utf8"))[1];
+  writeFileSync(join(dir, "settings.gradle.kts"), `rootProject.name = "lws-docs-check"
+includeBuild(${JSON.stringify(join(REPO, "kotlin"))})
+dependencyResolutionManagement { repositories { mavenCentral() } }
+`);
+  writeFileSync(join(dir, "build.gradle.kts"), `plugins { kotlin("jvm") version "${plugin}" }
+dependencies { implementation("com.ebremer:lws-client-kotlin:0.1.0") }
+`);
+  let fragments = `@file:Suppress("UNUSED_VARIABLE", "UNUSED_PARAMETER", "UNUSED_VALUE", "NAME_SHADOWING", "unused")
+package fragments
+
+import com.ebremer.lws.kotlin.*
+import com.ebremer.lws.kotlin.access.*
+import com.ebremer.lws.kotlin.auth.*
+import com.ebremer.lws.kotlin.http.*
+import com.ebremer.lws.kotlin.json.*
+import com.ebremer.lws.kotlin.notify.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.serialization.json.*
+import java.io.File
+import java.net.URI
+import java.time.Instant
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+
+// Never run: the fragments only have to compile.
+`;
+  for (const [topic, code] of Object.entries(book("kotlin"))) {
+    if (SKIP.has(topic)) continue;
+    if (code.startsWith("import ")) {
+      writeFileSync(join(src, `Sample_${ident(topic)}.kt`), `package sample_${ident(topic)}\n\n${code}\n`);
+      continue;
+    }
+    fragments += `
+suspend fun snippet_${ident(topic)}(client: LwsClient, storage: StorageDescription, container: URI, url: URI, etag: String,
+    credentials: SelfSignedCredentials, idToken: String, samlAssertionXml: String, accessToken: String, requestUrl: URI) {
+${indent(code, "    ")}
+}
+`;
+  }
+  writeFileSync(join(src, "Fragments.kt"), fragments);
+  return run(gradlew, ["-p", dir, "--console=plain", "-q", "compileKotlin"], { cwd: dir, shell: isWin });
+}
+
+const CHECKS = { java: checkJava, ts: checkTs, cpp: checkCpp, rust: checkRust, go: checkGo, python: checkPython, csharp: checkCsharp, swift: checkSwift, php: checkPhp, kotlin: checkKotlin };
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(CHECKS);
 let failed = 0;
 for (const lang of wanted) {

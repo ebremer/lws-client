@@ -158,6 +158,13 @@ echo $credentials-&gt;agent, &quot;\n&quot;;                      // did:key:zDn
 
 $client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));
 $client-&gt;head($url);   // 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// A did:key agent: the identifier is derived from the public key, nothing to host.
+val key = SigningKey.generateP256()                    // or SigningKey.generateEd25519()
+val credentials = SelfSignedCredentials.didKey(key)
+println(credentials.agent)                             // did:key:zDn…
+
+val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))
+client.head(url)   // 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
 </div>
 
 <h3 id="cid">HTTPS agents with a controlled identifier document</h3>
@@ -268,6 +275,15 @@ echo json_encode($cid, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_O
 // …and signs credentials with the matching private key (kid = the verification method id).
 $credentials = SelfSignedCredentials::forAgent($agent, $key, 'https://bot.example/agent#key-1');
 $client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// An HTTPS agent publishes a controlled identifier document listing its key…
+val key = SigningKey.generateP256()
+val agent = &quot;https://bot.example/agent&quot;
+val cid = ControlledIdentifierDocument.create(agent, key.publicKey, &quot;key-1&quot;)
+println(cid)                                           // serve this JSON at the agent URL
+
+// …and signs credentials with the matching private key (kid = the verification method id).
+val credentials = SelfSignedCredentials.forAgent(agent, key, &quot;https://bot.example/agent#key-1&quot;)
+val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))</code></pre>
 </div>
 <pre data-lang="json" data-title="https://bot.example/agent"><code class="language-json">{
   &quot;@context&quot;: [&quot;https://www.w3.org/ns/cid/v1&quot;],
@@ -395,6 +411,19 @@ $did = DidKey::did($key-&gt;publicKey);                 // did:key:zDn…
 $kid = DidKey::keyIdForDid($did);                    // did:key:zDn…#zDn…
 $fromDid = DidKey::publicKey($did);
 echo $credentials-&gt;agent, ' ', $kid, ' ', $fromDid-&gt;algorithm(), &quot;\n&quot;;</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val key = SigningKey.generateP256()
+val privateJwk = key.jwk()                             // includes &quot;d&quot;: store securely
+val restored = SigningKey.fromJwk(privateJwk)
+val credentials = SelfSignedCredentials.didKey(restored)
+
+// did:key &lt;-&gt; public key
+val did = DidKey.did(key.publicKey)                    // did:key:zDn…
+val kid = DidKey.keyIdForDid(did)                      // did:key:zDn…#zDn…
+val fromDid = DidKey.publicKey(did)
+println(&quot;${credentials.agent} $kid ${fromDid.algorithm}&quot;)
+
+// JCA interop: SigningKey.of(keyPair), key.toKeyPair(), key.publicKey.javaKey
+val pair = restored.toKeyPair()</code></pre>
 </div>
 <div class="callout warn"><p><strong>Protect private keys</strong> A private JWK or PEM is a long-lived credential. Keep it in a secret store, never in a repository. JavaScript keys are non-extractable unless you ask otherwise.</p></div>
 
@@ -492,6 +521,15 @@ $authenticator = new TokenExchangeAuthenticator($credentials,
     authorizationServerFilter: static fn (string $asUri, string $realm): bool =&gt; $asUri === 'https://auth.example',
 );
 $client = new LwsClient(authenticator: $authenticator);</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// The ID token from your OpenID Connect login (any OIDC library). OpenIdCredentials also takes a
+// suspend lambda, { context -&gt; … }, asked for a fresh token whenever one is needed.
+val credentials = OpenIdCredentials(idToken)
+val authenticator = TokenExchangeAuthenticator(
+    credentials,
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    authorizationServerFilter = { asUri, _ -&gt; asUri == &quot;https://auth.example&quot; },
+)
+val client = LwsClient(authenticator = authenticator)</code></pre>
 </div>
 
 <h2 id="saml">SAML 2.0</h2>
@@ -533,6 +571,9 @@ let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: cr
 <pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
 $credentials = SamlCredentials::fromXml($samlAssertionXml);
 $client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+val credentials = SamlCredentials.fromXml(samlAssertionXml)
+val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))</code></pre>
 </div>
 
 <h2 id="bearer">Existing access tokens</h2>
@@ -574,6 +615,8 @@ using var client = new LwsClient(new LwsClientOptions
 let client = LWSClient(authenticator: BearerTokenAuthenticator(token: accessToken, realm: URL(string: &quot;https://storage.example/&quot;)!))</code></pre>
 <pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// An access token you obtained yourself; it is only sent to URLs inside the realm.
 $client = new LwsClient(authenticator: new BearerTokenAuthenticator($accessToken, realm: 'https://storage.example/'));</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// An access token you obtained yourself; it is only sent to URLs inside the realm.
+val client = LwsClient(authenticator = BearerTokenAuthenticator(accessToken, realm = URI(&quot;https://storage.example/&quot;)))</code></pre>
 </div>
 
 <h2 id="options">Options</h2>
@@ -655,6 +698,15 @@ $authenticator = new TokenExchangeAuthenticator(
     timeout: 10,                                     // metadata and token requests, in seconds
 );
 $client = new LwsClient(authenticator: $authenticator);</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val trusted = setOf(&quot;https://auth.example&quot;)
+val authenticator = TokenExchangeAuthenticator(
+    credentials.withLifetime(5.minutes),               // self-signed JWT lifetime (default 300 s)
+    allowInsecureHttp = false,                         // plain-http AS only on loopback (default)
+    authorizationServerFilter = { asUri, _ -&gt; asUri in trusted },
+    refreshMargin = 30.seconds,                        // refresh 30 s before expiry (default)
+    timeout = 10.seconds,                              // metadata and token requests
+)
+val client = LwsClient(authenticator = authenticator)</code></pre>
 </div>
 <div class="table-wrap"><table><thead><tr><th>Option</th><th>Default</th><th>Purpose</th></tr></thead><tbody>
 <tr><td><code>allowInsecureHttp</code></td><td><code>false</code></td><td>Permit <code>http://</code> authorization servers on non-loopback hosts (testing only)</td></tr>
@@ -847,6 +899,23 @@ final class ApiKeyAuthenticator implements Authenticator
 }
 
 $client = new LwsClient(authenticator: new ApiKeyAuthenticator('my-api-key'));</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">import com.ebremer.lws.kotlin.LwsClient
+import com.ebremer.lws.kotlin.auth.AuthRequest
+import com.ebremer.lws.kotlin.auth.AuthResponse
+import com.ebremer.lws.kotlin.auth.Authenticator
+
+// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator interface.
+class ApiKeyAuthenticator(private val key: String) : Authenticator {
+    override suspend fun authorize(request: AuthRequest): AuthRequest =
+        if (request.url.host == &quot;storage.example&quot;) request.withHeaders(request.headers.with(&quot;X-Api-Key&quot;, key)) else request
+
+    // Nothing to refresh: the 401 surfaces as UnauthorizedException.
+    override suspend fun handleChallenge(request: AuthRequest, response: AuthResponse): Boolean = false
+
+    override fun toString(): String = &quot;ApiKeyAuthenticator&quot;   // keeps the key out of logs
+}
+
+val client = LwsClient(authenticator = ApiKeyAuthenticator(&quot;my-api-key&quot;))</code></pre>
 </div>
 
 <h2 id="security">Security considerations</h2>

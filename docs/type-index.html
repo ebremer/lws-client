@@ -93,6 +93,9 @@ if ($index !== null) {
         echo $type, &quot;\n&quot;;                            // e.g. https://schema.org/Person
     }
 }</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">storage.typeIndexService()?.let { index -&gt;
+    client.listTypes(index.serviceEndpoint).collect { println(it) }   // e.g. https://schema.org/Person
+}</code></pre>
 </div>
 
 <h2 id="search">Searching by type</h2>
@@ -287,6 +290,23 @@ $shaped = TypeQuery::create()-&gt;relation('describedby')-&gt;allOf('https://exa
 echo count($client-&gt;searchTypes($search, $shaped)-&gt;items), &quot;\n&quot;;
 
 echo implode(', ', $client-&gt;acceptedQueryFormats($search)), &quot;\n&quot;;   // application/lws-query+json, …</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val search = storage.typeSearchService()?.serviceEndpoint ?: error(&quot;no type search service&quot;)
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+val query = TypeQuery()
+    .anyOf(&quot;https://schema.org/Person&quot;, &quot;http://xmlns.com/foaf/0.1/Person&quot;)
+    .allOf(ResourceType.DATA_RESOURCE)
+val first = client.searchTypes(search, query)          // HTTP QUERY
+println(&quot;${first.totalItems} ${first.next}&quot;)
+
+client.searchAll(search, TypeQuery().allOf(&quot;https://schema.org/Event&quot;))
+    .collect { hit -&gt; println(&quot;${hit.id} ${hit.types}&quot;) }
+
+// Indexed descriptive relations use the same grammar.
+val shaped = TypeQuery().relation(&quot;describedby&quot;).allOf(&quot;https://example.org/shapes/person&quot;)
+println(client.searchTypes(search, shaped).items.size)
+
+println(client.acceptedQueryFormats(search))           // [application/lws-query+json, …]</code></pre>
 </div>
 <pre data-lang="http" data-title="On the wire"><code class="language-http">QUERY /types/search HTTP/1.1
 Content-Type: application/lws-query+json

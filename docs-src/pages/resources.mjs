@@ -39,8 +39,8 @@ ${tabs(S.read)}
 <h3 id="streaming">Streaming large bodies</h3>
 <p>Where the platform supports it, the clients can hand you the body as a stream instead of buffering it.
 Streamed uploads cannot be replayed after a <code>401</code>, so the JS, Python, Go and C# clients first send a
-<code>HEAD</code> to obtain a token. Java bodies are always replayable. C++ and PHP bodies are buffered strings and Swift
-bodies are buffered <code>Data</code>, so use range requests to process large resources in pieces.</p>
+<code>HEAD</code> to obtain a token. Java bodies are always replayable. C++ and PHP bodies are buffered strings, Swift
+bodies are buffered <code>Data</code> and Kotlin bodies buffered <code>ByteArray</code>s, so use range requests to process large resources in pieces.</p>
 ${tabs(S.stream)}
 
 <h2 id="conditional">Conditional requests</h2>

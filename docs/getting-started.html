@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Getting started · LWS Client</title>
-  <meta name="description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift or PHP and run your first authenticated request against a Linked Web Storage server.">
+  <meta name="description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift, PHP or Kotlin and run your first authenticated request against a Linked Web Storage server.">
   <meta property="og:title" content="Getting started · LWS Client">
-  <meta property="og:description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift or PHP and run your first authenticated request against a Linked Web Storage server.">
+  <meta property="og:description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift, PHP or Kotlin and run your first authenticated request against a Linked Web Storage server.">
   <meta property="og:type" content="website">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
@@ -54,6 +54,7 @@ five minutes.</p>
   <li><strong>C#</strong>: .NET 10 (one dependency: BouncyCastle.Cryptography, for Ed25519)</li>
   <li><strong>Swift</strong> 6.0+ on macOS 13, iOS 16 or Linux (one dependency: swift-crypto, which is CryptoKit on Apple platforms)</li>
   <li><strong>PHP</strong> 8.2+ with ext-curl, ext-openssl and ext-sodium (no Composer dependencies)</li>
+  <li><strong>Kotlin</strong> 2.2+ on JDK 17+ (kotlinx-coroutines and kotlinx-serialization-json; HTTP and crypto from the JDK)</li>
 </ul>
 
 <h2 id="install">Install</h2>
@@ -131,6 +132,17 @@ composer require ebremer/lws-client:dev-main
 
 # PHP 8.2+ with ext-curl, ext-openssl and ext-sodium (bundled with most PHP builds). No Composer
 # dependencies; psr/http-client is optional (Psr18Transport, for Guzzle, Symfony HttpClient, …).</code></pre>
+<pre data-lang="bash" data-tab="kotlin" data-label="Kotlin"><code class="language-bash"># Until it is on Maven Central: build and install into your local Maven repository (~/.m2)
+git clone https://github.com/ebremer/lws-client.git
+cd lws-client/kotlin &amp;&amp; ./gradlew publishToMavenLocal
+
+# build.gradle.kts
+#   repositories { mavenLocal(); mavenCentral() }
+#   dependencies { implementation(&quot;com.ebremer:lws-client-kotlin:0.1.0&quot;) }
+# Or build against the checkout, in settings.gradle.kts:
+#   includeBuild(&quot;path/to/lws-client/kotlin&quot;)
+
+# Kotlin 2.2+ on JDK 17+; the only dependencies are kotlinx-coroutines and kotlinx-serialization-json.</code></pre>
 </div>
 
 <h2 id="mock-server">Start a server to talk to</h2>
@@ -360,6 +372,28 @@ echo &quot;created: {$file-&gt;location}\n&quot;;
 
 $resource = $client-&gt;read($file-&gt;location);
 printf(&quot;%s  (etag %s, parent %s)\n&quot;, $resource-&gt;text(), $resource-&gt;etag ?? '-', $resource-&gt;metadata-&gt;parent ?? '-');</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">import com.ebremer.lws.kotlin.LwsClient
+import com.ebremer.lws.kotlin.auth.SelfSignedCredentials
+import com.ebremer.lws.kotlin.auth.SigningKey
+import com.ebremer.lws.kotlin.auth.TokenExchangeAuthenticator
+import kotlinx.coroutines.runBlocking
+import java.net.URI
+
+fun main() = runBlocking {
+    val credentials = SelfSignedCredentials.didKey(SigningKey.generateP256())
+    val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))
+    println(&quot;agent:   ${credentials.agent}&quot;)
+
+    val storage = client.discoverStorage(URI(&quot;http://localhost:8787/root/&quot;))
+    println(&quot;storage: ${storage.id}  root: ${storage.storageRoot()}&quot;)
+
+    val folder = client.createContainer(storage.storageRoot(), slug = &quot;hello-world&quot;).location
+    val file = client.createText(folder, &quot;Hello, LWS!&quot;, slug = &quot;hello.txt&quot;).location
+    println(&quot;created: $file&quot;)
+
+    val resource = client.read(file)
+    println(&quot;${resource.text()}  (etag ${resource.etag ?: &quot;-&quot;}, parent ${resource.metadata.parent ?: &quot;-&quot;})&quot;)
+}</code></pre>
 </div>
 <p>Expected output (identifiers vary):</p>
 <pre data-lang="text"><code class="language-text">agent:   did:key:zDnaeYo3bnXyXXgYpknupHmZN6wBoSkPXpoqfqwPYQdTRTZJS
@@ -390,7 +424,7 @@ Hello, LWS!  (etag &quot;y3Np7XKGTBSEU-c181QlqW&quot;, parent http://localhost:8
   <a class="card" href="resources.html"><h3>Reading &amp; writing</h3><p>Conditional updates, JSON Patch, ranges, deletes.</p></a>
   <a class="card" href="authentication.html"><h3>Authentication</h3><p>OpenID Connect, SAML, self-signed agents and custom authenticators.</p></a>
   <a class="card" href="notifications.html"><h3>Notifications</h3><p>Subscribe to changes and verify signed webhooks.</p></a>
-  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all nine languages.</p></a>
+  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all ten languages.</p></a>
 </div>
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>

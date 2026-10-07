@@ -219,6 +219,19 @@ $format = $storage-&gt;capability('https://feature.example/PatchSupport')?-&gt;p
 
 // When you already know the storage URL:
 $same = $client-&gt;getStorageDescription($storage-&gt;id);</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// Any URL inside the storage is a valid starting point.
+val storage = client.discoverStorage(URI(&quot;https://storage.example/root/notes/&quot;))
+val root = storage.storageRoot()                       // the required StorageRoot service
+println(&quot;${storage.id} ${storage.types} $root&quot;)
+
+storage.notificationService()?.let { println(&quot;${it.serviceEndpoint} ${it.subscriptionTypes}&quot;) }
+for (service in storage.services) {
+    println(&quot;${service.types} → ${service.serviceEndpoint}&quot;)
+}
+val format = storage.capability(&quot;https://feature.example/PatchSupport&quot;)?.property(&quot;format&quot;)
+
+// When you already know the storage URL:
+val same = client.getStorageDescription(storage.id)</code></pre>
 </div>
 
 <h2 id="services">Services</h2>

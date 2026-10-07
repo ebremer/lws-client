@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kotlin · LWS Client</title>
+  <meta name="description" content="The LWS client for Kotlin 2.2+ on JDK 17+: installation with Gradle, suspend operations with named-argument options, cold Flow listings, the sealed LwsException hierarchy, kotlinx.serialization JSON, the JDK's java.net.http, and build instructions.">
+  <meta property="og:title" content="Kotlin · LWS Client">
+  <meta property="og:description" content="The LWS client for Kotlin 2.2+ on JDK 17+: installation with Gradle, suspend operations with named-argument options, cold Flow listings, the sealed LwsException hierarchy, kotlinx.serialization JSON, the JDK's java.net.http, and build instructions.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="../getting-started.html">Get started</a>
+        <a href="../concepts.html">Concepts</a>
+        <a href="../authentication.html">Auth</a>
+        <a href="../api-reference.html">API</a>
+        <a href="../spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="../index.html">Overview</a></li><li><a href="../getting-started.html">Getting started</a></li><li><a href="../api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1><span class="lang-badge lang-kotlin">Kotlin</span> Kotlin</h1>
+<div class="badges">
+  <span class="badge accent">com.ebremer:lws-client-kotlin 0.1.0</span>
+  <span class="badge">Kotlin 2.2+ · JDK 17+</span>
+  <span class="badge">package com.ebremer.lws.kotlin</span>
+  <span class="badge">kotlinx-coroutines, kotlinx-serialization-json</span>
+</div>
+<p class="lead">A coroutine-first Kotlin client for the JVM: server applications, command-line tools and desktop programs. Operations
+are <code>suspend</code> functions, cancelled with the coroutine that calls them; options are named arguments (<code>slug =</code>,
+<code>ifMatch =</code>, <code>recursive =</code>); listings are cold <code>Flow</code>s; errors are one sealed hierarchy under
+<code>LwsException</code>; documents are kotlinx.serialization <code>JsonElement</code>s. HTTP and cryptography come from the JDK itself.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="install">Install</h2>
+<pre data-lang="bash"><code class="language-bash"># Until it is on Maven Central: build and install into your local Maven repository (~/.m2)
+git clone https://github.com/ebremer/lws-client.git
+cd lws-client/kotlin &amp;&amp; ./gradlew publishToMavenLocal
+
+# build.gradle.kts
+#   repositories { mavenLocal(); mavenCentral() }
+#   dependencies { implementation(&quot;com.ebremer:lws-client-kotlin:0.1.0&quot;) }
+# Or build against the checkout, in settings.gradle.kts:
+#   includeBuild(&quot;path/to/lws-client/kotlin&quot;)
+
+# Kotlin 2.2+ on JDK 17+; the only dependencies are kotlinx-coroutines and kotlinx-serialization-json.</code></pre>
+<p>The build is Gradle (Kotlin DSL) with the wrapper, in <code>kotlin/</code>; the artifact is <code>com.ebremer:lws-client-kotlin</code>,
+so it can sit next to the Java client (<code>com.ebremer:lws-client</code>) without a clash. A Gradle build can also include the
+checkout directly with <code>includeBuild(…)</code>, which is how the driver adapter builds against it.</p>
+
+<h2 id="first">First program</h2>
+<pre data-lang="kotlin"><code class="language-kotlin">import com.ebremer.lws.kotlin.LwsClient
+import com.ebremer.lws.kotlin.auth.SelfSignedCredentials
+import com.ebremer.lws.kotlin.auth.SigningKey
+import com.ebremer.lws.kotlin.auth.TokenExchangeAuthenticator
+import kotlinx.coroutines.runBlocking
+import java.net.URI
+
+fun main() = runBlocking {
+    val credentials = SelfSignedCredentials.didKey(SigningKey.generateP256())
+    val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))
+    println(&quot;agent:   ${credentials.agent}&quot;)
+
+    val storage = client.discoverStorage(URI(&quot;http://localhost:8787/root/&quot;))
+    println(&quot;storage: ${storage.id}  root: ${storage.storageRoot()}&quot;)
+
+    val folder = client.createContainer(storage.storageRoot(), slug = &quot;hello-world&quot;).location
+    val file = client.createText(folder, &quot;Hello, LWS!&quot;, slug = &quot;hello.txt&quot;).location
+    println(&quot;created: $file&quot;)
+
+    val resource = client.read(file)
+    println(&quot;${resource.text()}  (etag ${resource.etag ?: &quot;-&quot;}, parent ${resource.metadata.parent ?: &quot;-&quot;})&quot;)
+}</code></pre>
+<p>A complete program: <code>runBlocking</code> bridges into coroutines at <code>main</code>; inside a server framework you call the
+operations from its own coroutines.</p>
+
+<h2 id="configure">Configure the client</h2>
+<pre data-lang="kotlin"><code class="language-kotlin">val client = LwsClient(
+    authenticator = TokenExchangeAuthenticator(credentials),
+    userAgent = &quot;my-app/1.0&quot;,                           // default &quot;lws-client-kotlin/0.1.0&quot;
+    defaultHeaders = mapOf(&quot;Accept-Language&quot; to &quot;en&quot;),  // added to every request
+    timeout = 20.seconds,                               // per request (each redirect hop)
+    maxRedirects = 5,                                   // followed by the client itself (default 10)
+    // transport = JdkHttpTransport(myHttpClient),      // or any HttpTransport
+)
+
+// Per-call headers and time limits, as named arguments of every operation.
+val page = client.readContainer(container, headers = mapOf(&quot;X-Trace&quot; to &quot;1&quot;), timeout = 5.seconds)
+println(page.totalItems)
+
+// Operations are suspend functions: cancelling the coroutine cancels the request in flight.
+val maybe = withTimeoutOrNull(2.seconds) { client.read(url) }
+
+// Another identity over the same transport:
+val anonymous = client.withAuthenticator(null)</code></pre>
+<p><code>LwsClient</code> is immutable and safe to share between coroutines and threads: create one and pass it around.
+<code>withAuthenticator(a)</code> returns a client with a different authenticator over the same transport. The client follows
+redirects itself and authorizes each hop afresh, so its <code>HttpTransport</code> must not follow redirects. The default
+<code>JdkHttpTransport</code> runs on <code>java.net.http.HttpClient</code> with <code>Redirect.NEVER</code> (any method, <code>QUERY</code>
+included); give it your own <code>HttpClient</code> for a proxy, an <code>SSLContext</code> or HTTP/1.1 only. <code>HttpTransport</code> is a
+<code>fun interface</code> with one <code>suspend fun send(request: HttpRequest): HttpResponse</code>, a few lines over OkHttp or Ktor's client;
+pass the same transport to <code>TokenExchangeAuthenticator(transport = …)</code> for the metadata and token requests.</p>
+
+<h2 id="idioms">Kotlin idioms</h2>
+<div class="table-wrap"><table><thead><tr><th>Aspect</th><th>How the Kotlin client does it</th></tr></thead><tbody>
+<tr><td>Calls</td><td><code>suspend</code> functions. Cancelling the calling coroutine (<code>withTimeout</code>, a cancelled scope) cancels the exchange in flight; the <code>timeout</code> option bounds each request and surfaces as <code>TransportException</code> with <code>isTimeout</code>. Concurrent requests that meet the same challenge share one token exchange</td></tr>
+<tr><td>Options</td><td>Named arguments with defaults on every operation: <code>create(c, body, "text/plain", slug = "a.txt", types = listOf(…))</code>, <code>update(url, body, type, ifMatch = etag)</code>, <code>delete(url, recursive = true)</code>, <code>read(url, range = ByteRange.of(0, 1023))</code>. Every operation also takes <code>headers =</code> and <code>timeout =</code> (a <code>kotlin.time.Duration</code>)</td></tr>
+<tr><td>Pagination</td><td><code>listContainer</code>, <code>listTypes</code>, <code>searchAll</code>, <code>listSubscriptions</code>… return a cold <code>Flow</code>: nothing is fetched until it is collected, pages are fetched as collection advances, each collection starts over, and operators such as <code>take(10)</code> fetch only the pages they need</td></tr>
+<tr><td>Bodies</td><td><code>ByteArray</code>s, read whole, so every body can be replayed for the retry after a <code>401</code>. <code>createText</code> / <code>updateText</code>, <code>createJson</code> / <code>updateJson</code> for a <code>JsonElement</code>; <code>Resource.text()</code> (by the response charset), <code>bytes</code>, <code>json()</code> and <code>decode&lt;T&gt;()</code></td></tr>
+<tr><td>JSON</td><td>kotlinx.serialization's <code>JsonElement</code> tree, lossless (number literals, member order, <code>{}</code> and <code>[]</code>), so documents (linksets, access documents, <code>raw</code>) round-trip unchanged. Build values with <code>buildJsonObject { … }</code> or <code>Json.encodeToJsonElement(value)</code>; read a body into a <code>@Serializable</code> class with <code>decode&lt;T&gt;()</code></td></tr>
+<tr><td>Models</td><td>Classes with <code>val</code> properties (<code>meta.etag</code>, <code>page.items</code>, <code>item.isContainer</code>); computed values that can fail are functions (<code>storageRoot()</code>). URLs are <code>java.net.URI</code>s, absolute in every result; type IRIs are strings</td></tr>
+<tr><td>Errors</td><td><code>LwsException</code>, a sealed <code>RuntimeException</code>: <code>HttpException</code> with a subclass per status (<code>NotFoundException</code>, <code>ConflictException</code>, <code>PreconditionFailedException</code>, …), <code>AuthenticationException</code>, <code>ProtocolException</code>, <code>SignatureVerificationException</code>, <code>TransportException</code>, so a <code>when</code> over it is exhaustive. Caller mistakes are Kotlin's own <code>IllegalArgumentException</code>, thrown before any request</td></tr>
+<tr><td>Crypto</td><td>The JDK's providers: <code>SHA256withECDSAinP1363Format</code> for ES256 (JOSE's raw <code>r‖s</code> directly), <code>Ed25519</code> for EdDSA, <code>MessageDigest</code> for SHA-256 and SHA-512. Keys convert to and from JCA key pairs (<code>SigningKey.of(keyPair)</code>, <code>toKeyPair()</code>)</td></tr>
+<tr><td>Secrets</td><td>Keys, tokens and credentials stay out of <code>toString()</code>, so logging a client, an authenticator or a key shows no secret</td></tr>
+</tbody></table></div>
+
+<h2 id="types">Types</h2>
+<div class="table-wrap"><table><thead><tr><th>Package</th><th>Types</th></tr></thead><tbody>
+<tr><td><code>com.ebremer.lws.kotlin</code></td><td><code>LwsClient</code>, <code>Resource</code>, <code>ResourceMetadata</code>, <code>CreateResult</code>, <code>UpdateResult</code>, <code>ByteRange</code>, <code>ContainerPage</code>, <code>ContainedResource</code>, <code>StorageDescription</code>, <code>Service</code>, <code>Capability</code>, <code>VerificationMethod</code>, <code>Linkset</code>, <code>LinkContext</code>, <code>LinkTarget</code>, <code>LinksetDocument</code>, <code>TypeIndexPage</code>, <code>TypeQuery</code>, the exceptions, <code>Vocabulary</code> (namespaces, type matching) and the constants <code>LinkRelation</code>, <code>ResourceType</code>, <code>MediaType</code>, <code>ServiceType</code>, <code>SubscriptionType</code>, <code>TokenType</code>, <code>AccessAction</code>, <code>ConstraintOperand</code>, <code>ConstraintOperator</code>, <code>Prefer</code>, <code>ActivityType</code></td></tr>
+<tr><td><code>….auth</code></td><td><code>Authenticator</code>, <code>AuthRequest</code>, <code>AuthResponse</code>, <code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, <code>CredentialProvider</code>, <code>CredentialContext</code>, <code>OpenIdCredentials</code>, <code>SamlCredentials</code>, <code>SelfSignedCredentials</code>, <code>SigningKey</code>, <code>VerificationKey</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifierDocument</code>, <code>AuthorizationServerMetadata</code>, <code>AccessToken</code></td></tr>
+<tr><td><code>….notify</code></td><td><code>WebhookSubscriptionRequest</code>, <code>Subscription</code>, <code>Notification</code>, <code>Activity</code>, <code>ActivityObject</code>, <code>WebhookVerifier</code>, <code>VerifiedNotification</code></td></tr>
+<tr><td><code>….access</code></td><td><code>AccessRequest</code>, <code>AccessGrant</code> (a sealed <code>AccessDocument</code>), <code>AccessPolicy</code>, <code>AccessTarget</code>, <code>Constraint</code></td></tr>
+<tr><td><code>….http</code></td><td><code>HttpTransport</code>, <code>JdkHttpTransport</code>, <code>HttpRequest</code>, <code>HttpResponse</code>, <code>Headers</code>, <code>Link</code>, <code>LinkHeader</code>, <code>WwwAuthenticate</code>, <code>AuthChallenge</code>, <code>StructuredFields</code> and its <code>Sf…</code> values, <code>ProblemDetails</code>, <code>Slug</code></td></tr>
+<tr><td><code>….json</code></td><td><code>JsonPatch</code>, the <code>jsonPatch { … }</code> builder, <code>JsonPointer</code></td></tr>
+</tbody></table></div>
+<p>The fragments on this site leave out their imports; the complete programs show them.</p>
+
+<h2 id="notes">Notes and deviations</h2>
+<ul>
+  <li>The package is <code>com.ebremer.lws.kotlin</code>, not the Java client's <code>com.ebremer.lws</code>, so both libraries can be on one
+  classpath. <code>Link.typeLink(iri)</code> builds a <code>rel="type"</code> link, since <code>type</code> is the property of the
+  <code>type</code> attribute. A subscription's URL (the contract's <code>subscription</code>) is <code>Subscription.url</code>. An activity's
+  object is <code>activity.&#96;object&#96;</code>, as <code>object</code> is a keyword.</li>
+  <li>The contract's error classes are exception classes named <code>…Exception</code> (<code>NotFoundException</code>,
+  <code>ProtocolException</code>); the 501 one is <code>NotImplementedException</code>, which shadows nothing that Kotlin imports by default.
+  Their constructors are internal: <code>HttpException.fromResponse(…)</code> builds the right one, for a transport or a test double.</li>
+  <li>Bodies are byte arrays: there is no streaming read or upload, so every body can be replayed for the single retry after a
+  <code>401</code>. Read large resources in pieces with <code>range =</code>.</li>
+  <li><code>JsonPatch</code>, <code>TypeQuery</code> and <code>Linkset</code> are builders that change in place:
+  <code>doc.linkset.add(…)</code>, then <code>updateLinkset(doc.url, doc.linkset)</code>; <code>TypeQuery.copy()</code> takes a snapshot.
+  <code>JsonPatch</code> has overloads for strings, numbers and booleans, and <code>jsonPatch { replace("/done", true) }</code> builds one.
+  <code>TypeQuery</code>'s builders throw <code>IllegalArgumentException</code> for an IRI that is not absolute or an empty OR group.</li>
+  <li><code>WebhookVerifier.verify(method, inbox, headers, body)</code> takes the parts of a delivery, the headers as <code>Headers</code> or a
+  <code>Map&lt;String, List&lt;String&gt;&gt;</code>, so any server framework can pass its request on;
+  <code>verifyExchange(exchange, inbox)</code> takes a request of the JDK's built-in <code>com.sun.net.httpserver</code> server. Pass the inbox
+  URL as registered, not the one a proxy forwarded to.</li>
+  <li>Clocks are <code>java.time.Clock</code>s (<code>TokenExchangeAuthenticator(clock = …)</code>, <code>WebhookVerifier(clock = …)</code>,
+  <code>SelfSignedCredentials.withClock(…)</code>), for tests; instants are <code>java.time.Instant</code>s and durations
+  <code>kotlin.time.Duration</code>s.</li>
+  <li>Extras: <code>request(method, url, body, contentType)</code> sends any method through the authentication and redirect pipeline;
+  <code>readLinksetResource(url)</code> reads a linkset at a known URL; <code>TokenExchangeAuthenticator.accessToken(asUri, realm)</code>
+  obtains a token ahead of time.</li>
+</ul>
+
+<h2 id="build">Build, test and examples</h2>
+<pre data-lang="bash"><code class="language-bash">cd kotlin
+./gradlew build                                         # unit, fixture and HTTP tests, the examples, the jars
+node ../testing/mock-server/server.mjs --port 8787 &amp;
+LWS_TEST_SERVER=http://localhost:8787 ./gradlew test    # adds the cross-language interop scenario
+
+# Examples (src/examples/kotlin): Quickstart.kt, SelfSignedAuth.kt, WebhookReceiver.kt
+./gradlew -q quickstart --args=http://localhost:8787/root/</code></pre>
+<p>The compiler runs in explicit API mode with warnings as errors, against the Java 17 API (<code>-Xjdk-release=17</code>) and the
+Kotlin 2.2 language and API level, so the library works with Kotlin 2.2 and later on any JDK from 17.</p>
+<div class="callout"><p><strong>Source</strong> <a href="https://github.com/ebremer/lws-client/tree/main/kotlin">kotlin/</a> in the repository, with its own <a href="https://github.com/ebremer/lws-client/blob/main/kotlin/README.md">README</a> and <a href="https://github.com/ebremer/lws-client/tree/main/kotlin/src/examples/kotlin/com/ebremer/lws/kotlin/examples">examples</a>.</p></div>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

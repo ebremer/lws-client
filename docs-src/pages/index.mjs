@@ -12,6 +12,7 @@ const LANGS = [
   ["csharp", "C#", "C#", "languages/csharp.html", "Ebremer.Lws.Client (NuGet)", ".NET 10 · async/await, CancellationToken, IAsyncEnumerable, nullable annotations"],
   ["swift", "Swift", "SW", "languages/swift.html", "lws-client (SwiftPM)", "Swift 6 · async/await, AsyncSequence listings, Sendable values, URLSession, CryptoKit"],
   ["php", "PHP", "PHP", "languages/php.html", "ebremer/lws-client (Composer)", "PHP 8.2+ · named arguments, lazy foreach listings, readonly models, ext-curl or any PSR-18 client"],
+  ["kotlin", "Kotlin", "KT", "languages/kotlin.html", "com.ebremer:lws-client-kotlin", "Kotlin 2.2+, JDK 17+ · suspend functions, Flow listings, named arguments, sealed exceptions, kotlinx.serialization"],
   ["wasm", "WebAssembly", "WA", "languages/wasm.html", "lws_client.wasm (WASI 0.2 component)", "Any component host with wasi:http: jco, Wasmtime · the Rust client behind a WIT interface"],
 ];
 
@@ -30,18 +31,18 @@ export default {
   path: "index.html",
   title: "Overview",
   wide: true,
-  description: "Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift and PHP, sharing one API design, one conformance suite and one interop scenario.",
+  description: "Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift, PHP and Kotlin, sharing one API design, one conformance suite and one interop scenario.",
   body: `
 <section class="hero">
   <div class="badges">
     <span class="badge accent">MIT licensed</span>
     <span class="badge">LWS drafts as of ${SITE.specBaseline}</span>
-    <span class="badge">9 languages · 1 API design</span>
+    <span class="badge">10 languages · 1 API design</span>
     <span class="badge">v${SITE.version}</span>
   </div>
-  <h1>Linked Web Storage clients for <span class="accent">nine languages</span></h1>
+  <h1>Linked Web Storage clients for <span class="accent">ten languages</span></h1>
   <p class="lead">Read and write data in any W3C Linked Web Storage (LWS) server from Java, JavaScript/TypeScript,
-  C++, Rust, Go, Python, C#, Swift or PHP. Each client is idiomatic to its language, and all nine share the same concepts,
+  C++, Rust, Go, Python, C#, Swift, PHP or Kotlin. Each client is idiomatic to its language, and all ten share the same concepts,
   wire behaviour and conformance tests. The Rust client also comes as a WebAssembly component, for any language
   that can host one.</p>
   <div class="hero-actions">
@@ -63,7 +64,7 @@ export default {
       (controlled identifier documents and <code>did:key</code>) with ES256 and EdDSA.</li>
       <li><strong>Verified webhooks:</strong> RFC 9421 HTTP Message Signatures and RFC 9530
       <code>Content-Digest</code>, checked against the storage's published keys.</li>
-      <li><strong>One contract, nine idioms:</strong> the same concept names everywhere, expressed with each
+      <li><strong>One contract, ten idioms:</strong> the same concept names everywhere, expressed with each
       language's async model, iteration and error style.</li>
     </ul>
   </div>
@@ -101,7 +102,7 @@ ${LANGS.map(([key, name, badge, href, pkg, notes]) => `  <a class="card" href="$
 RFC 9421 webhook vectors and the did:key specification vector. They also all pass the same
 <a href="testing.html#interop">end-to-end interop scenario</a> against a bundled mock LWS server.
 Every code sample on this site is type-checked or compiled against the real libraries before it is published.
-The getting-started program is also run against the mock server in all nine languages.</p>
+The getting-started program is also run against the mock server in all ten languages.</p>
 <p>The baseline is the W3C LWS Working Group's documents as of ${SITE.specBaseline}, including the switch of
 the baseline <code>PATCH</code> format to JSON Patch. See <a href="spec-coverage.html">spec coverage</a> for
 details and interpretation decisions.</p>

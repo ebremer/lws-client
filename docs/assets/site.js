@@ -35,6 +35,7 @@
       ["languages/csharp.html", "C#", "csharp"],
       ["languages/swift.html", "Swift", "swift"],
       ["languages/php.html", "PHP", "php"],
+      ["languages/kotlin.html", "Kotlin", "kotlin"],
       ["languages/wasm.html", "WebAssembly", "wasm"],
     ] },
     { title: "Reference", items: [
@@ -44,7 +45,7 @@
       ["contributing.html", "Contributing & license"],
     ] },
   ];
-  var LANG_COLORS = { java: "#b0721a", js: "#2f74c0", cpp: "#00599c", rust: "#a04f26", go: "#00838f", python: "#3a6e9f", csharp: "#68217a", swift: "#d8452f", php: "#777bb3", wasm: "#654ff0" };
+  var LANG_COLORS = { java: "#b0721a", js: "#2f74c0", cpp: "#00599c", rust: "#a04f26", go: "#00838f", python: "#3a6e9f", csharp: "#68217a", swift: "#d8452f", php: "#777bb3", kotlin: "#7f52ff", wasm: "#654ff0" };
 
   function currentPath() {
     var path = location.pathname.replace(/\\/g, "/");
@@ -164,11 +165,12 @@
     csharp: "abstract and as async await base bool break byte case catch char checked class const continue decimal default delegate do double dynamic else enum event explicit extern false file finally fixed float for foreach get global goto if implicit in init int interface internal is lock long nameof namespace new not null object operator or out override params partial private protected public readonly record ref required return sbyte sealed set short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using var virtual void volatile when where while with yield",
     swift: "actor any as associatedtype async await break case catch class continue default defer deinit do else enum extension fallthrough false fileprivate final for func guard if import in init inout internal is lazy let mutating nil nonisolated open operator override private protocol public repeat rethrows return self Self some static struct subscript super switch throw throws true try var where while",
     php: "abstract and array as break callable case catch class clone const continue declare default do echo else elseif empty enum extends false final finally fn for foreach function global goto if implements include include_once instanceof insteadof interface isset list match namespace new null or parent print private protected public readonly require require_once return self static switch throw trait true try unset use var while xor yield bool int float string iterable object mixed void never __DIR__ __FILE__ __LINE__ __CLASS__ __FUNCTION__ __METHOD__ __NAMESPACE__",
-    bash: "if then else fi for do done case esac in function export cd echo cmake cargo go npm npx node mvn pip python git dotnet swift php composer",
+    kotlin: "abstract annotation as break by catch class companion const constructor continue crossinline data do else enum expect external false final finally for fun if import in infix init inline inner interface internal is lateinit noinline null object open operator out override package private protected public reified return sealed super suspend this throw true try typealias val value var vararg when where while",
+    bash: "if then else fi for do done case esac in function export cd echo cmake cargo go npm npx node mvn pip python git dotnet swift php composer gradlew java",
     json: "true false null",
     http: "",
   };
-  var ALIASES = { javascript: "ts", js: "ts", typescript: "ts", "c++": "cpp", cs: "csharp", "c#": "csharp", sh: "bash", shell: "bash", console: "bash", py: "python", golang: "go", kotlin: "java", toml: "bash", xml: "http", text: "http", cmake: "bash", powershell: "bash", groovy: "java" };
+  var ALIASES = { javascript: "ts", js: "ts", typescript: "ts", "c++": "cpp", cs: "csharp", "c#": "csharp", sh: "bash", shell: "bash", console: "bash", py: "python", golang: "go", kt: "kotlin", kts: "kotlin", toml: "bash", xml: "http", text: "http", cmake: "bash", powershell: "bash", groovy: "java" };
   var kwCache = {};
   function keywordSet(lang) {
     if (!kwCache[lang]) {
@@ -219,7 +221,7 @@
         if (e2 < 0) e2 = n;
         push("c", code.slice(i, e2)); i = e2; continue;
       }
-      if ((lang === "python" && (rest.startsWith('"""') || rest.startsWith("'''"))) || (lang === "csharp" && rest.startsWith('"""'))) {
+      if ((lang === "python" && (rest.startsWith('"""') || rest.startsWith("'''"))) || ((lang === "csharp" || lang === "kotlin") && rest.startsWith('"""'))) {
         var q3 = rest.slice(0, 3);
         var c3 = code.indexOf(q3, i + 3);
         c3 = c3 < 0 ? n : c3 + 3;
@@ -317,6 +319,31 @@
         }
         push("s", code.slice(i, pk + 1)); i = pk + 1; continue;
       }
+      if (lang === "kotlin" && ch === '"') {
+        // String template: quotes inside ${…} belong to nested expressions.
+        var kk = i + 1;
+        var kdepth = 0;
+        while (kk < n && code[kk] !== "\n") {
+          var kc = code[kk];
+          if (kdepth === 0) {
+            if (kc === "\\") { kk += 2; continue; }
+            if (kc === '"') break;
+            if (kc === "$" && code[kk + 1] === "{") { kdepth = 1; kk += 2; continue; }
+          } else if (kc === '"') {
+            kk++;
+            while (kk < n && code[kk] !== '"' && code[kk] !== "\n") kk += code[kk] === "\\" ? 2 : 1;
+          } else if (kc === "{") kdepth++;
+          else if (kc === "}") kdepth--;
+          kk++;
+        }
+        push("s", code.slice(i, kk + 1)); i = kk + 1; continue;
+      }
+      if (lang === "kotlin" && ch === "`") {
+        // A backticked identifier: `object`
+        var be = code.indexOf("`", i + 1);
+        be = be < 0 ? n : be + 1;
+        push(null, code.slice(i, be)); i = be; continue;
+      }
       if (lang === "cpp" && (m = /^R"([^(]*)\(/.exec(rest))) {
         var t2 = ")" + m[1] + '"';
         var ce2 = code.indexOf(t2, i);
@@ -335,7 +362,7 @@
       if ((m = /^(?:0[xX][0-9a-fA-F_]+|\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?)[a-zA-Z0-9]*/.exec(rest)) && !/[\w$]/.test(code[i - 1] || "")) {
         push("n", m[0]); i += m[0].length; continue;
       }
-      if (lang === "java" && ch === "@" && (m = /^@[A-Za-z_]\w*/.exec(rest))) {
+      if ((lang === "java" || lang === "kotlin") && ch === "@" && (m = /^@[A-Za-z_]\w*/.exec(rest))) {
         push("a", m[0]); i += m[0].length; continue;
       }
       if (lang === "rust" && (m = /^#!?\[[^\]]*\]/.exec(rest))) {
@@ -352,6 +379,10 @@
       }
       if (lang === "php" && (lastSig === "(" || lastSig === ",") && (m = /^[A-Za-z_]\w*(?=:(?!:))/.exec(rest))) {
         // A named argument: slug: 'a.txt'
+        push("a", m[0]); i += m[0].length; continue;
+      }
+      if (lang === "kotlin" && (lastSig === "(" || lastSig === ",") && (m = /^[A-Za-z_]\w*(?=\s*=(?!=))/.exec(rest))) {
+        // A named argument: slug = "a.txt"
         push("a", m[0]); i += m[0].length; continue;
       }
       if ((m = /^[A-Za-z_$][\w$]*/.exec(rest))) {
@@ -402,7 +433,7 @@
   }
 
   // ------------------------------------------------------------------ language tabs
-  var LANG_LABELS = { java: "Java", ts: "TypeScript", js: "JavaScript", javascript: "JavaScript", typescript: "TypeScript", cpp: "C++", rust: "Rust", go: "Go", python: "Python", csharp: "C#", swift: "Swift", php: "PHP", bash: "Shell", http: "HTTP", json: "JSON" };
+  var LANG_LABELS = { java: "Java", ts: "TypeScript", js: "JavaScript", javascript: "JavaScript", typescript: "TypeScript", cpp: "C++", rust: "Rust", go: "Go", python: "Python", csharp: "C#", swift: "Swift", php: "PHP", kotlin: "Kotlin", bash: "Shell", http: "HTTP", json: "JSON" };
   var LANG_KEYS = { ts: "js", typescript: "js", javascript: "js", js: "js" };
   function tabKey(lang) { return LANG_KEYS[lang] || lang; }
 

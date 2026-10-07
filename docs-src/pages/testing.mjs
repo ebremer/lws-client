@@ -4,17 +4,17 @@ import { callout, code, table } from "../lib.mjs";
 export default {
   path: "testing.html",
   title: "Testing & mock server",
-  description: "Shared conformance fixtures, the zero-dependency LWS mock server, and the cross-language interop scenario used to keep nine clients in lockstep.",
+  description: "Shared conformance fixtures, the zero-dependency LWS mock server, and the cross-language interop scenario used to keep ten clients in lockstep.",
   body: `
 <h1>Testing &amp; mock server</h1>
-<p class="lead">Nine independent implementations only stay consistent if they are tested against the
+<p class="lead">Ten independent implementations only stay consistent if they are tested against the
 same data. The repository has three layers of shared testing: conformance fixtures, a mock LWS
 server, and an end-to-end interop scenario.</p>
 <div id="toc" class="toc"></div>
 
 <h2 id="fixtures">Conformance fixtures</h2>
 <p><code>conformance/fixtures/</code> holds language-neutral JSON test vectors. Every client's unit tests load
-them directly, so a parsing bug fixed in one language is caught in all nine.</p>
+them directly, so a parsing bug fixed in one language is caught in all ten.</p>
 ${table(
   ["Fixture", "Covers"],
   [
@@ -88,7 +88,8 @@ export LWS_TEST_SERVER=http://localhost:8787
 (cd python && .venv/bin/pytest tests/test_interop.py)   # Windows: .venv\\Scripts\\pytest
 (cd csharp && dotnet test)
 swift test                                  # at the repository root (Package.swift)
-composer test                               # at the repository root (composer.json)`)}
+composer test                               # at the repository root (composer.json)
+(cd kotlin && ./gradlew test)`)}
 
 <h2 id="unit">Running each test suite</h2>
 <p>Unit tests need no server. See each <a href="contributing.html#building">language's build commands</a>.

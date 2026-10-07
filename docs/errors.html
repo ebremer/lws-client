@@ -44,38 +44,38 @@ It also attaches the request, the response headers and any RFC 9457 problem deta
 <div id="toc" class="toc"></div>
 
 <h2 id="mapping">Status mapping</h2>
-<div class="table-wrap"><table><thead><tr><th>Status</th><th>Concept</th><th>Java</th><th>TypeScript / C++</th><th>Rust (Error::…)</th><th>Go (errors.Is)</th><th>Python</th><th>C#</th><th>Swift (LWSError.…)</th><th>PHP</th></tr></thead><tbody>
-<tr><td>400</td><td>BadRequest</td><td><code>BadRequestException</code></td><td><code>BadRequestError</code></td><td><code>BadRequest</code></td><td><code>ErrBadRequest</code></td><td><code>BadRequestError</code></td><td><code>BadRequestException</code></td><td><code>badRequest</code></td><td><code>BadRequestException</code></td></tr>
-<tr><td>401</td><td>Unauthorized (unknown requester)</td><td><code>UnauthorizedException</code></td><td><code>UnauthorizedError</code></td><td><code>Unauthorized</code></td><td><code>ErrUnauthorized</code></td><td><code>UnauthorizedError</code></td><td><code>UnauthorizedException</code></td><td><code>unauthorized</code></td><td><code>UnauthorizedException</code></td></tr>
-<tr><td>403</td><td>Forbidden (not permitted)</td><td><code>ForbiddenException</code></td><td><code>ForbiddenError</code></td><td><code>Forbidden</code></td><td><code>ErrForbidden</code></td><td><code>ForbiddenError</code></td><td><code>ForbiddenException</code></td><td><code>forbidden</code></td><td><code>ForbiddenException</code></td></tr>
-<tr><td>404</td><td>NotFound</td><td><code>NotFoundException</code></td><td><code>NotFoundError</code></td><td><code>NotFound</code></td><td><code>ErrNotFound</code></td><td><code>NotFoundError</code></td><td><code>NotFoundException</code></td><td><code>notFound</code></td><td><code>NotFoundException</code></td></tr>
-<tr><td>405</td><td>MethodNotAllowed (+ Allow)</td><td><code>MethodNotAllowedException</code></td><td><code>MethodNotAllowedError</code></td><td><code>MethodNotAllowed</code></td><td><code>ErrMethodNotAllowed</code></td><td><code>MethodNotAllowedError</code></td><td><code>MethodNotAllowedException</code></td><td><code>methodNotAllowed</code></td><td><code>MethodNotAllowedException</code></td></tr>
-<tr><td>406</td><td>NotAcceptable</td><td><code>NotAcceptableException</code></td><td><code>NotAcceptableError</code></td><td><code>NotAcceptable</code></td><td><code>ErrNotAcceptable</code></td><td><code>NotAcceptableError</code></td><td><code>NotAcceptableException</code></td><td><code>notAcceptable</code></td><td><code>NotAcceptableException</code></td></tr>
-<tr><td>409</td><td>Conflict</td><td><code>ConflictException</code></td><td><code>ConflictError</code></td><td><code>Conflict</code></td><td><code>ErrConflict</code></td><td><code>ConflictError</code></td><td><code>ConflictException</code></td><td><code>conflict</code></td><td><code>ConflictException</code></td></tr>
-<tr><td>410</td><td>Gone</td><td><code>GoneException</code></td><td><code>GoneError</code></td><td><code>Gone</code></td><td><code>ErrGone</code></td><td><code>GoneError</code> (a NotFoundError)</td><td><code>GoneException</code></td><td><code>gone</code></td><td><code>GoneException</code></td></tr>
-<tr><td>412</td><td>PreconditionFailed</td><td><code>PreconditionFailedException</code></td><td><code>PreconditionFailedError</code></td><td><code>PreconditionFailed</code></td><td><code>ErrPreconditionFailed</code></td><td><code>PreconditionFailedError</code></td><td><code>PreconditionFailedException</code></td><td><code>preconditionFailed</code></td><td><code>PreconditionFailedException</code></td></tr>
-<tr><td>415</td><td>UnsupportedMediaType (+ Accept-Patch / Accept-Query)</td><td><code>UnsupportedMediaTypeException</code></td><td><code>UnsupportedMediaTypeError</code></td><td><code>UnsupportedMediaType</code></td><td><code>ErrUnsupportedMediaType</code></td><td><code>UnsupportedMediaTypeError</code></td><td><code>UnsupportedMediaTypeException</code></td><td><code>unsupportedMediaType</code></td><td><code>UnsupportedMediaTypeException</code></td></tr>
-<tr><td>422</td><td>UnprocessableContent</td><td><code>UnprocessableContentException</code></td><td><code>UnprocessableContentError</code></td><td><code>UnprocessableContent</code></td><td><code>ErrUnprocessableContent</code></td><td><code>UnprocessableContentError</code></td><td><code>UnprocessableContentException</code></td><td><code>unprocessableContent</code></td><td><code>UnprocessableContentException</code></td></tr>
-<tr><td>501</td><td>NotImplemented</td><td><code>NotImplementedException</code></td><td><code>NotImplementedError</code></td><td><code>NotImplemented</code></td><td><code>ErrNotImplemented</code></td><td><code>NotImplementedByServerError</code></td><td><code>HttpNotImplementedException</code></td><td><code>notImplemented</code></td><td><code>NotImplementedException</code></td></tr>
-<tr><td>507</td><td>InsufficientStorage (quota)</td><td><code>InsufficientStorageException</code></td><td><code>InsufficientStorageError</code></td><td><code>InsufficientStorage</code></td><td><code>ErrInsufficientStorage</code></td><td><code>InsufficientStorageError</code></td><td><code>InsufficientStorageException</code></td><td><code>insufficientStorage</code></td><td><code>InsufficientStorageException</code></td></tr>
-<tr><td>other</td><td>HttpError</td><td><code>HttpStatusException</code></td><td><code>HttpError</code></td><td><code>Http</code></td><td><code>*HTTPError</code></td><td><code>HttpError</code></td><td><code>HttpException</code></td><td><code>http</code></td><td><code>HttpException</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>Status</th><th>Concept</th><th>Java</th><th>TypeScript / C++</th><th>Rust (Error::…)</th><th>Go (errors.Is)</th><th>Python</th><th>C#</th><th>Swift (LWSError.…)</th><th>PHP</th><th>Kotlin</th></tr></thead><tbody>
+<tr><td>400</td><td>BadRequest</td><td><code>BadRequestException</code></td><td><code>BadRequestError</code></td><td><code>BadRequest</code></td><td><code>ErrBadRequest</code></td><td><code>BadRequestError</code></td><td><code>BadRequestException</code></td><td><code>badRequest</code></td><td><code>BadRequestException</code></td><td><code>BadRequestException</code></td></tr>
+<tr><td>401</td><td>Unauthorized (unknown requester)</td><td><code>UnauthorizedException</code></td><td><code>UnauthorizedError</code></td><td><code>Unauthorized</code></td><td><code>ErrUnauthorized</code></td><td><code>UnauthorizedError</code></td><td><code>UnauthorizedException</code></td><td><code>unauthorized</code></td><td><code>UnauthorizedException</code></td><td><code>UnauthorizedException</code></td></tr>
+<tr><td>403</td><td>Forbidden (not permitted)</td><td><code>ForbiddenException</code></td><td><code>ForbiddenError</code></td><td><code>Forbidden</code></td><td><code>ErrForbidden</code></td><td><code>ForbiddenError</code></td><td><code>ForbiddenException</code></td><td><code>forbidden</code></td><td><code>ForbiddenException</code></td><td><code>ForbiddenException</code></td></tr>
+<tr><td>404</td><td>NotFound</td><td><code>NotFoundException</code></td><td><code>NotFoundError</code></td><td><code>NotFound</code></td><td><code>ErrNotFound</code></td><td><code>NotFoundError</code></td><td><code>NotFoundException</code></td><td><code>notFound</code></td><td><code>NotFoundException</code></td><td><code>NotFoundException</code></td></tr>
+<tr><td>405</td><td>MethodNotAllowed (+ Allow)</td><td><code>MethodNotAllowedException</code></td><td><code>MethodNotAllowedError</code></td><td><code>MethodNotAllowed</code></td><td><code>ErrMethodNotAllowed</code></td><td><code>MethodNotAllowedError</code></td><td><code>MethodNotAllowedException</code></td><td><code>methodNotAllowed</code></td><td><code>MethodNotAllowedException</code></td><td><code>MethodNotAllowedException</code></td></tr>
+<tr><td>406</td><td>NotAcceptable</td><td><code>NotAcceptableException</code></td><td><code>NotAcceptableError</code></td><td><code>NotAcceptable</code></td><td><code>ErrNotAcceptable</code></td><td><code>NotAcceptableError</code></td><td><code>NotAcceptableException</code></td><td><code>notAcceptable</code></td><td><code>NotAcceptableException</code></td><td><code>NotAcceptableException</code></td></tr>
+<tr><td>409</td><td>Conflict</td><td><code>ConflictException</code></td><td><code>ConflictError</code></td><td><code>Conflict</code></td><td><code>ErrConflict</code></td><td><code>ConflictError</code></td><td><code>ConflictException</code></td><td><code>conflict</code></td><td><code>ConflictException</code></td><td><code>ConflictException</code></td></tr>
+<tr><td>410</td><td>Gone</td><td><code>GoneException</code></td><td><code>GoneError</code></td><td><code>Gone</code></td><td><code>ErrGone</code></td><td><code>GoneError</code> (a NotFoundError)</td><td><code>GoneException</code></td><td><code>gone</code></td><td><code>GoneException</code></td><td><code>GoneException</code></td></tr>
+<tr><td>412</td><td>PreconditionFailed</td><td><code>PreconditionFailedException</code></td><td><code>PreconditionFailedError</code></td><td><code>PreconditionFailed</code></td><td><code>ErrPreconditionFailed</code></td><td><code>PreconditionFailedError</code></td><td><code>PreconditionFailedException</code></td><td><code>preconditionFailed</code></td><td><code>PreconditionFailedException</code></td><td><code>PreconditionFailedException</code></td></tr>
+<tr><td>415</td><td>UnsupportedMediaType (+ Accept-Patch / Accept-Query)</td><td><code>UnsupportedMediaTypeException</code></td><td><code>UnsupportedMediaTypeError</code></td><td><code>UnsupportedMediaType</code></td><td><code>ErrUnsupportedMediaType</code></td><td><code>UnsupportedMediaTypeError</code></td><td><code>UnsupportedMediaTypeException</code></td><td><code>unsupportedMediaType</code></td><td><code>UnsupportedMediaTypeException</code></td><td><code>UnsupportedMediaTypeException</code></td></tr>
+<tr><td>422</td><td>UnprocessableContent</td><td><code>UnprocessableContentException</code></td><td><code>UnprocessableContentError</code></td><td><code>UnprocessableContent</code></td><td><code>ErrUnprocessableContent</code></td><td><code>UnprocessableContentError</code></td><td><code>UnprocessableContentException</code></td><td><code>unprocessableContent</code></td><td><code>UnprocessableContentException</code></td><td><code>UnprocessableContentException</code></td></tr>
+<tr><td>501</td><td>NotImplemented</td><td><code>NotImplementedException</code></td><td><code>NotImplementedError</code></td><td><code>NotImplemented</code></td><td><code>ErrNotImplemented</code></td><td><code>NotImplementedByServerError</code></td><td><code>HttpNotImplementedException</code></td><td><code>notImplemented</code></td><td><code>NotImplementedException</code></td><td><code>NotImplementedException</code></td></tr>
+<tr><td>507</td><td>InsufficientStorage (quota)</td><td><code>InsufficientStorageException</code></td><td><code>InsufficientStorageError</code></td><td><code>InsufficientStorage</code></td><td><code>ErrInsufficientStorage</code></td><td><code>InsufficientStorageError</code></td><td><code>InsufficientStorageException</code></td><td><code>insufficientStorage</code></td><td><code>InsufficientStorageException</code></td><td><code>InsufficientStorageException</code></td></tr>
+<tr><td>other</td><td>HttpError</td><td><code>HttpStatusException</code></td><td><code>HttpError</code></td><td><code>Http</code></td><td><code>*HTTPError</code></td><td><code>HttpError</code></td><td><code>HttpException</code></td><td><code>http</code></td><td><code>HttpException</code></td><td><code>HttpException</code></td></tr>
 </tbody></table></div>
 
 <h2 id="other">Non-HTTP errors</h2>
-<div class="table-wrap"><table><thead><tr><th>Concept</th><th>When</th><th>Java</th><th>TypeScript / C++</th><th>Rust</th><th>Go</th><th>Python</th><th>C#</th><th>Swift</th><th>PHP</th></tr></thead><tbody>
-<tr><td>AuthenticationError</td><td>Realm mismatch, insecure or filtered AS, issuer mismatch, OAuth error from the token endpoint</td><td><code>AuthenticationException</code></td><td><code>AuthenticationError</code></td><td><code>Error::Authentication</code></td><td><code>*AuthenticationError</code></td><td><code>AuthenticationError</code></td><td><code>AuthenticationException</code></td><td><code>LWSError.authentication</code></td><td><code>AuthenticationException</code></td></tr>
-<tr><td>ProtocolError</td><td>A response violates LWS (missing <code>Location</code>, wrong media type, malformed JSON…)</td><td><code>LwsProtocolException</code></td><td><code>ProtocolError</code></td><td><code>Error::Protocol</code></td><td><code>*ProtocolError</code></td><td><code>ProtocolError</code></td><td><code>ProtocolException</code></td><td><code>LWSError.protocolError</code></td><td><code>ProtocolException</code></td></tr>
-<tr><td>SignatureVerificationError</td><td>A webhook delivery fails verification</td><td><code>SignatureVerificationException</code></td><td><code>SignatureVerificationError</code></td><td><code>Error::SignatureVerification</code></td><td><code>*SignatureVerificationError</code></td><td><code>SignatureVerificationError</code></td><td><code>SignatureVerificationException</code></td><td><code>LWSError.signatureVerification</code></td><td><code>SignatureVerificationException</code></td></tr>
-<tr><td>Transport</td><td>Network failures</td><td><code>LwsTransportException</code></td><td>native / <code>TransportError</code></td><td><code>Error::Transport</code></td><td>the <code>net/http</code> error</td><td><code>TransportError</code></td><td><code>LwsTransportException</code></td><td><code>LWSError.transport</code></td><td><code>TransportException</code></td></tr>
+<div class="table-wrap"><table><thead><tr><th>Concept</th><th>When</th><th>Java</th><th>TypeScript / C++</th><th>Rust</th><th>Go</th><th>Python</th><th>C#</th><th>Swift</th><th>PHP</th><th>Kotlin</th></tr></thead><tbody>
+<tr><td>AuthenticationError</td><td>Realm mismatch, insecure or filtered AS, issuer mismatch, OAuth error from the token endpoint</td><td><code>AuthenticationException</code></td><td><code>AuthenticationError</code></td><td><code>Error::Authentication</code></td><td><code>*AuthenticationError</code></td><td><code>AuthenticationError</code></td><td><code>AuthenticationException</code></td><td><code>LWSError.authentication</code></td><td><code>AuthenticationException</code></td><td><code>AuthenticationException</code></td></tr>
+<tr><td>ProtocolError</td><td>A response violates LWS (missing <code>Location</code>, wrong media type, malformed JSON…)</td><td><code>LwsProtocolException</code></td><td><code>ProtocolError</code></td><td><code>Error::Protocol</code></td><td><code>*ProtocolError</code></td><td><code>ProtocolError</code></td><td><code>ProtocolException</code></td><td><code>LWSError.protocolError</code></td><td><code>ProtocolException</code></td><td><code>ProtocolException</code></td></tr>
+<tr><td>SignatureVerificationError</td><td>A webhook delivery fails verification</td><td><code>SignatureVerificationException</code></td><td><code>SignatureVerificationError</code></td><td><code>Error::SignatureVerification</code></td><td><code>*SignatureVerificationError</code></td><td><code>SignatureVerificationError</code></td><td><code>SignatureVerificationException</code></td><td><code>LWSError.signatureVerification</code></td><td><code>SignatureVerificationException</code></td><td><code>SignatureVerificationException</code></td></tr>
+<tr><td>Transport</td><td>Network failures</td><td><code>LwsTransportException</code></td><td>native / <code>TransportError</code></td><td><code>Error::Transport</code></td><td>the <code>net/http</code> error</td><td><code>TransportError</code></td><td><code>LwsTransportException</code></td><td><code>LWSError.transport</code></td><td><code>TransportException</code></td><td><code>TransportException</code></td></tr>
 </tbody></table></div>
-<p>All errors share a root: <code>LwsException</code> (Java, where it is unchecked, C#, and PHP, where it is a <code>RuntimeException</code>), <code>LwsError</code> (TypeScript, Python),
+<p>All errors share a root: <code>LwsException</code> (Java, where it is unchecked, C#, PHP, where it is a <code>RuntimeException</code>, and Kotlin, where it is a sealed <code>RuntimeException</code>, so a <code>when</code> over it is exhaustive), <code>LwsError</code> (TypeScript, Python),
 <code>lws::Error : std::runtime_error</code> (C++), or a single enum (Rust's <code>Error</code>, Swift's <code>LWSError</code>, whose cases carry the
 <code>HTTPError</code>). Go uses
 <code>*HTTPError</code> plus sentinels that work with <code>errors.Is</code> and <code>errors.As</code>. Invalid builder input
 (a relative IRI in a type query, an access policy without actions) raises the language's ordinary argument
 error instead: <code>IllegalArgumentException</code>, <code>TypeError</code>, <code>std::invalid_argument</code>,
 <code>ValueError</code>, <code>ArgumentException</code>, a returned <code>error</code>, Rust's <code>Error::InvalidInput</code>, Swift's
-<code>LWSError.invalidArgument</code>, or PHP's <code>\InvalidArgumentException</code>.</p>
+<code>LWSError.invalidArgument</code>, PHP's <code>\InvalidArgumentException</code>, or Kotlin's <code>IllegalArgumentException</code>.</p>
 
 <h2 id="handling">Handling errors</h2>
 <div class="code-tabs">
@@ -204,12 +204,34 @@ catch (LwsTransportException e) when (e.InnerException is TimeoutException)
 } catch (TransportException $e) {
     echo $e-&gt;isTimeout() ? &quot;timed out\n&quot; : $e-&gt;getMessage() . &quot;\n&quot;;
 }</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">try {
+    client.read(url)
+} catch (_: NotFoundException) {
+    println(&quot;no such resource&quot;)
+} catch (e: UnauthorizedException) {
+    println(&quot;not authenticated: ${e.challenges.size} challenge(s)&quot;)
+} catch (e: HttpException) {                           // any other error status
+    println(&quot;${e.status} ${e.problem?.title ?: e.message}&quot;)
+} catch (e: AuthenticationException) {
+    println(&quot;token exchange failed: ${e.oauthError ?: &quot;?&quot;} ${e.oauthErrorDescription ?: &quot;&quot;}&quot;)
+} catch (e: TransportException) {
+    println(if (e.isTimeout) &quot;timed out&quot; else e.message)
+}
+
+// LwsException is sealed, so a when over it is exhaustive.
+fun describe(e: LwsException): String = when (e) {
+    is HttpException -&gt; &quot;HTTP ${e.status}&quot;
+    is AuthenticationException -&gt; &quot;authorization failed&quot;
+    is ProtocolException -&gt; &quot;the server broke the protocol&quot;
+    is SignatureVerificationException -&gt; &quot;a forged notification&quot;
+    is TransportException -&gt; &quot;no response&quot;
+}</code></pre>
 </div>
 
 <h2 id="problem">Problem details</h2>
 <p>When an error response has an RFC 9457 body (<code>application/problem+json</code>), the error carries it as
 <code>problem</code>: <code>type</code>, <code>title</code>, <code>status</code>, <code>detail</code>, <code>instance</code> and
-any extension members. The raw response body is kept too (Python, C#, Swift and PHP keep the first 4 KiB).</p>
+any extension members. The raw response body is kept too (Python, C#, Swift, PHP and Kotlin keep the first 4 KiB).</p>
 <div class="code-tabs">
 <pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">try {
     client.delete(container);
@@ -275,6 +297,11 @@ catch (ConflictException e) when (e.Problem is { } p)
     if ($p !== null) {
         echo $p-&gt;type ?? '', ' ', $p-&gt;title ?? '', ' ', $p-&gt;detail ?? '', ' ', $p-&gt;instance ?? '', ' ', $p-&gt;extensions['itemCount'] ?? '', &quot;\n&quot;;
     }
+}</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">try {
+    client.delete(container)
+} catch (e: ConflictException) {
+    e.problem?.let { p -&gt; println(&quot;${p.type} ${p.title} ${p.detail} ${p.instance} ${p.extensions[&quot;itemCount&quot;]}&quot;) }
 }</code></pre>
 </div>
 <div class="callout"><p><strong>304 and 206 are not errors</strong> A conditional read that returns <code>304 Not Modified</code> yields a normal result flagged <code>notModified</code>, and <code>206 Partial Content</code> is a normal success.</p></div>

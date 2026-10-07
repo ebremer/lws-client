@@ -119,6 +119,11 @@ foreach ($doc-&gt;linkset-&gt;links() as $link) {
     echo $link-&gt;rel, ' → ', $link-&gt;href, &quot;\n&quot;;
 }
 $shapes = $doc-&gt;linkset-&gt;hrefs('describedby');</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val doc = client.readLinkset(url)                      // HEAD for rel=&quot;linkset&quot;, then GET
+println(&quot;${doc.url} ${doc.etag} ${doc.allow} ${doc.acceptPatch}&quot;)
+
+for (link in doc.linkset.links()) println(&quot;${link.rel} → ${link.href}&quot;)
+val shapes = doc.linkset.hrefs(&quot;describedby&quot;)</code></pre>
 </div>
 
 <h2 id="patch">Patching a linkset</h2>
@@ -237,6 +242,18 @@ $patch = $doc-&gt;linkset-&gt;targets($rel) === []
     ? (new JsonPatch())-&gt;add(JsonPointer::fromSegments('linkset', '0', $rel), [$reviewer])
     : (new JsonPatch())-&gt;add(JsonPointer::fromSegments('linkset', '0', $rel, '-'), $reviewer);
 $client-&gt;patchLinkset($doc-&gt;url, $patch, ifMatch: $doc-&gt;etag);</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val doc = client.readLinkset(url)
+val rel = &quot;https://example.org/rel/reviewer&quot;           // extension relation types are URIs
+val reviewer = buildJsonObject { put(&quot;href&quot;, &quot;https://id.example/bob&quot;) }
+
+// JsonPointer escapes &quot;/&quot; in the relation URI as &quot;~1&quot;.
+// &quot;add&quot; on an existing member replaces it, so append with &quot;/-&quot; when the relation exists.
+val patch = if (doc.linkset.targets(rel).isEmpty()) {
+    jsonPatch { add(JsonPointer.fromSegments(&quot;linkset&quot;, 0, rel), JsonArray(listOf(reviewer))) }
+} else {
+    jsonPatch { add(JsonPointer.fromSegments(&quot;linkset&quot;, 0, rel, &quot;-&quot;), reviewer) }
+}
+client.patchLinkset(doc.url, patch, ifMatch = doc.etag)</code></pre>
 </div>
 <div class="callout tip"><p><strong>Always send If-Match</strong> Several agents may edit the same metadata. Pass the linkset's ETag so a concurrent change produces <code>412 Precondition Failed</code> instead of a silent overwrite.</p></div>
 
@@ -300,6 +317,11 @@ if doc.supportsPut {                                 // Allow lists PUT
 if ($doc-&gt;supportsPut()) {                           // Allow lists PUT
     $doc-&gt;linkset-&gt;add($url, 'license', 'https://creativecommons.org/licenses/by/4.0/');   // changes it in place
     $client-&gt;updateLinkset($doc-&gt;url, $doc-&gt;linkset, ifMatch: $doc-&gt;etag);
+}</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val doc = client.readLinkset(url)
+if (doc.supportsPut) {                                 // Allow lists PUT
+    doc.linkset.add(url.toString(), &quot;license&quot;, &quot;https://creativecommons.org/licenses/by/4.0/&quot;)   // changes it in place
+    client.updateLinkset(doc.url, doc.linkset, ifMatch = doc.etag)
 }</code></pre>
 </div>
 

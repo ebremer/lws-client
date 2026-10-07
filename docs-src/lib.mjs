@@ -35,12 +35,12 @@ export function code(lang, src, { title } = {}) {
   return `<pre data-lang="${esc(lang)}"${t}><code class="language-${esc(lang)}">${esc(dedent(src))}</code></pre>`;
 }
 
-const TAB_ORDER = ["java", "ts", "cpp", "rust", "go", "python", "csharp", "swift", "php"];
+const TAB_ORDER = ["java", "ts", "cpp", "rust", "go", "python", "csharp", "swift", "php", "kotlin"];
 
-const TAB_LABELS = { java: "Java", ts: "TypeScript", cpp: "C++", rust: "Rust", go: "Go", python: "Python", csharp: "C#", swift: "Swift", php: "PHP" };
+const TAB_LABELS = { java: "Java", ts: "TypeScript", cpp: "C++", rust: "Rust", go: "Go", python: "Python", csharp: "C#", swift: "Swift", php: "PHP", kotlin: "Kotlin" };
 
 /**
- * Language tabs. `samples` maps java / ts / cpp / rust / go / python / csharp / swift / php (or any language id)
+ * Language tabs. `samples` maps java / ts / cpp / rust / go / python / csharp / swift / php / kotlin (or any language id)
  * to either source text or `{ lang, code }` when the snippet needs different highlighting
  * than its tab (e.g. install commands). The reader's chosen language is remembered across pages.
  */

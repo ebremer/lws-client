@@ -153,6 +153,14 @@ foreach ($page-&gt;items as $item) {
 if ($page-&gt;next !== null) {                          // opaque, server-issued URL
     echo count($client-&gt;readContainer($page-&gt;next)-&gt;items), &quot;\n&quot;;
 }</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">val page = client.readContainer(container)
+println(&quot;${page.id} ${page.totalItems} ${page.etag}&quot;)
+for (item in page.items) {
+    println(&quot;${item.id} ${if (item.isContainer) &quot;container&quot; else item.format} ${item.size} ${item.modified ?: item.modifiedRaw}&quot;)
+}
+page.next?.let { next -&gt;                               // opaque, server-issued URL
+    println(client.readContainer(next).items.size)
+}</code></pre>
 </div>
 <p>The clients accept the three equivalent container media types (<code>application/lws+json</code>,
 <code>application/ld+json</code>, <code>application/json</code>). Any other content type, or a body whose type is
@@ -172,6 +180,7 @@ lazy-sequence type:</p>
 <tr><td>C#</td><td><code>IAsyncEnumerable&lt;ContainedResource&gt;</code> (<code>await foreach</code>, <code>System.Linq.AsyncEnumerable</code> operators)</td></tr>
 <tr><td>Swift</td><td><code>PagedSequence&lt;ContainedResource&gt;</code>, an <code>AsyncSequence</code> (<code>for try await</code>, <code>where</code>, <code>collect()</code>)</td></tr>
 <tr><td>PHP</td><td><code>PagedSequence</code>, an <code>IteratorAggregate</code> (<code>foreach</code>, <code>toArray()</code>, <code>take($n)</code>)</td></tr>
+<tr><td>Kotlin</td><td><code>Flow&lt;ContainedResource&gt;</code>, a cold flow (<code>collect</code>, <code>filter</code>, <code>take(n)</code>, <code>toList()</code>)</td></tr>
 </tbody></table></div>
 <div class="code-tabs">
 <pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// A lazy Stream: pages are fetched only as the stream is consumed.
@@ -244,6 +253,14 @@ foreach ($client-&gt;listContainer($container) as $item) {
 // Every page, collected; or just the first few members (fetching only the pages needed).
 $ids = array_map(static fn (ContainedResource $i): string =&gt; $i-&gt;id, $client-&gt;listContainer($container)-&gt;toArray());
 $firstTen = $client-&gt;listContainer($container)-&gt;take(10);</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// A cold Flow: pages are fetched only as it is collected, and each collection starts over.
+client.listContainer(container)
+    .filter { it.hasType(&quot;https://schema.org/Person&quot;) }
+    .collect { println(it.id) }
+
+// Every page, collected; or just the first few members (fetching only the pages needed).
+val ids = client.listContainer(container).map { it.id }.toList()
+val firstTen = client.listContainer(container).take(10).toList()</code></pre>
 </div>
 
 <h2 id="visibility">What you can see</h2>
