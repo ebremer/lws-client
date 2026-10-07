@@ -1,6 +1,6 @@
 # lws-client
 
-**W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift and PHP, and a
+**W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift, PHP and Kotlin, and a
 WebAssembly component.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0b7a6d.svg)](LICENSE)
@@ -9,7 +9,7 @@ WebAssembly component.**
 
 [Linked Web Storage](https://w3c.github.io/lws-protocol/lws10-core/) is the W3C Working Group's protocol
 for giving applications secure, permissioned access to data that users keep in a storage of their
-choosing. It is the standards-track successor of the Solid Protocol. This repository contains nine
+choosing. It is the standards-track successor of the Solid Protocol. This repository contains ten
 independent, idiomatic client libraries that share one API design, one set of conformance fixtures
 and one interop test suite, and the Rust one built as a WebAssembly component for any language that
 can host components.
@@ -49,6 +49,7 @@ Every client implements the full client side of the LWS drafts as of **2026-10-0
 | C# | [`csharp/`](csharp) | `Ebremer.Lws.Client` (NuGet) | .NET 10 | `async` throughout with `CancellationToken`, `IAsyncEnumerable` listings, records; Ed25519 from BouncyCastle |
 | Swift | [`swift/`](swift) | `lws-client` (SwiftPM, product `LWS`) | Swift 6.0+; macOS 13, iOS 16, Linux | `async`/`await` with task cancellation, `AsyncSequence` listings, `Sendable` values, `URLSession`; CryptoKit (swift-crypto) |
 | PHP | [`php/`](php) | `ebremer/lws-client` (Composer) | PHP 8.2+ with ext-curl, ext-openssl, ext-sodium | No Composer dependencies, named arguments, `foreach` listings, readonly value objects; optional PSR-18 transport |
+| Kotlin | [`kotlin/`](kotlin) | `com.ebremer:lws-client-kotlin` (Maven, Gradle) | Kotlin 2.2+, JDK 17+ | Coroutines (`suspend` operations, `Flow` listings), named arguments, a sealed exception hierarchy, kotlinx.serialization JSON; JDK `java.net.http` and crypto |
 | WebAssembly | [`wasm/`](wasm) | `lws_client.wasm` (WASI 0.2 component) | A component host with `wasi:http`: Wasmtime, or jco for Node.js | The Rust client behind a WIT interface ([`wasm/wit/lws.wit`](wasm/wit/lws.wit)); requests and TLS through the host's `wasi:http` |
 
 The APIs use the same concept names everywhere (`discoverStorage`, `readContainer`, `listContainer`,
@@ -214,6 +215,21 @@ foreach ($client->listContainer($storage->storageRoot()) as $item) echo $item->i
 </details>
 
 <details>
+<summary><b>Kotlin</b></summary>
+
+```kotlin
+val me = SelfSignedCredentials.didKey(SigningKey.generateP256())
+val client = LwsClient(authenticator = TokenExchangeAuthenticator(me))
+
+val storage = client.discoverStorage(URI("https://storage.example/root/"))
+val todo = client.createJson(storage.storageRoot(), buildJsonObject { put("task", "write docs"); put("done", false) }, slug = "todo.json").location
+client.patch(todo, jsonPatch { replace("/done", true) })
+
+client.listContainer(storage.storageRoot()).collect { println(it.id) }
+```
+</details>
+
+<details>
 <summary><b>WebAssembly (from JavaScript, through jco)</b></summary>
 
 ```js
@@ -244,7 +260,7 @@ Each language directory has a `README.md` with build, test and example commands.
 
 ## Driving the clients
 
-[`driver/`](driver) is an MCP server (Spring AI) that controls all nine clients, and the component, through a
+[`driver/`](driver) is an MCP server (Spring AI) that controls all ten clients, and the component, through a
 small adapter per language, so that a test service such as [Touchstone](https://github.com/ebremer/touchstone) can make any
 of them perform LWS operations and judge what it sends. See [`driver/README.md`](driver/README.md).
 
@@ -254,7 +270,7 @@ of them perform LWS operations and judge what it sends. See [`driver/README.md`]
 design/            Cross-language API contract (client-api.md)
 conformance/       Shared fixtures (JSON test vectors) and the interop scenario
 testing/           Mock LWS server used for interop tests
-java/ js/ cpp/ rust/ go/ python/ csharp/ swift/ php/   The nine clients (Package.swift and composer.json, at the root, build swift/ and php/)
+java/ js/ cpp/ rust/ go/ python/ csharp/ swift/ php/ kotlin/   The ten clients (Package.swift and composer.json, at the root, build swift/ and php/)
 wasm/              The Rust client as a WebAssembly component (its interface: wasm/wit/lws.wit)
 driver/            MCP server that drives every client, and one adapter per language
 docs/              GitHub Pages site (generated from docs-src/ with `node docs-src/build.mjs`)
@@ -274,5 +290,5 @@ This is an independent implementation, not a W3C publication.
 
 ## License
 
-[MIT](LICENSE). This covers all nine clients, the component, the mock server, the fixtures and the
+[MIT](LICENSE). This covers all ten clients, the component, the mock server, the fixtures and the
 documentation.

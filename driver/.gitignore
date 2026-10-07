@@ -7,4 +7,7 @@ adapters/go/bin/
 adapters/cpp/build*/
 adapters/csharp/bin/
 adapters/csharp/obj/
+adapters/kotlin/build/
+adapters/kotlin/.gradle/
+adapters/kotlin/.kotlin/
 adapters/python/**/__pycache__/

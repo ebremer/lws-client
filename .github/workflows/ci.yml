@@ -283,6 +283,34 @@ jobs:
       - name: Check the PHP driver adapter
         run: node driver/adapters/check.mjs -- php driver/adapters/php/adapter.php
 
+  kotlin:
+    name: Kotlin (JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 17 is the minimum the build targets (-Xjdk-release=17).
+        java: [17, 21, 25]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Start mock LWS server
+        run: bash .github/scripts/start-mock-server.sh
+      # The library's tests (with the interop scenario), its examples, and the jars.
+      - run: ./gradlew --no-daemon build
+        working-directory: kotlin
+      - name: Build the Kotlin driver adapter
+        run: kotlin/gradlew --no-daemon -p driver/adapters/kotlin jar
+      - name: Check the Kotlin driver adapter
+        run: node driver/adapters/check.mjs -- java -jar driver/adapters/kotlin/build/libs/lws-driver-adapter-kotlin.jar
+
   wasm:
     name: WebAssembly component (wasm32-wasip2)
     runs-on: ubuntu-latest

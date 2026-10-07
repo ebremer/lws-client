@@ -1,6 +1,6 @@
 # LWS Client — Cross-Language API Contract
 
-Status: v0.1.0 design contract for all nine clients (Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift, PHP),
+Status: v0.1.0 design contract for all ten clients (Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift, PHP, Kotlin),
 and for the WebAssembly component built from the Rust one (section 13).
 
 Every client in this repository implements the **same capabilities** described here, using the
@@ -34,7 +34,8 @@ Every client exposes these values as named constants (grouped idiomatically: Jav
 constants, TS `const` objects, Python module constants/`StrEnum`, Rust `pub const` in modules,
 Go `const` blocks, C++ `inline constexpr std::string_view` in namespaces, C# `const` members of nested
 static classes, Swift `static let` members of caseless enums such as `LinkRelation`, `MediaType`, `ResourceType`, PHP class
-constants of final classes of the same names, `MediaType::LWS_JSON`).
+constants of final classes of the same names, `MediaType::LWS_JSON`, Kotlin `const val` members of objects of the same
+names, `MediaType.LWS_JSON`).
 
 ```
 # Namespaces / contexts
@@ -160,7 +161,7 @@ Protocol precedent). Non-ASCII and `%` characters are percent-encoded as UTF-8.
 ## 4. Client construction and configuration
 
 The entry point is **`LwsClient`** (Go: `lws.Client`, Rust: `lws_client::Client`, C++:
-`lws::Client`, Swift: `LWSClient`, after the Swift API Design Guidelines' upper-case acronyms, PHP: `Ebremer\Lws\LwsClient`). It is immutable after construction and safe to share between threads/tasks.
+`lws::Client`, Swift: `LWSClient`, after the Swift API Design Guidelines' upper-case acronyms, PHP: `Ebremer\Lws\LwsClient`, Kotlin: `com.ebremer.lws.kotlin.LwsClient`, built with named arguments). It is immutable after construction and safe to share between threads/tasks.
 
 Configuration (builder / options object / functional options, idiomatically):
 
@@ -179,7 +180,9 @@ Names below are the canonical concept names. Languages apply their own case
 optional per-call options value with at least `headers` (extra request headers) and, where
 the language has a cancellation idiom (Go `context.Context`, C# `CancellationToken`, JS `AbortSignal`, Rust future
 drop, Python asyncio cancellation, Swift task cancellation), support for it. PHP calls are synchronous; each
-takes its options as named arguments (`slug:`, `ifMatch:`, `headers:`, `timeout:`).
+takes its options as named arguments (`slug:`, `ifMatch:`, `headers:`, `timeout:`). Kotlin operations are `suspend`
+functions, cancelled with their coroutine, with the options as named arguments (`slug =`, `ifMatch =`, `headers =`,
+`timeout =`).
 
 URLs supplied by the caller may be relative only where the language's URL type allows it;
 **every URL returned to the caller is absolute** (resolved against the response URL). This
@@ -213,7 +216,7 @@ headers and relative `Link` targets.
 | `head(url)` | `HEAD` | `ResourceMetadata` |
 | `read(url, opts)` | `GET` (opts: `accept`, `range` (`bytes=` start/end), `ifNoneMatch`, `ifModifiedSince`, `prefer`) | `Resource` |
 | `readContainer(url, opts)` | `GET` with `Accept: application/lws+json` | `ContainerPage` |
-| `listContainer(url)` | follows `rel="next"` from `readContainer` lazily | lazy sequence of `ContainedResource` (Java `Stream`/`Iterable`, JS `AsyncIterable`, Python generator / async generator, Rust `Stream`, Go `iter.Seq2`, C++ input range, C# `IAsyncEnumerable`, Swift `AsyncSequence`, PHP `IteratorAggregate` for `foreach`) |
+| `listContainer(url)` | follows `rel="next"` from `readContainer` lazily | lazy sequence of `ContainedResource` (Java `Stream`/`Iterable`, JS `AsyncIterable`, Python generator / async generator, Rust `Stream`, Go `iter.Seq2`, C++ input range, C# `IAsyncEnumerable`, Swift `AsyncSequence`, PHP `IteratorAggregate` for `foreach`, Kotlin cold `Flow`) |
 
 `ResourceMetadata` (parsed response headers):
 `url` (final URL), `status`, `etag` (raw, including quotes / `W/` — echo it verbatim in
@@ -371,7 +374,7 @@ CredentialProvider
   * claims: `sub = iss = client_id = <agent URI>`, `aud = [<AS issuer>]`, `iat = now`,
     `exp = now + lifetime` (default 300 s), `jti = random UUID`.
   * Algorithms: **ES256 (P-256) required**, **EdDSA (Ed25519) required where the platform
-    provides it** (all nine do, via the chosen crypto stacks; PHP takes ES256 from ext-openssl and Ed25519 from ext-sodium; Swift takes both from swift-crypto, which is CryptoKit on Apple platforms; C# takes Ed25519 from BouncyCastle, as
+    provides it** (all ten do, via the chosen crypto stacks; Kotlin takes both from the JDK (`SHA256withECDSAinP1363Format`, `Ed25519`); PHP takes ES256 from ext-openssl and Ed25519 from ext-sodium; Swift takes both from swift-crypto, which is CryptoKit on Apple platforms; C# takes Ed25519 from BouncyCastle, as
     .NET 10 has none). ECDSA signatures are JOSE raw
     `r‖s` (64 bytes), never DER.
   * Factories: `forAgent(agentUri, privateKey, kid)` (HTTPS/DID agent whose CID document lists
@@ -445,7 +448,7 @@ Algorithm:
 10. Return the verified `Notification` (plus the `keyid` / storage used).
 
 Languages with a natural server abstraction add adapters (Node `Request`/`IncomingMessage`,
-Go `http.Handler` middleware, Python ASGI/WSGI-friendly function, Java `HttpExchange`, Rust
+Go `http.Handler` middleware, Python ASGI/WSGI-friendly function, Java and Kotlin `HttpExchange`, Rust
 `http::Request`).
 
 ## 8. Access requests and grants
@@ -530,7 +533,9 @@ with `System.NotImplementedException`); Swift one `enum LWSError: Error` with a 
 `.signatureVerification`, `.transport`, and `.invalidArgument` for caller input); PHP exceptions deriving from
 `Ebremer\Lws\Exception\LwsException` (a `\RuntimeException`) named `…Exception` (`NotFoundException`,
 `PreconditionFailedException`, `HttpException`, `ProtocolException`, …), with PHP's own `\InvalidArgumentException` for
-caller input; the WebAssembly component one `error` record whose `error-kind`
+caller input; Kotlin a sealed hierarchy under `com.ebremer.lws.kotlin.LwsException` (a `RuntimeException`), with the
+same `…Exception` names and Kotlin's own `IllegalArgumentException` for caller input; the WebAssembly component one
+`error` record whose `error-kind`
 names the class (`not-found`, `precondition-failed`, …, `authentication`, `protocol`, `transport`).
 
 ## 11. Testing requirements (all languages)
@@ -559,6 +564,7 @@ names the class (`not-found`, `precondition-failed`, …, `authentication`, `pro
 | C# | `Ebremer.Lws.Client` (NuGet) | `namespace Ebremer.Lws` | .NET 10 |
 | Swift | `lws-client` (SwiftPM; the manifest is the repository's root `Package.swift`) | `import LWS` | Swift 6.0, macOS 13 / iOS 16 / Linux |
 | PHP | `ebremer/lws-client` (Composer; the manifest is the repository's root `composer.json`) | `namespace Ebremer\Lws` | PHP 8.2 with ext-curl, ext-openssl, ext-sodium |
+| Kotlin | `com.ebremer:lws-client-kotlin:0.1.0` (Maven Central coordinates; built with Gradle) | `com.ebremer.lws.kotlin` | Kotlin 2.2, JDK 17 |
 | WebAssembly | `lws_client.wasm`, a WASI 0.2 component | WIT package `ebremer:lws@0.1.0`, world `lws-client` | a component host with `wasi:http` |
 
 All code is MIT licensed; every package manifest declares `MIT` and every source tree points to

@@ -53,6 +53,11 @@ CMakeUserPresets.json
 # Docs
 docs/_site/
 
+# Kotlin (Gradle)
+kotlin/build/
+kotlin/.gradle/
+kotlin/.kotlin/
+
 # PHP (composer.json at the root builds php/)
 /vendor/
 /composer.lock
