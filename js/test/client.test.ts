@@ -371,6 +371,38 @@ describe("authorization (token exchange)", () => {
     assert.equal(server.requests.filter((q) => q.url.startsWith(AS)).length, 0, "no credentials sent");
   });
 
+  test("the authorization server's redirects are not followed", async () => {
+    for (const redirected of ["/.well-known/lws-configuration", "/token"]) {
+      let stolen = 0;
+      const thief = createServer((_req, res) => {
+        stolen++;
+        res.end();
+      });
+      await new Promise<void>((resolve) => thief.listen(0, "127.0.0.1", resolve));
+      const thiefBase = `http://127.0.0.1:${(thief.address() as AddressInfo).port}`;
+      const server = createServer((req, res) => {
+        const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+        if (req.url === redirected) {
+          res.writeHead(307, { location: thiefBase + redirected }).end();
+        } else if (req.url === "/.well-known/lws-configuration") {
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ issuer: base, token_endpoint: `${base}/token` }));
+        } else {
+          res.writeHead(401, { "www-authenticate": `Bearer as_uri="${base}", realm="${base}/"` }).end();
+        }
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      try {
+        const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(new OpenIdCredentials("id")) });
+        await assert.rejects(client.read(`${base}/data/a`), AuthenticationError);
+        assert.equal(stolen, 0, `${redirected}: the redirect target received a request`);
+      } finally {
+        server.close();
+        thief.close();
+      }
+    }
+  });
+
   test("insecure authorization servers, issuer mismatch, unsupported token types and filters are rejected", async () => {
     const creds = SelfSignedCredentials.didKey(await generateKeyPair());
     const cases: [ReturnType<typeof lwsServer>, ConstructorParameters<typeof TokenExchangeAuthenticator>[1]][] = [

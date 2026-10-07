@@ -205,6 +205,18 @@ fn is_loopback(url: &Url) -> bool {
     }
 }
 
+/// The client for metadata and token requests when none is given: it never follows a redirect
+/// (a `307` or `308` would carry the subject token on to its target, past the https check), gives
+/// up after 30 s, and names the library in `User-Agent`.
+fn authorization_server_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(30))
+        .user_agent(crate::constants::USER_AGENT)
+        .build()
+        .expect("the HTTP client for the authorization server")
+}
+
 fn same_issuer(a: &str, b: &str) -> bool {
     a.trim_end_matches('/') == b.trim_end_matches('/')
 }
@@ -260,7 +272,10 @@ pub struct TokenExchangeAuthenticatorBuilder {
 }
 
 impl TokenExchangeAuthenticatorBuilder {
-    /// HTTP client used for metadata and token requests.
+    /// HTTP client used for metadata and token requests. Its own redirect policy then
+    /// applies: build it with `reqwest::redirect::Policy::none()`, as the default client is, or
+    /// a `307`/`308` from the authorization server carries the subject token, a credential, on
+    /// to wherever it points.
     #[must_use]
     pub fn http_client(mut self, client: reqwest::Client) -> Self {
         self.http = Some(client);
@@ -293,7 +308,7 @@ impl TokenExchangeAuthenticatorBuilder {
         TokenExchangeAuthenticator {
             inner: Arc::new(Inner {
                 provider: self.provider,
-                http: self.http.unwrap_or_default(),
+                http: self.http.unwrap_or_else(authorization_server_client),
                 allow_insecure_http: self.allow_insecure_http,
                 filter: self.filter,
                 refresh_margin: self.refresh_margin,

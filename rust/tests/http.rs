@@ -801,6 +801,52 @@ async fn realm_check_rejects_foreign_realm() {
     assert_eq!(s.exchanges.load(Ordering::SeqCst), 0);
 }
 
+/// The metadata and token requests never follow a redirect: a 307 or 308 would carry the
+/// subject token on to its target.
+#[tokio::test]
+async fn authorization_server_redirects_are_not_followed() {
+    for redirected in ["/.well-known/lws-configuration", "/token"] {
+        let server = MockServer::start().await;
+        let thief = MockServer::start().await;
+        let base = server.uri();
+        Mock::given(path(redirected))
+            .respond_with(
+                ResponseTemplate::new(307)
+                    .insert_header("location", format!("{}{redirected}", thief.uri()).as_str()),
+            )
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/.well-known/lws-configuration"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "issuer": base,
+                "token_endpoint": format!("{base}/token"),
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(path_prefix_matcher("/data/"))
+            .respond_with(ResponseTemplate::new(401).insert_header(
+                "www-authenticate",
+                format!("Bearer as_uri=\"{base}\", realm=\"{base}/data/\"").as_str(),
+            ))
+            .mount(&server)
+            .await;
+        let client = Client::builder()
+            .authenticator(TokenExchangeAuthenticator::new(OpenIdCredentials::new(
+                "id-token",
+            )))
+            .build()
+            .unwrap();
+        let err = client.read(url(&server, "/data/a")).await.unwrap_err();
+        assert!(err.is_authentication(), "{redirected}: {err:?}");
+        assert!(
+            requests(&thief).await.is_empty(),
+            "{redirected}: the redirect target received a request"
+        );
+    }
+}
+
 #[tokio::test]
 async fn unsupported_subject_token_type_is_rejected() {
     let s = auth_server(

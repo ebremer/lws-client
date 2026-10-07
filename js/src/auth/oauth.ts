@@ -65,7 +65,8 @@ export async function fetchAuthorizationServerMetadata(
   const url = metadataUrl(issuer);
   let response: Response;
   try {
-    response = await doFetch(url, { headers: { accept: MediaType.JSON }, signal: options.signal ?? null });
+    // Never follow a redirect from the authorization server (see exchangeToken).
+    response = await doFetch(url, { headers: { accept: MediaType.JSON }, redirect: "error", signal: options.signal ?? null });
   } catch (e) {
     throw new AuthenticationError(`could not fetch authorization server metadata from ${url}`, { cause: e });
   }
@@ -131,6 +132,9 @@ export async function exchangeToken(
       method: "POST",
       headers: { "content-type": MediaType.FORM, accept: MediaType.JSON },
       body: form.toString(),
+      // A 307 or 308 would carry the subject token, a credential, on to wherever it points, past
+      // the https check: a redirect here is a failed request.
+      redirect: "error",
       signal: options.signal ?? null,
     });
   } catch (e) {
