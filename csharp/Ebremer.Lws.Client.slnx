@@ -1,0 +1,14 @@
+<!-- SPDX-License-Identifier: MIT -->
+<Solution>
+  <Folder Name="/examples/">
+    <Project Path="examples/Quickstart/Quickstart.csproj" />
+    <Project Path="examples/SelfSignedAuth/SelfSignedAuth.csproj" />
+    <Project Path="examples/WebhookReceiver/WebhookReceiver.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Ebremer.Lws.Client/Ebremer.Lws.Client.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ebremer.Lws.Client.Tests/Ebremer.Lws.Client.Tests.csproj" />
+  </Folder>
+</Solution>

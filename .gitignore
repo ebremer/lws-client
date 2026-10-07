@@ -34,6 +34,10 @@ rust/target/
 # Go
 go/coverage.out
 
+# C#
+csharp/**/bin/
+csharp/**/obj/
+
 # C++
 cpp/build*/
 cpp/out/

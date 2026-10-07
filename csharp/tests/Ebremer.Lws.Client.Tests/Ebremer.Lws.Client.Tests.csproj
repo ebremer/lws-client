@@ -1,0 +1,37 @@
+<!-- SPDX-License-Identifier: MIT -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Ebremer.Lws.Tests</RootNamespace>
+    <!-- xunit.v3 4.x defaults to Microsoft.Testing.Platform; the .NET 10 SDK's `dotnet test` runs VSTest unless a
+         global.json opts in, so the tests run through xunit.runner.visualstudio + Microsoft.NET.Test.Sdk. -->
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+    <!-- The shared fixtures: csharp/../conformance -->
+    <LwsConformanceDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../conformance'))</LwsConformanceDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>LwsConformanceDir</_Parameter1>
+      <_Parameter2>$(LwsConformanceDir)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ebremer.Lws.Client/Ebremer.Lws.Client.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

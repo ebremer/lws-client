@@ -1,0 +1,30 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!--
+  The C# adapter of the lws-client driver (driver/PROTOCOL.md, lws-driver/1). Publish it self-contained, as a single
+  file, for linux-x64 into driver/adapters/csharp/bin (the exact command is in csharp/README.md); the driver then runs
+  adapters/csharp/bin/lws-driver-adapter-csharp.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>lws-driver-adapter-csharp</AssemblyName>
+    <RootNamespace>Ebremer.Lws.Driver.Adapter</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- One file: no separate symbols or documentation next to the executable. -->
+    <DebugType>embedded</DebugType>
+    <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../csharp/src/Ebremer.Lws.Client/Ebremer.Lws.Client.csproj" />
+  </ItemGroup>
+
+</Project>
