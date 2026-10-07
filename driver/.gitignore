@@ -2,6 +2,7 @@
 server/target/
 adapters/java/target/
 adapters/rust/target/
+adapters/wasm/target/
 adapters/go/bin/
 adapters/cpp/build*/
 adapters/csharp/bin/

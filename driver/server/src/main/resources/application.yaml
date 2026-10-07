@@ -22,7 +22,8 @@ spring:
         streamable-http:
           mcp-endpoint: /mcp
         instructions: >-
-          Drives the lws-client libraries (Java, JavaScript, Python, Go, Rust, C++, C#) as LWS clients. Start a client
+          Drives the lws-client libraries (Java, JavaScript, Python, Go, Rust, C++, C#, and the Rust client as a
+          WebAssembly component) as LWS clients. Start a client
           with start_client (a language and an identity), then call the operation tools (discover_storage, read,
           create, patch, delete, read_linkset, subscribe, search_types, ...) with its id. Each operation tool
           returns {ok: true, result} or {ok: false, error: {kind, status, message}}: an error outcome, such as a
@@ -66,6 +67,9 @@ lws:
       csharp:
         description: lws-client for C# (csharp/), .NET 10
         command: [adapters/csharp/bin/lws-driver-adapter-csharp]
+      wasm:
+        description: lws-client as a WebAssembly component (wasm/), in Wasmtime
+        command: [adapters/wasm/target/release/lws-driver-adapter-wasm, ../wasm/target/wasm32-wasip2/release/lws_client.wasm]
 
 logging:
   level:
