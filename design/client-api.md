@@ -309,13 +309,19 @@ Users may implement their own (cookies, DPoP, mTLS…).
 2. **Realm check (client MUST):** the request URL must be logically contained in `realm`: same
    scheme, host and port, and the request path equals the realm path or starts with the realm
    path (treated as a directory, i.e. ending in `/`). Otherwise → `AuthenticationError`.
+   **Decision:** a challenge that fails this check (or steps 3–4) is not acted on at all. In particular
+   a cached token the request carried is **not** dropped: a storage can hold a resource whose 401 names
+   a realm that does not contain it (Touchstone's decoy), and believing it would cost the client a valid
+   token.
 3. **Transport security:** `as_uri` and the token endpoint MUST be `https`, except loopback hosts
    (`localhost`, `127.0.0.1`, `[::1]`) or when the option `allowInsecureHttp` is enabled.
 4. Optional policy: `authorizationServerFilter(asUri, realm) -> bool` (default: allow). If it
    rejects → `AuthenticationError`. (Security note: a malicious storage can name any AS; tokens
    minted by the self-signed provider are audience-bound to that AS, but static OpenID/SAML
    tokens may not be — use the filter or audience-restricted tokens.)
-5. Fetch AS metadata (RFC 8414 §3.1): for issuer `https://as.example` →
+5. **Metadata and token requests never follow a redirect**; a `3xx` there is an `AuthenticationError`.
+   A `307`/`308` would carry the subject token, a credential, on to wherever it points, past step 3.
+   Fetch AS metadata (RFC 8414 §3.1): for issuer `https://as.example` →
    `https://as.example/.well-known/lws-configuration`; for an issuer with a path
    `https://as.example/t1` → `https://as.example/.well-known/lws-configuration/t1`.
    The returned `issuer` MUST equal `as_uri` (ignoring one trailing `/`) else
@@ -412,7 +418,8 @@ Algorithm:
    error. If `expires` is present it must not be in the past. `created` must be within
    `[now - maxAge, now + clockSkew]`.
 4. `keyid` MUST be a URL with a fragment. Storage identifier = keyid without fragment. If
-   `trustedStorages` is set, the storage identifier must be in it.
+   `trustedStorages` is set, the storage identifier must be in it, compared as URLs (scheme and host
+   case-insensitively, default ports dropped). An empty list trusts no storage.
 5. Fetch the storage description (cache). Its `id` MUST equal the storage identifier.
 6. Find the `verificationMethod` whose `id` equals the full keyid, or equals the fragment
    (`#frag` or `frag`), or resolves (relative to the storage id) to the keyid. It MUST be
@@ -466,7 +473,7 @@ Models (JSON-LD `application/lws+json`, `@context: ["https://www.w3.org/ns/lws/v
 |---|---|---|
 | `readTypeIndex(serviceUrl or pageUrl)` | `GET`, `Accept: application/lws+json` | `TypeIndexPage { totalItems?, types: List<string>, first/next/prev/last }` |
 | `listTypes(serviceUrl)` | follows `next` | lazy sequence of type IRIs |
-| `searchTypes(serviceUrl, TypeQuery)` | **`QUERY`** (RFC 10008) with `Content-Type: application/lws-query+json`, `Accept: application/lws+json`; body is the filter JSON | `SearchPage` (= `ContainerPage` shape, `type: "ContainerPage"`, items carry at least `id`/`type`) |
+| `searchTypes(serviceUrl, TypeQuery)` | **`QUERY`** (RFC 10008) with `Content-Type: application/lws-query+json`, `Accept: application/lws+json`; body is the filter JSON | `SearchPage` (= `ContainerPage` shape, `type: "ContainerPage"`, items carry at least `id`/`type`; `id` is the page's own URL when the body has none) |
 | `searchAll(serviceUrl, TypeQuery)` | `QUERY` first page, then `GET` each opaque `next` link | lazy sequence of `ContainedResource` |
 | `acceptedQueryFormats(serviceUrl)` | `OPTIONS`; parse `Accept-Query` (and `Allow`) | list of media types |
 
