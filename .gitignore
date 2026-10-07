@@ -30,6 +30,7 @@ python/dist/
 
 # Rust
 rust/target/
+wasm/target/
 
 # Go
 go/coverage.out

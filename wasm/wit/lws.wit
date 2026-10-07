@@ -1,0 +1,513 @@
+// SPDX-License-Identifier: MIT
+//
+// The lws-client as a WebAssembly component: a client of the W3C Linked Web Storage (LWS)
+// Protocol 1.0 and its companion specifications, as of the Working Group drafts of 2026-10-05.
+// It is the Rust client of ../rust, built for wasm32-wasip2; its requests go out through the
+// host's wasi:http, and the host does TLS.
+//
+// URLs are strings, and every URL the component returns is absolute. JSON-LD documents (storage
+// descriptions, access requests and grants, linksets, notifications) cross as JSON text (`json`);
+// everything else is typed.
+
+package ebremer:lws@0.1.0;
+
+/// The values the operations take and return.
+interface types {
+    /// A JSON text.
+    type json = string;
+
+    /// A header field: its name and value.
+    type header = tuple<string, string>;
+
+    /// A web link (RFC 8288): from a `Link` header of a response, or one to send.
+    record link {
+        href: string,
+        rel: string,
+        /// Its other parameters (`anchor`, `type`, `title`, ...).
+        params: list<tuple<string, string>>,
+    }
+
+    /// The metadata of a response.
+    record metadata {
+        /// The URL that answered (after any redirects).
+        url: string,
+        status: u16,
+        etag: option<string>,
+        last-modified: option<string>,
+        content-type: option<string>,
+        content-length: option<u64>,
+        links: list<link>,
+        /// The target of `rel="linkset"`.
+        linkset: option<string>,
+        /// The target of `rel="up"`: the parent container.
+        parent: option<string>,
+        /// The target of `rel="https://www.w3.org/ns/lws#storage"`.
+        storage: option<string>,
+        /// The resource's types (`rel="type"`).
+        types: list<string>,
+        allow: list<string>,
+        accept-patch: list<string>,
+        /// Every response header.
+        headers: list<header>,
+    }
+
+    /// A resource read with `GET`.
+    record read-result {
+        metadata: metadata,
+        /// The body; empty when `not-modified`.
+        body: list<u8>,
+        /// A conditional read was answered `304 Not Modified`.
+        not-modified: bool,
+        /// The `Content-Range` of a `206 Partial Content`.
+        content-range: option<string>,
+    }
+
+    /// A resource created with `POST`.
+    record created {
+        /// The new resource (from `Location`).
+        location: string,
+        metadata: metadata,
+        body: list<u8>,
+    }
+
+    /// The answer to a `PUT` or `PATCH`.
+    record updated {
+        status: u16,
+        etag: option<string>,
+        metadata: metadata,
+        body: list<u8>,
+    }
+
+    /// A member of a container, or a search result.
+    record item {
+        id: string,
+        types: list<string>,
+        /// Its media type.
+        format: option<string>,
+        size: option<u64>,
+        /// When it last changed, as the server wrote it.
+        modified: option<string>,
+    }
+
+    /// A page of a container listing or of search results.
+    record page {
+        id: string,
+        types: list<string>,
+        total-items: option<u64>,
+        items: list<item>,
+        first: option<string>,
+        next: option<string>,
+        prev: option<string>,
+        last: option<string>,
+        metadata: metadata,
+    }
+
+    /// A page of the Type Index.
+    record type-index-page {
+        total-items: option<u64>,
+        /// Type IRIs.
+        types: list<string>,
+        first: option<string>,
+        next: option<string>,
+        prev: option<string>,
+        last: option<string>,
+        metadata: metadata,
+    }
+
+    /// A service of a storage description.
+    record service {
+        id: option<string>,
+        types: list<string>,
+        service-endpoint: string,
+        /// The subscription types of a notification service, when it lists them.
+        subscription-types: option<list<string>>,
+        /// The service's JSON-LD object.
+        raw: json,
+    }
+
+    /// A verification method of a storage description.
+    record verification-method {
+        id: string,
+        method-type: option<string>,
+        controller: option<string>,
+        /// The public key, when it is a JWK.
+        public-key-jwk: option<json>,
+    }
+
+    /// A storage description.
+    record storage-description {
+        id: string,
+        types: list<string>,
+        /// The endpoint of the `StorageRoot` service, when there is one.
+        storage-root: option<string>,
+        services: list<service>,
+        verification-methods: list<verification-method>,
+        /// The whole document.
+        raw: json,
+    }
+
+    /// A linkset (RFC 9264) read from its resource.
+    record linkset-document {
+        url: string,
+        etag: option<string>,
+        /// The linkset, as `application/linkset+json`.
+        linkset: json,
+        allow: list<string>,
+        accept-patch: list<string>,
+        metadata: metadata,
+    }
+
+    /// A webhook subscription to create.
+    record subscription-request {
+        /// The resources to watch.
+        topics: list<string>,
+        /// Where the storage delivers the notifications.
+        inbox: string,
+        /// When the subscription should end (an `xsd:dateTime`).
+        expires: option<string>,
+    }
+
+    /// A subscription.
+    record subscription {
+        url: string,
+        subscription-type: string,
+        expires: option<string>,
+        raw: json,
+    }
+
+    /// An operation of a JSON Patch (RFC 6902).
+    enum patch-op { add, remove, replace, move, copy, test }
+
+    record patch-operation {
+        op: patch-op,
+        path: string,
+        /// The source of `move` and `copy`.
+        %from: option<string>,
+        /// The value of `add`, `replace` and `test`, as JSON (`"null"` is a value).
+        value: option<json>,
+    }
+
+    /// A group of a type query: one IRI that must match, or IRIs one of which must.
+    variant query-group {
+        one(string),
+        any(list<string>),
+    }
+
+    /// An indexed relation and the groups its values must match.
+    record relation-filter {
+        relation: string,
+        groups: list<query-group>,
+    }
+
+    /// A query of the Type Search Service: every group must match.
+    record type-query {
+        types: list<query-group>,
+        relations: list<relation-filter>,
+    }
+
+    /// What went wrong.
+    enum error-kind {
+        // An error response, by status.
+        bad-request,
+        unauthorized,
+        forbidden,
+        not-found,
+        method-not-allowed,
+        not-acceptable,
+        conflict,
+        gone,
+        precondition-failed,
+        unsupported-media-type,
+        unprocessable-content,
+        not-implemented,
+        insufficient-storage,
+        /// An error response of another status.
+        http,
+        /// Token exchange failed, or no credentials fit.
+        authentication,
+        /// The server's answer breaks the protocol.
+        protocol,
+        /// A notification's signature does not verify.
+        signature-verification,
+        /// An argument is invalid.
+        invalid-input,
+        /// A key or signature failed.
+        crypto,
+        /// The host's wasi:http failed to send the request or deliver the response.
+        transport,
+        /// A failure of the component's own.
+        internal,
+    }
+
+    /// The error response behind an error.
+    record http-error {
+        status: u16,
+        method: string,
+        url: string,
+        headers: list<header>,
+        /// Its problem details (RFC 9457).
+        problem: option<json>,
+        /// The start of its body.
+        body: string,
+        allow: list<string>,
+        accept-patch: list<string>,
+    }
+
+    record error {
+        kind: error-kind,
+        message: string,
+        /// For the kinds of an error response.
+        http: option<http-error>,
+        /// For `authentication`: the OAuth error and its description.
+        oauth-error: option<string>,
+        oauth-error-description: option<string>,
+    }
+}
+
+/// Subject tokens from the host, for an `openid` or `saml` client that asks for them.
+interface token-source {
+    enum token-kind {
+        /// An OpenID Connect ID token.
+        openid,
+        /// A base64url-encoded SAML 2.0 assertion.
+        saml,
+    }
+
+    /// A subject token for a token exchange at the authorization server `issuer`, for an access
+    /// token to `realm`; an error message when there is none.
+    subject-token: func(kind: token-kind, issuer: string, realm: string) -> result<string, string>;
+}
+
+/// The client.
+interface client {
+    use types.{
+        json, header, link, metadata, read-result, created, updated, item, page, type-index-page,
+        storage-description, linkset-document, subscription-request, subscription,
+        patch-operation, type-query, error,
+    };
+
+    /// Where the subject token of `openid` or `saml` comes from.
+    variant subject-token {
+        /// This token, for every exchange.
+        fixed(string),
+        /// `token-source.subject-token`, for each exchange.
+        host,
+    }
+
+    enum key-algorithm {
+        /// ECDSA with P-256.
+        es256,
+        /// Ed25519.
+        eddsa,
+    }
+
+    /// A known access token.
+    record bearer-token {
+        token: string,
+        /// Sent only to URLs under this one, when given.
+        realm: option<string>,
+    }
+
+    /// A self-signed identity: an agent whose controlled identifier document lists the key.
+    record self-signed-key {
+        agent: string,
+        /// The private key, as a JWK.
+        private-jwk: json,
+        /// The key's id; the JWK's `kid` when none.
+        kid: option<string>,
+    }
+
+    /// How the client authenticates.
+    variant auth {
+        /// Anonymously.
+        none,
+        bearer(bearer-token),
+        /// LWS token exchange with an OpenID Connect ID token.
+        openid(subject-token),
+        /// LWS token exchange with a SAML assertion.
+        saml(subject-token),
+        /// LWS token exchange with self-signed tokens.
+        self-signed(self-signed-key),
+        /// LWS token exchange as a fresh `did:key`.
+        did-key(key-algorithm),
+    }
+
+    record options {
+        auth: auth,
+        /// Default: the library's (`library`).
+        user-agent: option<string>,
+        /// Per request; default 30 seconds.
+        timeout-ms: option<u64>,
+        /// Sent with every request.
+        headers: list<header>,
+        /// Allows `http` authorization servers off loopback (testing only).
+        allow-insecure-http: bool,
+    }
+
+    /// A self-signed client's identity.
+    record identity {
+        agent: string,
+        kid: string,
+    }
+
+    record read-options {
+        accept: option<string>,
+        /// A byte range: from `range-start` to `range-end` (inclusive), or to the end.
+        range-start: option<u64>,
+        range-end: option<u64>,
+        if-none-match: option<string>,
+        prefer: option<string>,
+        headers: list<header>,
+    }
+
+    record create-options {
+        /// A name for the new resource (`Slug`).
+        slug: option<string>,
+        /// Its types beyond the server's own (`rel="type"` links).
+        types: list<string>,
+        /// Other user-managed links.
+        links: list<link>,
+        headers: list<header>,
+    }
+
+    record update-options {
+        if-match: option<string>,
+        if-none-match: option<string>,
+        /// Links sent with the request; applied to the linkset with `set-linkset`.
+        links: list<link>,
+        /// Replace (`PUT`) or patch (`PATCH`) the linkset too, atomically (`Prefer: set-linkset`).
+        set-linkset: bool,
+        headers: list<header>,
+    }
+
+    record delete-options {
+        if-match: option<string>,
+        /// Delete a container and everything in it (`Depth: infinity`).
+        recursive: bool,
+        headers: list<header>,
+    }
+
+    /// The library and its version: `lws-client-rust/<version>`.
+    library: func() -> string;
+
+    resource client {
+        /// A client with these options.
+        new: static func(options: options) -> result<client, error>;
+
+        /// The agent and key id, for a self-signed or `did:key` client.
+        identity: func() -> option<identity>;
+
+        // Discovery
+        /// The storage a resource belongs to, from its `rel="https://www.w3.org/ns/lws#storage"`.
+        discover-storage: func(url: string) -> result<storage-description, error>;
+        get-storage-description: func(url: string) -> result<storage-description, error>;
+
+        // Reading
+        head: func(url: string) -> result<metadata, error>;
+        read: func(url: string, options: read-options) -> result<read-result, error>;
+        read-container: func(url: string) -> result<page, error>;
+        /// Every member of a container, page by page as they are needed.
+        list-container: func(url: string) -> items;
+
+        // Writing
+        create: func(container: string, body: list<u8>, content-type: string, options: create-options) -> result<created, error>;
+        create-container: func(parent: string, options: create-options) -> result<created, error>;
+        update: func(url: string, body: list<u8>, content-type: string, options: update-options) -> result<updated, error>;
+        patch: func(url: string, patch: list<patch-operation>, options: update-options) -> result<updated, error>;
+        delete: func(url: string, options: delete-options) -> result<_, error>;
+
+        // Linksets
+        linkset-url: func(url: string) -> result<string, error>;
+        /// The linkset of a resource.
+        read-linkset: func(url: string) -> result<linkset-document, error>;
+        /// A linkset, by its own URL.
+        read-linkset-document: func(linkset-url: string) -> result<linkset-document, error>;
+        update-linkset: func(linkset-url: string, linkset: json, options: update-options) -> result<updated, error>;
+        patch-linkset: func(linkset-url: string, patch: list<patch-operation>, options: update-options) -> result<updated, error>;
+
+        // Notifications
+        subscribe: func(service-url: string, request: subscription-request) -> result<subscription, error>;
+        list-subscriptions: func(service-url: string) -> items;
+        get-subscription: func(url: string) -> result<subscription, error>;
+        unsubscribe: func(url: string) -> result<_, error>;
+
+        // Access requests and grants: JSON-LD documents
+        /// Submits an access request; returns its URL.
+        request-access: func(service-url: string, request: json) -> result<string, error>;
+        get-access-request: func(url: string) -> result<json, error>;
+        list-access-requests: func(service-url: string) -> items;
+        cancel-access-request: func(url: string) -> result<_, error>;
+        /// Creates an access grant; returns its URL.
+        grant-access: func(service-url: string, grant: json) -> result<string, error>;
+        get-access-grant: func(url: string) -> result<json, error>;
+        list-access-grants: func(service-url: string) -> items;
+        revoke-access-grant: func(url: string) -> result<_, error>;
+
+        // Type Index and search
+        read-type-index: func(url: string) -> result<type-index-page, error>;
+        /// Every type IRI of the Type Index, page by page as they are needed.
+        list-types: func(service-url: string) -> type-iris;
+        /// The first page of results (`QUERY`).
+        search-types: func(service-url: string, query: type-query) -> result<page, error>;
+        /// A later page of results, by its `next` URL.
+        read-search-page: func(page-url: string) -> result<page, error>;
+        /// Every result, page by page as they are needed.
+        search-all: func(service-url: string, query: type-query) -> items;
+        /// The query formats a search endpoint accepts (`Accept-Query`).
+        accepted-query-formats: func(service-url: string) -> result<list<string>, error>;
+    }
+
+    /// A listing, read one item at a time.
+    resource items {
+        /// The next item; none at the end.
+        next: func() -> result<option<item>, error>;
+    }
+
+    /// Type IRIs, read one at a time.
+    resource type-iris {
+        /// The next type IRI; none at the end.
+        next: func() -> result<option<string>, error>;
+    }
+}
+
+/// The receiving side of webhook notifications: signatures (RFC 9421) and digests (RFC 9530).
+interface webhook {
+    use types.{json, header, error};
+    use client.{client};
+
+    record activity {
+        id: option<string>,
+        types: list<string>,
+        /// The resource the activity is about.
+        object: string,
+        object-types: list<string>,
+        actor: option<string>,
+        target: option<string>,
+        origin: option<string>,
+        published: option<string>,
+    }
+
+    record verified-notification {
+        /// The storage that signed it.
+        storage: string,
+        /// The key that signed it.
+        key-id: string,
+        activities: list<activity>,
+        raw: json,
+    }
+
+    resource verifier {
+        /// A verifier that fetches each storage's description, and its keys, with `client`. With
+        /// `trusted-storages`, notifications from other storages fail.
+        new: static func(client: borrow<client>, trusted-storages: option<list<string>>) -> result<verifier, error>;
+
+        /// Verifies a delivery to the inbox `url`.
+        verify: func(method: string, url: string, headers: list<header>, body: list<u8>) -> result<verified-notification, error>;
+    }
+}
+
+world lws-client {
+    import token-source;
+    export client;
+    export webhook;
+}
