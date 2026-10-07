@@ -1,6 +1,6 @@
 # lws-client driver
 
-An [MCP](https://modelcontextprotocol.io/) server that controls all eight lws-client libraries, and the Rust one
+An [MCP](https://modelcontextprotocol.io/) server that controls all nine lws-client libraries, and the Rust one
 as a WebAssembly component too, so that a test
 service can make each client do exactly what a test needs. The motivating user is
 [Touchstone](https://github.com/ebremer/touchstone): its client sessions record and judge every request a
@@ -34,7 +34,7 @@ point is to see what the **client** sends.
 |---|---|
 | [`PROTOCOL.md`](PROTOCOL.md) | the adapter protocol, `lws-driver/1` |
 | [`server/`](server) | the MCP server (Maven, Spring Boot 4.1.1, Spring AI 2.0.1, Java 17) |
-| [`adapters/<language>/`](adapters) | one adapter per language: `java`, `js`, `python`, `go`, `rust`, `cpp`, `csharp`, `swift`, and `wasm` for the component |
+| [`adapters/<language>/`](adapters) | one adapter per language: `java`, `js`, `python`, `go`, `rust`, `cpp`, `csharp`, `swift`, `php`, and `wasm` for the component |
 | [`adapters/check.mjs`](adapters/check.mjs) | checks an adapter against the mock server, through the protocol |
 | [`touchstone/`](touchstone) | plays Touchstone's part: drives each language through a Touchstone client session |
 | [`pom.xml`](pom.xml) | builds the Java library, the Java adapter and the server together |
@@ -54,6 +54,7 @@ root:
 | C++ | `cmake -S driver/adapters/cpp -B driver/adapters/cpp/build -G Ninja && cmake --build driver/adapters/cpp/build` | `adapters/cpp/build/lws-driver-adapter-cpp` |
 | C# | `dotnet publish driver/adapters/csharp -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o driver/adapters/csharp/bin` (.NET 10 SDK) | `adapters/csharp/bin/lws-driver-adapter-csharp` |
 | Swift | `swift build -c release --product lws-driver-adapter-swift` at the repository root (Swift 6.0+); `--static-swift-stdlib --build-system native` makes a binary that needs only the system libcurl | `../.build/release/lws-driver-adapter-swift` |
+| PHP | nothing to build: the adapter loads the library from `php/src` (or through `vendor/autoload.php` after `composer install`); PHP 8.2+ with ext-curl, ext-openssl and ext-sodium | `php adapters/php/adapter.php` |
 | WebAssembly | `cargo build --release --target wasm32-wasip2 --manifest-path wasm/Cargo.toml`, then `cargo build --release --manifest-path driver/adapters/wasm/Cargo.toml` (Rust 1.96+) | `adapters/wasm/target/release/lws-driver-adapter-wasm ../wasm/target/wasm32-wasip2/release/lws_client.wasm` |
 
 Check an adapter with the mock server (Node 22+):
@@ -172,7 +173,7 @@ node driver/touchstone/run-sessions.mjs --out results/
 Follow [CONTRIBUTING.md](../CONTRIBUTING.md), then:
 - add the operation to PROTOCOL.md §4 and to the tool catalog,
   [`operations.json`](server/src/main/resources/operations.json);
-- implement it in all nine adapters (for `wasm`, in the component's interface, wasm/wit/lws.wit, first);
+- implement it in all ten adapters (for `wasm`, in the component's interface, wasm/wit/lws.wit, first);
 - add a check to `adapters/check.mjs`.
 
 `OperationCatalogTest` fails until the catalog and PROTOCOL.md agree.

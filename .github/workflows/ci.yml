@@ -255,6 +255,34 @@ jobs:
       - name: Check the Swift driver adapter
         run: node driver/adapters/check.mjs -- .build/release/lws-driver-adapter-swift
 
+  php:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.2 is the minimum composer.json declares.
+        php: ["8.2", "8.3", "8.4", "8.5"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, openssl, sodium
+          coverage: none
+      - name: Start mock LWS server
+        run: bash .github/scripts/start-mock-server.sh
+      # The package's manifest is the root composer.json: the library (php/src), its tests and examples.
+      - run: composer validate --strict
+      - run: composer install --no-interaction --no-progress
+      - run: composer analyse
+      - run: composer test
+      - name: Check the PHP driver adapter
+        run: node driver/adapters/check.mjs -- php driver/adapters/php/adapter.php
+
   wasm:
     name: WebAssembly component (wasm32-wasip2)
     runs-on: ubuntu-latest

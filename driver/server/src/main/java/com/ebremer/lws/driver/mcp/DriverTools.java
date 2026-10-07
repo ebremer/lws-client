@@ -86,7 +86,7 @@ public class DriverTools {
                     + " Returns the client id that the operation tools take.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, openWorldHint = false))
     public CallToolResult startClient(
-            @McpToolParam(description = "The language: java, js, python, go, rust, cpp, csharp, swift or wasm (see list_languages).") String language,
+            @McpToolParam(description = "The language: java, js, python, go, rust, cpp, csharp, swift, php or wasm (see list_languages).") String language,
             @McpToolParam(description = "none, bearer, openid, selfSigned or didKey; default none.", required = false) String authType,
             @McpToolParam(description = "bearer: the access token.", required = false) String token,
             @McpToolParam(description = "bearer: send the token only to URLs inside this realm.", required = false) String realm,
