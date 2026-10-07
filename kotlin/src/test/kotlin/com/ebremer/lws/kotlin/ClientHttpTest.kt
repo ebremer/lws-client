@@ -232,6 +232,8 @@ class ClientHttpTest {
         assertEquals(listOf("*", "set-linkset", "<https://e.example/l>; rel=\"license\""), listOf(t.last.headers["if-none-match"], t.last.headers["prefer"], t.last.headers["link"]))
         client.updateJson(s("j.json"), json("""{"a":1}"""))
         assertEquals(listOf("application/json", """{"a":1}"""), listOf(t.last.headers["content-type"], t.last.text))
+        client.updateText(s("a.txt"), "v2", links = listOf(Link(URI("https://e.example/l"), "license")), setLinkset = true)
+        assertEquals(listOf("v2", "set-linkset", "<https://e.example/l>; rel=\"license\""), listOf(t.last.text, t.last.headers["prefer"], t.last.headers["link"]))
         val conflict = assertFailsWith<ConflictException> { client.delete(s("c/")) }
         assertEquals("Container not empty", conflict.problem?.title)
         client.delete(s("c/"), recursive = true)

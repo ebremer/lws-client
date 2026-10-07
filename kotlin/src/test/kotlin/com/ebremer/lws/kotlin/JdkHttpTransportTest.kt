@@ -53,7 +53,7 @@ class JdkHttpTransportTest {
     fun stop() = server.stop(0)
 
     @Test
-    fun methodsBodiesAndHeaders() = runBlocking {
+    fun methodsBodiesAndHeaders(): Unit = runBlocking {
         val t = JdkHttpTransport()
         for (method in listOf("QUERY", "PATCH", "POST", "PUT")) {
             val r = t.send(HttpRequest(method, URI("$base/echo"), Headers.of("X-Test" to "yes", "Content-Type" to "text/plain"), "body".toByteArray()))
@@ -69,7 +69,7 @@ class JdkHttpTransportTest {
     }
 
     @Test
-    fun redirectsAreNotFollowed() = runBlocking {
+    fun redirectsAreNotFollowed(): Unit = runBlocking {
         val r = JdkHttpTransport().send(HttpRequest("GET", URI("$base/redirect")))
         assertEquals(302, r.status)
         assertEquals("/echo", r.headers["location"])
@@ -79,14 +79,14 @@ class JdkHttpTransportTest {
     }
 
     @Test
-    fun refusedConnectionIsATransportError() = runBlocking {
+    fun refusedConnectionIsATransportError(): Unit = runBlocking {
         val port = ServerSocket(0).use { it.localPort }
         val e = assertFailsWith<TransportException> { JdkHttpTransport().send(HttpRequest("GET", URI("http://127.0.0.1:$port/"))) }
         assertFalse(e.isTimeout)
     }
 
     @Test
-    fun timeoutIsReported() = runBlocking {
+    fun timeoutIsReported(): Unit = runBlocking {
         ServerSocket(0).use { silent ->
             val e = assertFailsWith<TransportException> {
                 JdkHttpTransport().send(HttpRequest("QUERY", URI("http://127.0.0.1:${silent.localPort}/"), Headers.EMPTY, "{}".toByteArray(), 300.milliseconds))

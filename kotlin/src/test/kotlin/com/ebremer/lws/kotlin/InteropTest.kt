@@ -34,7 +34,7 @@ class InteropTest {
     private class Delivery(val method: String, val headers: Map<String, List<String>>, val body: ByteArray)
 
     @Test
-    fun scenario() = runBlocking {
+    fun scenario(): Unit = runBlocking {
         val server = System.getenv("LWS_TEST_SERVER")
         assumeTrue(!server.isNullOrEmpty(), "LWS_TEST_SERVER is not set")
         val base = server!!.trimEnd('/')
@@ -138,6 +138,5 @@ class InteropTest {
         assertFailsWith<ConflictException> { client.delete(c) }
         client.delete(c, recursive = true)
         assertFailsWith<NotFoundException> { client.read(h) }
-        Unit
     }
 }

@@ -268,9 +268,11 @@ public class LwsClient(
         contentType: String = "text/plain",
         ifMatch: String? = null,
         ifNoneMatch: String? = null,
+        links: List<Link> = emptyList(),
+        setLinkset: Boolean = false,
         headers: Map<String, String> = emptyMap(),
         timeout: Duration? = null,
-    ): UpdateResult = update(url, text.toByteArray(Charsets.UTF_8), contentType, ifMatch, ifNoneMatch, headers = headers, timeout = timeout)
+    ): UpdateResult = update(url, text.toByteArray(Charsets.UTF_8), contentType, ifMatch, ifNoneMatch, links, setLinkset, headers, timeout)
 
     /** Replaces a resource's content with JSON (`application/json` by default). */
     public suspend fun updateJson(
@@ -279,9 +281,11 @@ public class LwsClient(
         contentType: String = MediaType.JSON,
         ifMatch: String? = null,
         ifNoneMatch: String? = null,
+        links: List<Link> = emptyList(),
+        setLinkset: Boolean = false,
         headers: Map<String, String> = emptyMap(),
         timeout: Duration? = null,
-    ): UpdateResult = update(url, JsonAccess.encode(value).toByteArray(Charsets.UTF_8), contentType, ifMatch, ifNoneMatch, headers = headers, timeout = timeout)
+    ): UpdateResult = update(url, JsonAccess.encode(value).toByteArray(Charsets.UTF_8), contentType, ifMatch, ifNoneMatch, links, setLinkset, headers, timeout)
 
     /** Patches a resource with a [JsonPatch] (`PATCH`, `application/json-patch+json`, the LWS baseline). */
     public suspend fun patch(
