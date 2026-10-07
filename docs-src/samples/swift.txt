@@ -1,0 +1,380 @@
+@@@ install bash
+# Package.swift: the package is the repository itself (its Package.swift is at the root)
+#   dependencies: [.package(url: "https://github.com/ebremer/lws-client.git", from: "0.1.0")]
+#   target dependencies: [.product(name: "LWS", package: "lws-client")]
+# Xcode: File > Add Package Dependencies…, https://github.com/ebremer/lws-client.git, product "LWS"
+
+# Swift 6.0+; macOS 13, iOS 16, tvOS 16, watchOS 9, visionOS 1, or Linux.
+# One dependency: swift-crypto (CryptoKit on Apple platforms), for ES256 and Ed25519.
+@@@ first-program
+import Foundation
+import LWS
+
+let credentials = try SelfSignedCredentials.didKey(.generateP256())
+let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))
+print("agent:   \(credentials.agent)")
+
+let storage = try await client.discoverStorage(URL(string: "http://localhost:8787/root/")!)
+print("storage: \(storage.id)  root: \(try storage.storageRoot())")
+
+let folder = try await client.createContainer(in: try storage.storageRoot(), options: CreateOptions(slug: "hello-world"))
+let file = try await client.createText(in: folder.location, text: "Hello, LWS!", options: CreateOptions(slug: "hello.txt"))
+print("created: \(file.location)")
+
+let resource = try await client.read(file.location)
+print("\(resource.text)  (etag \(resource.etag ?? "-"), parent \(resource.metadata.parent?.absoluteString ?? "-"))")
+@@@ hero
+let credentials = try SelfSignedCredentials.didKey(.generateP256())
+let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))
+
+let storage = try await client.discoverStorage(URL(string: "https://storage.example/root/")!)
+let todo = try await client.createJSON(in: try storage.storageRoot(), json: ["task": "write docs", "done": false])
+_ = try await client.patch(todo.location, patch: JSONPatch().replace("/done", true))
+
+for try await item in client.listContainer(try storage.storageRoot()) {
+    print(item.id, item.format ?? "container")
+}
+@@@ client-config
+let client = LWSClient(options: LWSClientOptions(
+    authenticator: TokenExchangeAuthenticator(credentials: credentials),
+    userAgent: "my-app/1.0",                         // default "lws-client-swift/0.1.0"
+    defaultHeaders: ["Accept-Language": "en"],       // added to every request
+    timeout: 20,                                     // seconds, per request (each redirect hop)
+    maxRedirects: 5                                  // followed by the client itself (default 10)
+    // transport: myTransport,                       // any HTTPTransport (default: URLSessionTransport)
+))
+
+// Per-call headers and time limits; every operation honours task cancellation.
+let page = try await client.readContainer(container, options: RequestOptions(headers: ["X-Trace": "1"], timeout: 5))
+print(page.totalItems ?? 0)
+
+// Another identity over the same transport:
+let anonymous = client.withAuthenticator(nil)
+@@@ discover
+// Any URL inside the storage is a valid starting point.
+let storage = try await client.discoverStorage(URL(string: "https://storage.example/root/notes/")!)
+let root = try storage.storageRoot()                 // the required StorageRoot service
+print(storage.id, storage.types, root)
+
+if let notifications = storage.notificationService {
+    print(notifications.serviceEndpoint, notifications.subscriptionTypes)
+}
+for service in storage.services { print(service.types, "→", service.serviceEndpoint) }
+if let format = storage.capability("https://feature.example/PatchSupport")?.property("format") { print(format) }
+
+// When you already know the storage URL:
+let same = try await client.getStorageDescription(storage.id)
+@@@ create
+// A container (POST with Link: <https://www.w3.org/ns/lws#Container>; rel="type")
+let notes = try await client.createContainer(in: container, options: CreateOptions(slug: "notes")).location
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+let list = try await client.createText(in: notes, text: "milk\neggs\n", options: CreateOptions(slug: "shopping.txt"))
+let todo = try await client.createJSON(in: notes, json: ["task": "write docs"], options: CreateOptions(
+    slug: "todo.json",
+    links: [Link(href: URL(string: "https://example.org/shapes/todo")!, rel: "describedby")],   // user metadata
+    types: ["https://schema.org/Action"]                                                        // extra rel="type"
+))
+let photo = try await client.create(in: notes, body: try Data(contentsOf: URL(fileURLWithPath: "photo.png")),
+                                    contentType: "image/png", options: CreateOptions(slug: "photo.png"))
+
+print(list.location, todo.linkset as Any, photo.metadata.parent as Any)
+@@@ read
+let resource = try await client.read(url)
+let meta = resource.metadata
+print(resource.status, resource.contentType ?? "", resource.etag ?? "", meta.lastModified as Any)
+print(meta.types, meta.isDataResource, meta.parent as Any, meta.linkset as Any)
+
+let text = resource.text                             // decoded using the Content-Type charset
+let bytes: Data = resource.body
+let json = try await client.read(url, options: ReadOptions(accept: "application/json")).json()
+
+struct Person: Decodable {
+    let name: String
+    let age: Int
+}
+let person = try await client.read(url).decode(Person.self)          // Codable binding
+
+// Headers and links only
+let head = try await client.head(url)
+print(head.contentLength ?? 0, head.allow, head.acceptPatch)
+for shape in head.links("describedby") { print(shape.href) }
+@@@ conditional
+let first = try await client.read(url)
+guard let etag = first.etag else { fatalError("the server sent no ETag") }
+
+// Revalidate: 304 Not Modified is a normal result, not an error.
+let again = try await client.read(url, options: ReadOptions(ifNoneMatch: etag))
+if again.notModified { print("cached copy is still fresh") }
+
+// Optimistic concurrency: only overwrite the version you read.
+do {
+    _ = try await client.update(url, body: Data("new content".utf8), contentType: "text/plain", options: UpdateOptions(ifMatch: etag))
+} catch LWSError.preconditionFailed {
+    // Someone else changed it (412): re-read, merge, retry.
+}
+@@@ range
+let start = try await client.read(url, options: ReadOptions(range: .bytes(0...1023)))   // first KiB
+print(start.status, start.contentRange ?? "")                                           // 206 bytes 0-1023/52311
+
+let rest = try await client.read(url, options: ReadOptions(range: .from(1024)))         // to the end
+let tail = try await client.read(url, options: ReadOptions(range: .suffix(512)))        // last 512 bytes
+print(rest.body.count, tail.body.count)
+@@@ update
+// PUT replaces the whole representation.
+let alice: JSONValue = ["name": "Alice", "age": 31]
+_ = try await client.update(url, body: alice.serializedData(), contentType: "application/json", options: UpdateOptions(ifMatch: etag))
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+_ = try await client.update(url, body: Data("v2".utf8), contentType: "text/plain", options: UpdateOptions(
+    links: [Link(href: URL(string: "https://creativecommons.org/licenses/by/4.0/")!, rel: "license")],
+    setLinkset: true
+))
+@@@ patch
+// JSON Patch (RFC 6902) is the baseline format every LWS server accepts. JSONPatch is a value.
+let patch = JSONPatch()
+    .test("/version", 3)
+    .replace("/status", "done")
+    .add("/tags/-", "urgent")
+    .remove("/draft")
+_ = try await client.patch(url, patch: patch, options: UpdateOptions(ifMatch: etag))
+
+// Other formats only when the server advertises them in Accept-Patch.
+if try await client.head(url).acceptPatch.contains("application/sparql-update") {
+    _ = try await client.patch(url, body: Data(#"INSERT DATA { <#me> <http://xmlns.com/foaf/0.1/name> "Alice" }"#.utf8),
+                               contentType: "application/sparql-update")
+}
+@@@ delete
+try await client.delete(url, options: DeleteOptions(ifMatch: etag))
+
+do {
+    try await client.delete(container)                                       // 409 Conflict when not empty
+} catch LWSError.conflict {
+    try await client.delete(container, options: DeleteOptions(recursive: true))   // Depth: infinity
+}
+@@@ read-container
+let page = try await client.readContainer(container)
+print(page.id, page.totalItems ?? 0, page.etag ?? "")
+for item in page.items {
+    print(item.id, item.isContainer ? "container" : item.format ?? "", item.size ?? 0, item.modified as Any)
+}
+if let next = page.next {                            // opaque, server-issued URL
+    print(try await client.readContainer(next).items.count)
+}
+@@@ list-container
+// A lazy AsyncSequence: pages are fetched only as the iteration advances.
+for try await item in client.listContainer(container) where item.hasType("https://schema.org/Person") {
+    print(item.id)
+}
+
+// Every page, collected.
+let ids = try await client.listContainer(container).collect().map(\.id)
+@@@ read-linkset
+let doc = try await client.readLinkset(url)          // HEAD for rel="linkset", then GET
+print(doc.url, doc.etag ?? "", doc.allow, doc.acceptPatch)
+
+for link in doc.linkset.links { print(link.rel, "→", link.href) }
+let shapes = doc.linkset.targets("describedby").map(\.href)
+@@@ patch-linkset
+let doc = try await client.readLinkset(url)
+let rel = "https://example.org/rel/reviewer"         // extension relation types are URIs
+let reviewer: JSONValue = ["href": "https://id.example/bob"]
+
+// JSONPointer escapes "/" in the relation URI as "~1".
+// "add" on an existing member replaces it, so append with "/-" when the relation exists.
+let patch = doc.linkset.targets(rel).isEmpty
+    ? JSONPatch().add(JSONPointer.from("linkset", "0", rel), [reviewer])
+    : JSONPatch().add(JSONPointer.from("linkset", "0", rel, "-"), reviewer)
+_ = try await client.patchLinkset(doc.url, patch: patch, options: UpdateOptions(ifMatch: doc.etag))
+@@@ put-linkset
+let doc = try await client.readLinkset(url)
+if doc.supportsPut {                                 // Allow lists PUT
+    let updated = doc.linkset                        // Linkset is a value: adding returns a copy
+        .adding(anchor: url.absoluteString, rel: "license", href: "https://creativecommons.org/licenses/by/4.0/")
+    _ = try await client.updateLinkset(doc.url, linkset: updated, options: UpdateOptions(ifMatch: doc.etag))
+}
+@@@ auth-didkey
+// A did:key agent: the identifier is derived from the public key, nothing to host.
+let key = SigningKey.generateP256()                  // or SigningKey.generateEd25519()
+let credentials = try SelfSignedCredentials.didKey(key)
+print(credentials.agent)                             // did:key:zDn…
+
+let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))
+_ = try await client.head(url)   // 401 → AS metadata → token exchange → retried with a Bearer token
+@@@ auth-cid
+// An HTTPS agent publishes a controlled identifier document listing its key…
+let key = SigningKey.generateP256()
+let agent = URL(string: "https://bot.example/agent")!
+let cid = ControlledIdentifierDocument.create(agent: agent, key: key.publicKey, kid: "key-1")
+print(JSONValue.object(cid).serialized(pretty: true))     // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key (kid = the verification method id).
+let credentials = SelfSignedCredentials.forAgent(agent, key: key, keyID: "https://bot.example/agent#key-1")
+let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))
+@@@ keys
+let key = SigningKey.generateP256()
+let privateJWK = key.jwk                             // includes "d": store securely
+let restored = try SigningKey(jwk: privateJWK)
+let credentials = try SelfSignedCredentials.didKey(restored)
+
+// did:key <-> public key
+let did = try DIDKey.did(for: key.publicKey)         // did:key:zDn…
+let kid = try DIDKey.keyID(forDID: did)              // did:key:zDn…#zDn…
+let fromDID = try DIDKey.publicKey(did)
+print(credentials.agent, kid, fromDID.algorithm)
+@@@ auth-openid
+// The ID token from your OpenID Connect login (any OIDC library). OpenIDCredentials(idTokens:)
+// takes a closure that supplies a fresh token whenever one is needed.
+let credentials = OpenIDCredentials(idToken: idToken)
+let authenticator = TokenExchangeAuthenticator(credentials: credentials, options: TokenExchangeOptions(
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    authorizationServerFilter: { asURI, realm in asURI.absoluteString == "https://auth.example" }
+))
+let client = LWSClient(authenticator: authenticator)
+@@@ auth-saml
+// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+let credentials = SAMLCredentials.fromXML(samlAssertionXML)
+let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))
+@@@ auth-bearer
+// An access token you obtained yourself; it is only sent to URLs inside the realm.
+let client = LWSClient(authenticator: BearerTokenAuthenticator(token: accessToken, realm: URL(string: "https://storage.example/")!))
+@@@ auth-options
+let trusted: Set<String> = ["https://auth.example"]
+let authenticator = TokenExchangeAuthenticator(
+    credentials: credentials.withLifetime(300),      // self-signed JWT lifetime in seconds (default 300)
+    options: TokenExchangeOptions(
+        allowInsecureHttp: false,                    // plain-http AS only on loopback (default)
+        authorizationServerFilter: { asURI, realm in trusted.contains(asURI.absoluteString) },
+        refreshMargin: 30,                           // refresh 30 s before expiry (default)
+        timeout: 10                                  // metadata and token requests, in seconds
+    ))
+let client = LWSClient(authenticator: authenticator)
+@@@ custom-authenticator
+import Foundation
+import LWS
+
+// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator protocol.
+struct APIKeyAuthenticator: Authenticator {
+    let key: String
+
+    func authorize(_ request: AuthRequest) async throws -> AuthRequest {
+        guard request.url.host == "storage.example" else { return request }
+        var r = request
+        r.headers.set("X-Api-Key", key)
+        return r
+    }
+
+    // Nothing to refresh: the 401 surfaces as LWSError.unauthorized.
+    func handleChallenge(_ request: AuthRequest, response: AuthResponse) async throws -> Bool { false }
+}
+
+let client = LWSClient(authenticator: APIKeyAuthenticator(key: "my-api-key"))
+@@@ subscribe
+// subscribe(_ service: Service, …) checks that the NotificationService supports webhooks.
+guard let service = storage.notificationService else { fatalError("no notification service") }
+let subscription = try await client.subscribe(service, request: WebhookSubscriptionRequest(
+    topics: [container],                             // a container topic is recursive
+    inbox: URL(string: "https://my-app.example/hooks/lws")!,
+    expires: Date().addingTimeInterval(86_400)))
+print(subscription.url, subscription.expires as Any)
+
+for try await s in client.listSubscriptions(service.serviceEndpoint) { print(s.id) }
+let current = try await client.getSubscription(subscription.url)
+print(current.type ?? "")
+try await client.unsubscribe(subscription.url)
+@@@ webhook
+import Foundation
+import LWS
+
+let client = LWSClient()                             // fetches storage descriptions
+let verifier = WebhookVerifier(options: WebhookVerifierOptions(
+    client: client,
+    trustedStorages: [URL(string: "https://storage.example/")!]   // only this storage's keys
+))
+let inbox = URL(string: "https://my-app.example/hooks/lws")!      // the registered (public) URL
+
+// In your HTTP server's handler (Vapor, Hummingbird, SwiftNIO, …), with the request's parts:
+func handle(method: String, headers: [(String, String)], body: Data) async -> Int {
+    do {
+        let verified = try await verifier.verify(method: method, url: inbox, headers: HTTPHeaders(headers), body: body)
+        for a in verified.notification.activities { print(a.types, a.object.id, a.published as Any) }
+        return 204
+    } catch LWSError.signatureVerification(let reason) {
+        print("rejected: \(reason)")
+        return 401
+    } catch {
+        return 500
+    }
+}
+@@@ access-request
+let policy = try AccessPolicy(
+    actions: [AccessAction.read, AccessAction.create],
+    assignee: "https://id.example/agent",
+    target: .storageResources(container),
+    constraints: [
+        .purpose(URL(string: "https://purpose.example/collaboration")!),
+        .notAfter(ISO8601DateFormatter().date(from: "2026-12-31T23:59:59Z")!),
+    ])
+let request = try AccessRequest(storage: storage.id, access: [policy], inbox: URL(string: "https://id.example/agent/inbox/"))
+guard let requests = storage.accessRequestService?.serviceEndpoint else { fatalError("no access request service") }
+let requestURL = try await client.requestAccess(requests, request: request)
+
+for try await r in client.listAccessRequests(requests) { print(r.id) }
+let pending = try await client.getAccessRequest(requestURL)
+print(pending.access[0].actions)
+try await client.cancelAccessRequest(requestURL)
+@@@ access-grant
+// A storage controller approves a request by recording a grant with the same policy model.
+let pending = try await client.getAccessRequest(requestURL)
+guard let grants = storage.accessGrantService?.serviceEndpoint else { fatalError("no access grant service") }
+let grantURL = try await client.grantAccess(grants, grant: .approving(pending))
+
+for try await g in client.listAccessGrants(grants) { print(g.id) }
+try await client.revokeAccessGrant(grantURL)   // the server withdraws the underlying permissions
+@@@ list-types
+if let index = storage.typeIndexService {
+    for try await type in client.listTypes(index.serviceEndpoint) {
+        print(type)                                  // e.g. https://schema.org/Person
+    }
+}
+@@@ search
+guard let search = storage.typeSearchService?.serviceEndpoint else { fatalError("no type search service") }
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+let query = try TypeQuery()
+    .anyOf("https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person")
+    .allOf(ResourceType.dataResource)
+let first = try await client.searchTypes(search, query: query)     // HTTP QUERY
+print(first.totalItems ?? 0, first.next as Any)
+
+for try await hit in client.searchAll(search, query: try TypeQuery().allOf("https://schema.org/Event")) {
+    print(hit.id, hit.types)
+}
+
+// Indexed descriptive relations use the same grammar.
+let shaped = try TypeQuery().relation("describedby").allOf("https://example.org/shapes/person")
+print(try await client.searchTypes(search, query: shaped).items.count)
+
+print(try await client.acceptedQueryFormats(search))               // ["application/lws-query+json", …]
+@@@ errors
+do {
+    _ = try await client.read(url)
+} catch LWSError.notFound {
+    print("no such resource")
+} catch LWSError.unauthorized(let e) {
+    print("not authenticated", e.challenges)
+} catch let e as LWSError where e.httpError != nil {
+    print(e.status ?? 0, e.httpError?.problem?.title ?? e.description)
+} catch LWSError.authentication(let e) {
+    print("token exchange failed: \(e.error ?? "?") \(e.errorDescription ?? "")")
+} catch LWSError.transport(let e) where e.isTimeout {
+    print("timed out")
+}
+@@@ problem
+do {
+    try await client.delete(container)
+} catch LWSError.conflict(let e) {
+    if let p = e.problem {
+        print(p.type ?? "", p.title ?? "", p.detail ?? "", p.instance ?? "", p.extensions["itemCount"] as Any)
+    }
+}

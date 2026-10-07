@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LWS Client — W3C Linked Web Storage clients</title>
-  <meta name="description" content="Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python and C#, sharing one API design, one conformance suite and one interop scenario.">
+  <meta name="description" content="Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C# and Swift, sharing one API design, one conformance suite and one interop scenario.">
   <meta property="og:title" content="LWS Client — W3C Linked Web Storage clients">
-  <meta property="og:description" content="Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python and C#, sharing one API design, one conformance suite and one interop scenario.">
+  <meta property="og:description" content="Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C# and Swift, sharing one API design, one conformance suite and one interop scenario.">
   <meta property="og:type" content="website">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
@@ -41,12 +41,12 @@
   <div class="badges">
     <span class="badge accent">MIT licensed</span>
     <span class="badge">LWS drafts as of 2026-10-05</span>
-    <span class="badge">7 languages · 1 API design</span>
+    <span class="badge">8 languages · 1 API design</span>
     <span class="badge">v0.1.0</span>
   </div>
-  <h1>Linked Web Storage clients for <span class="accent">seven languages</span></h1>
+  <h1>Linked Web Storage clients for <span class="accent">eight languages</span></h1>
   <p class="lead">Read and write data in any W3C Linked Web Storage (LWS) server from Java, JavaScript/TypeScript,
-  C++, Rust, Go, Python or C#. Each client is idiomatic to its language, and all seven share the same concepts,
+  C++, Rust, Go, Python, C# or Swift. Each client is idiomatic to its language, and all eight share the same concepts,
   wire behaviour and conformance tests. The Rust client also comes as a WebAssembly component, for any language
   that can host one.</p>
   <div class="hero-actions">
@@ -68,7 +68,7 @@
       (controlled identifier documents and <code>did:key</code>) with ES256 and EdDSA.</li>
       <li><strong>Verified webhooks:</strong> RFC 9421 HTTP Message Signatures and RFC 9530
       <code>Content-Digest</code>, checked against the storage's published keys.</li>
-      <li><strong>One contract, seven idioms:</strong> the same concept names everywhere, expressed with each
+      <li><strong>One contract, eight idioms:</strong> the same concept names everywhere, expressed with each
       language's async model, iteration and error style.</li>
     </ul>
   </div>
@@ -165,6 +165,16 @@ await client.PatchAsync(todo.Location, new JsonPatch().Replace(&quot;/done&quot;
 
 await foreach (ContainedResource item in client.ListContainerAsync(storage.GetStorageRoot()))
     Console.WriteLine($&quot;{item.Id} {item.Format ?? &quot;container&quot;}&quot;);</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">let credentials = try SelfSignedCredentials.didKey(.generateP256())
+let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))
+
+let storage = try await client.discoverStorage(URL(string: &quot;https://storage.example/root/&quot;)!)
+let todo = try await client.createJSON(in: try storage.storageRoot(), json: [&quot;task&quot;: &quot;write docs&quot;, &quot;done&quot;: false])
+_ = try await client.patch(todo.location, patch: JSONPatch().replace(&quot;/done&quot;, true))
+
+for try await item in client.listContainer(try storage.storageRoot()) {
+    print(item.id, item.format ?? &quot;container&quot;)
+}</code></pre>
 </div>
   </div>
 </div>
@@ -190,6 +200,7 @@ await foreach (ContainedResource item in client.ListContainerAsync(storage.GetSt
   <a class="card" href="languages/go.html"><h3><span class="lang-badge lang-go">GO</span>Go</h3><p>Go 1.23+ · zero dependencies, context, iter.Seq2, errors.Is</p><div class="meta">github.com/ebremer/lws-client/go</div></a>
   <a class="card" href="languages/python.html"><h3><span class="lang-badge lang-python">PY</span>Python</h3><p>Python 3.10+ · sync and async clients, typed dataclasses</p><div class="meta">lws-client (PyPI)</div></a>
   <a class="card" href="languages/csharp.html"><h3><span class="lang-badge lang-csharp">C#</span>C#</h3><p>.NET 10 · async/await, CancellationToken, IAsyncEnumerable, nullable annotations</p><div class="meta">Ebremer.Lws.Client (NuGet)</div></a>
+  <a class="card" href="languages/swift.html"><h3><span class="lang-badge lang-swift">SW</span>Swift</h3><p>Swift 6 · async/await, AsyncSequence listings, Sendable values, URLSession, CryptoKit</p><div class="meta">lws-client (SwiftPM)</div></a>
   <a class="card" href="languages/wasm.html"><h3><span class="lang-badge lang-wasm">WA</span>WebAssembly</h3><p>Any component host with wasi:http: jco, Wasmtime · the Rust client behind a WIT interface</p><div class="meta">lws_client.wasm (WASI 0.2 component)</div></a>
 </div>
 
@@ -211,7 +222,7 @@ await foreach (ContainedResource item in client.ListContainerAsync(storage.GetSt
 RFC 9421 webhook vectors and the did:key specification vector. They also all pass the same
 <a href="testing.html#interop">end-to-end interop scenario</a> against a bundled mock LWS server.
 Every code sample on this site is type-checked or compiled against the real libraries before it is published.
-The getting-started program is also run against the mock server in all seven languages.</p>
+The getting-started program is also run against the mock server in all eight languages.</p>
 <p>The baseline is the W3C LWS Working Group's documents as of 2026-10-05, including the switch of
 the baseline <code>PATCH</code> format to JSON Patch. See <a href="spec-coverage.html">spec coverage</a> for
 details and interpretation decisions.</p>

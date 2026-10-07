@@ -668,6 +668,7 @@ a.card:hover {
 .lang-go { background: #00838f; }
 .lang-python { background: #3a6e9f; }
 .lang-csharp { background: #68217a; }
+.lang-swift { background: #d8452f; }
 .lang-wasm { background: #654ff0; }
 
 /* hero */

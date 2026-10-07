@@ -33,6 +33,7 @@
       ["languages/go.html", "Go", "go"],
       ["languages/python.html", "Python", "python"],
       ["languages/csharp.html", "C#", "csharp"],
+      ["languages/swift.html", "Swift", "swift"],
       ["languages/wasm.html", "WebAssembly", "wasm"],
     ] },
     { title: "Reference", items: [
@@ -42,7 +43,7 @@
       ["contributing.html", "Contributing & license"],
     ] },
   ];
-  var LANG_COLORS = { java: "#b0721a", js: "#2f74c0", cpp: "#00599c", rust: "#a04f26", go: "#00838f", python: "#3a6e9f", csharp: "#68217a", wasm: "#654ff0" };
+  var LANG_COLORS = { java: "#b0721a", js: "#2f74c0", cpp: "#00599c", rust: "#a04f26", go: "#00838f", python: "#3a6e9f", csharp: "#68217a", swift: "#d8452f", wasm: "#654ff0" };
 
   function currentPath() {
     var path = location.pathname.replace(/\\/g, "/");
@@ -160,7 +161,8 @@
     go: "break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var nil true false err",
     python: "and as assert async await break class continue def del elif else except False finally for from global if import in is lambda None nonlocal not or pass raise return True try while with yield self",
     csharp: "abstract and as async await base bool break byte case catch char checked class const continue decimal default delegate do double dynamic else enum event explicit extern false file finally fixed float for foreach get global goto if implicit in init int interface internal is lock long nameof namespace new not null object operator or out override params partial private protected public readonly record ref required return sbyte sealed set short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using var virtual void volatile when where while with yield",
-    bash: "if then else fi for do done case esac in function export cd echo cmake cargo go npm npx node mvn pip python git dotnet",
+    swift: "actor any as associatedtype async await break case catch class continue default defer deinit do else enum extension fallthrough false fileprivate final for func guard if import in init inout internal is lazy let mutating nil nonisolated open operator override private protocol public repeat rethrows return self Self some static struct subscript super switch throw throws true try var where while",
+    bash: "if then else fi for do done case esac in function export cd echo cmake cargo go npm npx node mvn pip python git dotnet swift",
     json: "true false null",
     http: "",
   };
@@ -242,6 +244,32 @@
         }
         push("s", code.slice(i, k + 1)); i = k + 1; continue;
       }
+      if (lang === "swift" && (m = /^#+"/.exec(rest))) {
+        // Raw string: #"…"# (any number of #), quotes inside are text.
+        var sterm = '"' + "#".repeat(m[0].length - 1);
+        var se = code.indexOf(sterm, i + m[0].length);
+        se = se < 0 ? n : se + sterm.length;
+        push("s", code.slice(i, se)); i = se; continue;
+      }
+      if (lang === "swift" && ch === '"') {
+        // Interpolation: quotes inside \(…) belong to nested expressions.
+        var sk = i + 1;
+        var sdepth = 0;
+        while (sk < n && code[sk] !== "\n") {
+          var sc = code[sk];
+          if (sdepth === 0) {
+            if (sc === "\\" && code[sk + 1] === "(") { sdepth = 1; sk += 2; continue; }
+            if (sc === "\\") { sk += 2; continue; }
+            if (sc === '"') break;
+          } else if (sc === '"') {
+            sk++;
+            while (sk < n && code[sk] !== '"' && code[sk] !== "\n") sk += code[sk] === "\\" ? 2 : 1;
+          } else if (sc === "(") sdepth++;
+          else if (sc === ")") sdepth--;
+          sk++;
+        }
+        push("s", code.slice(i, sk + 1)); i = sk + 1; continue;
+      }
       if (lang === "cpp" && (m = /^R"([^(]*)\(/.exec(rest))) {
         var t2 = ")" + m[1] + '"';
         var ce2 = code.indexOf(t2, i);
@@ -320,7 +348,7 @@
   }
 
   // ------------------------------------------------------------------ language tabs
-  var LANG_LABELS = { java: "Java", ts: "TypeScript", js: "JavaScript", javascript: "JavaScript", typescript: "TypeScript", cpp: "C++", rust: "Rust", go: "Go", python: "Python", csharp: "C#", bash: "Shell", http: "HTTP", json: "JSON" };
+  var LANG_LABELS = { java: "Java", ts: "TypeScript", js: "JavaScript", javascript: "JavaScript", typescript: "TypeScript", cpp: "C++", rust: "Rust", go: "Go", python: "Python", csharp: "C#", swift: "Swift", bash: "Shell", http: "HTTP", json: "JSON" };
   var LANG_KEYS = { ts: "js", typescript: "js", javascript: "js", js: "js" };
   function tabKey(lang) { return LANG_KEYS[lang] || lang; }
 

@@ -136,6 +136,14 @@ foreach (ContainedResource item in page.Items)
 }
 if (page.Next is { } next)                           // opaque, server-issued URL
     Console.WriteLine((await client.ReadContainerAsync(next)).Items.Count);</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">let page = try await client.readContainer(container)
+print(page.id, page.totalItems ?? 0, page.etag ?? &quot;&quot;)
+for item in page.items {
+    print(item.id, item.isContainer ? &quot;container&quot; : item.format ?? &quot;&quot;, item.size ?? 0, item.modified as Any)
+}
+if let next = page.next {                            // opaque, server-issued URL
+    print(try await client.readContainer(next).items.count)
+}</code></pre>
 </div>
 <p>The clients accept the three equivalent container media types (<code>application/lws+json</code>,
 <code>application/ld+json</code>, <code>application/json</code>). Any other content type, or a body whose type is
@@ -153,6 +161,7 @@ lazy-sequence type:</p>
 <tr><td>Go</td><td><code>iter.Seq2[ContainedResource, error]</code> (<code>for item, err := range …</code>)</td></tr>
 <tr><td>Python</td><td><code>Iterator[ContainedResource]</code>; <code>AsyncIterator</code> on <code>AsyncLwsClient</code></td></tr>
 <tr><td>C#</td><td><code>IAsyncEnumerable&lt;ContainedResource&gt;</code> (<code>await foreach</code>, <code>System.Linq.AsyncEnumerable</code> operators)</td></tr>
+<tr><td>Swift</td><td><code>PagedSequence&lt;ContainedResource&gt;</code>, an <code>AsyncSequence</code> (<code>for try await</code>, <code>where</code>, <code>collect()</code>)</td></tr>
 </tbody></table></div>
 <div class="code-tabs">
 <pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// A lazy Stream: pages are fetched only as the stream is consumed.
@@ -208,6 +217,13 @@ await foreach (ContainedResource item in client.ListContainerAsync(container))
 
 // .NET 10's System.Linq.AsyncEnumerable operators work on every listing.
 List&lt;Uri&gt; ids = await client.ListContainerAsync(container).Select(item =&gt; item.Id).ToListAsync();</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">// A lazy AsyncSequence: pages are fetched only as the iteration advances.
+for try await item in client.listContainer(container) where item.hasType(&quot;https://schema.org/Person&quot;) {
+    print(item.id)
+}
+
+// Every page, collected.
+let ids = try await client.listContainer(container).collect().map(\.id)</code></pre>
 </div>
 
 <h2 id="visibility">What you can see</h2>

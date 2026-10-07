@@ -167,6 +167,20 @@ CreateResult photo = await client.CreateAsync(notes, await File.ReadAllBytesAsyn
     new CreateOptions { Slug = &quot;photo.png&quot; });
 
 Console.WriteLine($&quot;{list.Location} {todo.Linkset} {photo.Metadata.Parent}&quot;);</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">// A container (POST with Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel=&quot;type&quot;)
+let notes = try await client.createContainer(in: container, options: CreateOptions(slug: &quot;notes&quot;)).location
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+let list = try await client.createText(in: notes, text: &quot;milk\neggs\n&quot;, options: CreateOptions(slug: &quot;shopping.txt&quot;))
+let todo = try await client.createJSON(in: notes, json: [&quot;task&quot;: &quot;write docs&quot;], options: CreateOptions(
+    slug: &quot;todo.json&quot;,
+    links: [Link(href: URL(string: &quot;https://example.org/shapes/todo&quot;)!, rel: &quot;describedby&quot;)],   // user metadata
+    types: [&quot;https://schema.org/Action&quot;]                                                        // extra rel=&quot;type&quot;
+))
+let photo = try await client.create(in: notes, body: try Data(contentsOf: URL(fileURLWithPath: &quot;photo.png&quot;)),
+                                    contentType: &quot;image/png&quot;, options: CreateOptions(slug: &quot;photo.png&quot;))
+
+print(list.location, todo.linkset as Any, photo.metadata.parent as Any)</code></pre>
 </div>
 <div class="table-wrap"><table><thead><tr><th>Option</th><th>Wire effect</th></tr></thead><tbody>
 <tr><td><code>slug</code></td><td><code>Slug</code> header: a <em>hint</em> for the new name (percent-encoded). The server may change it to keep names unique.</td></tr>
@@ -283,13 +297,32 @@ Console.WriteLine($&quot;{head.ContentLength} {string.Join(&quot;, &quot;, head.
 foreach (Link shape in head.GetLinks(&quot;describedby&quot;)) Console.WriteLine(shape.Href);
 
 record Person(string Name, int Age);</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">let resource = try await client.read(url)
+let meta = resource.metadata
+print(resource.status, resource.contentType ?? &quot;&quot;, resource.etag ?? &quot;&quot;, meta.lastModified as Any)
+print(meta.types, meta.isDataResource, meta.parent as Any, meta.linkset as Any)
+
+let text = resource.text                             // decoded using the Content-Type charset
+let bytes: Data = resource.body
+let json = try await client.read(url, options: ReadOptions(accept: &quot;application/json&quot;)).json()
+
+struct Person: Decodable {
+    let name: String
+    let age: Int
+}
+let person = try await client.read(url).decode(Person.self)          // Codable binding
+
+// Headers and links only
+let head = try await client.head(url)
+print(head.contentLength ?? 0, head.allow, head.acceptPatch)
+for shape in head.links(&quot;describedby&quot;) { print(shape.href) }</code></pre>
 </div>
 
 <h3 id="streaming">Streaming large bodies</h3>
 <p>Where the platform supports it, the clients can hand you the body as a stream instead of buffering it.
 Streamed uploads cannot be replayed after a <code>401</code>, so the JS, Python, Go and C# clients first send a
-<code>HEAD</code> to obtain a token. Java bodies are always replayable. C++ bodies are buffered strings,
-so use range requests to process large resources in pieces.</p>
+<code>HEAD</code> to obtain a token. Java bodies are always replayable. C++ bodies are buffered strings and Swift
+bodies are buffered <code>Data</code>, so use range requests to process large resources in pieces.</p>
 <div class="code-tabs">
 <pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">try (ResourceStream stream = client.readStream(url)) {    // nothing is buffered
     long received = stream.body().transferTo(OutputStream.nullOutputStream());
@@ -485,6 +518,19 @@ catch (PreconditionFailedException)
 {
     // Someone else changed it (412): re-read, merge, retry.
 }</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">let first = try await client.read(url)
+guard let etag = first.etag else { fatalError(&quot;the server sent no ETag&quot;) }
+
+// Revalidate: 304 Not Modified is a normal result, not an error.
+let again = try await client.read(url, options: ReadOptions(ifNoneMatch: etag))
+if again.notModified { print(&quot;cached copy is still fresh&quot;) }
+
+// Optimistic concurrency: only overwrite the version you read.
+do {
+    _ = try await client.update(url, body: Data(&quot;new content&quot;.utf8), contentType: &quot;text/plain&quot;, options: UpdateOptions(ifMatch: etag))
+} catch LWSError.preconditionFailed {
+    // Someone else changed it (412): re-read, merge, retry.
+}</code></pre>
 </div>
 
 <h3 id="range">Byte ranges</h3>
@@ -541,6 +587,12 @@ Console.WriteLine($&quot;{start.Status} {start.ContentRange}&quot;);            
 Resource rest = await client.ReadAsync(url, new ReadOptions { Range = new RangeHeaderValue(1024, null) });  // to the end
 Resource tail = await client.ReadAsync(url, new ReadOptions { Range = new RangeHeaderValue(null, 512) });   // last 512 bytes
 Console.WriteLine($&quot;{rest.Body.Length} {tail.Body.Length}&quot;);</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">let start = try await client.read(url, options: ReadOptions(range: .bytes(0...1023)))   // first KiB
+print(start.status, start.contentRange ?? &quot;&quot;)                                           // 206 bytes 0-1023/52311
+
+let rest = try await client.read(url, options: ReadOptions(range: .from(1024)))         // to the end
+let tail = try await client.read(url, options: ReadOptions(range: .suffix(512)))        // last 512 bytes
+print(rest.body.count, tail.body.count)</code></pre>
 </div>
 
 <h2 id="update">Replace (PUT)</h2>
@@ -620,6 +672,15 @@ await client.UpdateAsync(url, &quot;v2&quot;u8.ToArray(), &quot;text/plain&quot;
     SetLinkset = true,
     Links = [new Link(&quot;https://creativecommons.org/licenses/by/4.0/&quot;, &quot;license&quot;)],
 });</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">// PUT replaces the whole representation.
+let alice: JSONValue = [&quot;name&quot;: &quot;Alice&quot;, &quot;age&quot;: 31]
+_ = try await client.update(url, body: alice.serializedData(), contentType: &quot;application/json&quot;, options: UpdateOptions(ifMatch: etag))
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+_ = try await client.update(url, body: Data(&quot;v2&quot;.utf8), contentType: &quot;text/plain&quot;, options: UpdateOptions(
+    links: [Link(href: URL(string: &quot;https://creativecommons.org/licenses/by/4.0/&quot;)!, rel: &quot;license&quot;)],
+    setLinkset: true
+))</code></pre>
 </div>
 
 <h2 id="patch">Partial updates (PATCH)</h2>
@@ -725,6 +786,19 @@ if ((await client.HeadAsync(url)).AcceptPatch.Contains(&quot;application/sparql-
     await client.PatchAsync(url, &quot;&quot;&quot;INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }&quot;&quot;&quot;u8.ToArray(),
         &quot;application/sparql-update&quot;);
 }</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">// JSON Patch (RFC 6902) is the baseline format every LWS server accepts. JSONPatch is a value.
+let patch = JSONPatch()
+    .test(&quot;/version&quot;, 3)
+    .replace(&quot;/status&quot;, &quot;done&quot;)
+    .add(&quot;/tags/-&quot;, &quot;urgent&quot;)
+    .remove(&quot;/draft&quot;)
+_ = try await client.patch(url, patch: patch, options: UpdateOptions(ifMatch: etag))
+
+// Other formats only when the server advertises them in Accept-Patch.
+if try await client.head(url).acceptPatch.contains(&quot;application/sparql-update&quot;) {
+    _ = try await client.patch(url, body: Data(#&quot;INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }&quot;#.utf8),
+                               contentType: &quot;application/sparql-update&quot;)
+}</code></pre>
 </div>
 
 <h2 id="delete">Delete</h2>
@@ -785,6 +859,13 @@ try
 catch (ConflictException)
 {
     await client.DeleteAsync(container, new DeleteOptions { Recursive = true });  // Depth: infinity
+}</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">try await client.delete(url, options: DeleteOptions(ifMatch: etag))
+
+do {
+    try await client.delete(container)                                       // 409 Conflict when not empty
+} catch LWSError.conflict {
+    try await client.delete(container, options: DeleteOptions(recursive: true))   // Depth: infinity
 }</code></pre>
 </div>
 

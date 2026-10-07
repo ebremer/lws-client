@@ -107,6 +107,11 @@ Console.WriteLine($&quot;{doc.Url} {doc.ETag} {string.Join(&quot;, &quot;, doc.A
 
 foreach (Link link in doc.Linkset.GetLinks()) Console.WriteLine($&quot;{link.Rel} → {link.Href}&quot;);
 List&lt;string&gt; shapes = doc.Linkset.GetTargets(&quot;describedby&quot;).Select(target =&gt; target.Href).ToList();</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">let doc = try await client.readLinkset(url)          // HEAD for rel=&quot;linkset&quot;, then GET
+print(doc.url, doc.etag ?? &quot;&quot;, doc.allow, doc.acceptPatch)
+
+for link in doc.linkset.links { print(link.rel, &quot;→&quot;, link.href) }
+let shapes = doc.linkset.targets(&quot;describedby&quot;).map(\.href)</code></pre>
 </div>
 
 <h2 id="patch">Patching a linkset</h2>
@@ -205,6 +210,16 @@ JsonPatch patch = doc.Linkset.GetTargets(rel).Count == 0
     ? new JsonPatch().Add(JsonPointer.Of(&quot;linkset&quot;, &quot;0&quot;, rel), new JsonArray(reviewer))
     : new JsonPatch().Add(JsonPointer.Of(&quot;linkset&quot;, &quot;0&quot;, rel, &quot;-&quot;), reviewer);
 await client.PatchLinksetAsync(doc.Url, patch, new UpdateOptions { IfMatch = doc.ETag });</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">let doc = try await client.readLinkset(url)
+let rel = &quot;https://example.org/rel/reviewer&quot;         // extension relation types are URIs
+let reviewer: JSONValue = [&quot;href&quot;: &quot;https://id.example/bob&quot;]
+
+// JSONPointer escapes &quot;/&quot; in the relation URI as &quot;~1&quot;.
+// &quot;add&quot; on an existing member replaces it, so append with &quot;/-&quot; when the relation exists.
+let patch = doc.linkset.targets(rel).isEmpty
+    ? JSONPatch().add(JSONPointer.from(&quot;linkset&quot;, &quot;0&quot;, rel), [reviewer])
+    : JSONPatch().add(JSONPointer.from(&quot;linkset&quot;, &quot;0&quot;, rel, &quot;-&quot;), reviewer)
+_ = try await client.patchLinkset(doc.url, patch: patch, options: UpdateOptions(ifMatch: doc.etag))</code></pre>
 </div>
 <div class="callout tip"><p><strong>Always send If-Match</strong> Several agents may edit the same metadata. Pass the linkset's ETag so a concurrent change produces <code>412 Precondition Failed</code> instead of a silent overwrite.</p></div>
 
@@ -257,6 +272,12 @@ if (doc.SupportsPut)                                   // Allow lists PUT
     Linkset updated = doc.Linkset                      // Linkset is immutable: Add returns a copy
         .Add(url.AbsoluteUri, &quot;license&quot;, &quot;https://creativecommons.org/licenses/by/4.0/&quot;);
     await client.UpdateLinksetAsync(doc.Url, updated, new UpdateOptions { IfMatch = doc.ETag });
+}</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">let doc = try await client.readLinkset(url)
+if doc.supportsPut {                                 // Allow lists PUT
+    let updated = doc.linkset                        // Linkset is a value: adding returns a copy
+        .adding(anchor: url.absoluteString, rel: &quot;license&quot;, href: &quot;https://creativecommons.org/licenses/by/4.0/&quot;)
+    _ = try await client.updateLinkset(doc.url, linkset: updated, options: UpdateOptions(ifMatch: doc.etag))
 }</code></pre>
 </div>
 

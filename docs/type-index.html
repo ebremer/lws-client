@@ -82,6 +82,11 @@ if index is not None:
     await foreach (string type in client.ListTypesAsync(index.ServiceEndpoint))
         Console.WriteLine(type);                                             // e.g. https://schema.org/Person
 }</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">if let index = storage.typeIndexService {
+    for try await type in client.listTypes(index.serviceEndpoint) {
+        print(type)                                  // e.g. https://schema.org/Person
+    }
+}</code></pre>
 </div>
 
 <h2 id="search">Searching by type</h2>
@@ -240,6 +245,24 @@ TypeQuery shaped = new TypeQuery().Relation(&quot;describedby&quot;).AllOf(&quot
 Console.WriteLine((await client.SearchTypesAsync(search, shaped)).Items.Count);
 
 Console.WriteLine(string.Join(&quot;, &quot;, await client.AcceptedQueryFormatsAsync(search)));   // application/lws-query+json, …</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">guard let search = storage.typeSearchService?.serviceEndpoint else { fatalError(&quot;no type search service&quot;) }
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+let query = try TypeQuery()
+    .anyOf(&quot;https://schema.org/Person&quot;, &quot;http://xmlns.com/foaf/0.1/Person&quot;)
+    .allOf(ResourceType.dataResource)
+let first = try await client.searchTypes(search, query: query)     // HTTP QUERY
+print(first.totalItems ?? 0, first.next as Any)
+
+for try await hit in client.searchAll(search, query: try TypeQuery().allOf(&quot;https://schema.org/Event&quot;)) {
+    print(hit.id, hit.types)
+}
+
+// Indexed descriptive relations use the same grammar.
+let shaped = try TypeQuery().relation(&quot;describedby&quot;).allOf(&quot;https://example.org/shapes/person&quot;)
+print(try await client.searchTypes(search, query: shaped).items.count)
+
+print(try await client.acceptedQueryFormats(search))               // [&quot;application/lws-query+json&quot;, …]</code></pre>
 </div>
 <pre data-lang="http" data-title="On the wire"><code class="language-http">QUERY /types/search HTTP/1.1
 Content-Type: application/lws-query+json

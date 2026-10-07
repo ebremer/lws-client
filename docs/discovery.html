@@ -190,6 +190,19 @@ if (storage.GetCapability(&quot;https://feature.example/PatchSupport&quot;)?.Get
 
 // When you already know the storage URL:
 StorageDescription same = await client.GetStorageDescriptionAsync(storage.Id);</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">// Any URL inside the storage is a valid starting point.
+let storage = try await client.discoverStorage(URL(string: &quot;https://storage.example/root/notes/&quot;)!)
+let root = try storage.storageRoot()                 // the required StorageRoot service
+print(storage.id, storage.types, root)
+
+if let notifications = storage.notificationService {
+    print(notifications.serviceEndpoint, notifications.subscriptionTypes)
+}
+for service in storage.services { print(service.types, &quot;→&quot;, service.serviceEndpoint) }
+if let format = storage.capability(&quot;https://feature.example/PatchSupport&quot;)?.property(&quot;format&quot;) { print(format) }
+
+// When you already know the storage URL:
+let same = try await client.getStorageDescription(storage.id)</code></pre>
 </div>
 
 <h2 id="services">Services</h2>

@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Getting started · LWS Client</title>
-  <meta name="description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python or C# and run your first authenticated request against a Linked Web Storage server.">
+  <meta name="description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C# or Swift and run your first authenticated request against a Linked Web Storage server.">
   <meta property="og:title" content="Getting started · LWS Client">
-  <meta property="og:description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python or C# and run your first authenticated request against a Linked Web Storage server.">
+  <meta property="og:description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C# or Swift and run your first authenticated request against a Linked Web Storage server.">
   <meta property="og:type" content="website">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
@@ -52,10 +52,11 @@ five minutes.</p>
   <li><strong>Go</strong> 1.23+ (no third-party dependencies)</li>
   <li><strong>Python</strong> 3.10+ (httpx; the <code>crypto</code> extra adds <code>cryptography</code>)</li>
   <li><strong>C#</strong>: .NET 10 (one dependency: BouncyCastle.Cryptography, for Ed25519)</li>
+  <li><strong>Swift</strong> 6.0+ on macOS 13, iOS 16 or Linux (one dependency: swift-crypto, which is CryptoKit on Apple platforms)</li>
 </ul>
 
 <h2 id="install">Install</h2>
-<div class="callout"><p><strong>Package registries</strong> The packages are not on Maven Central, npm, crates.io, PyPI or NuGet yet. Until they are, install from the GitHub repository as shown. The registry names are already reserved in each manifest, so switching later is a one-line change.</p></div>
+<div class="callout"><p><strong>Package registries</strong> The packages are not on Maven Central, npm, crates.io, PyPI or NuGet yet (Swift packages come straight from the git repository). Until they are, install from the GitHub repository as shown. The registry names are already reserved in each manifest, so switching later is a one-line change.</p></div>
 <div class="code-tabs">
 <pre data-lang="bash" data-tab="java" data-label="Java"><code class="language-bash"># Until it is on Maven Central: build and install into your local repository (~/.m2)
 git clone https://github.com/ebremer/lws-client.git
@@ -113,6 +114,13 @@ git clone https://github.com/ebremer/lws-client.git
 dotnet add reference lws-client/csharp/src/Ebremer.Lws.Client/Ebremer.Lws.Client.csproj
 
 # Targets .NET 10 (net10.0). One dependency: BouncyCastle.Cryptography, for Ed25519.</code></pre>
+<pre data-lang="bash" data-tab="swift" data-label="Swift"><code class="language-bash"># Package.swift: the package is the repository itself (its Package.swift is at the root)
+#   dependencies: [.package(url: &quot;https://github.com/ebremer/lws-client.git&quot;, from: &quot;0.1.0&quot;)]
+#   target dependencies: [.product(name: &quot;LWS&quot;, package: &quot;lws-client&quot;)]
+# Xcode: File &gt; Add Package Dependencies…, https://github.com/ebremer/lws-client.git, product &quot;LWS&quot;
+
+# Swift 6.0+; macOS 13, iOS 16, tvOS 16, watchOS 9, visionOS 1, or Linux.
+# One dependency: swift-crypto (CryptoKit on Apple platforms), for ES256 and Ed25519.</code></pre>
 </div>
 
 <h2 id="mock-server">Start a server to talk to</h2>
@@ -305,6 +313,22 @@ Console.WriteLine($&quot;created: {file.Location}&quot;);
 
 Resource resource = await client.ReadAsync(file.Location);
 Console.WriteLine($&quot;{resource.GetText()}  (etag {resource.ETag ?? &quot;-&quot;}, parent {resource.Metadata.Parent})&quot;);</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">import Foundation
+import LWS
+
+let credentials = try SelfSignedCredentials.didKey(.generateP256())
+let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))
+print(&quot;agent:   \(credentials.agent)&quot;)
+
+let storage = try await client.discoverStorage(URL(string: &quot;http://localhost:8787/root/&quot;)!)
+print(&quot;storage: \(storage.id)  root: \(try storage.storageRoot())&quot;)
+
+let folder = try await client.createContainer(in: try storage.storageRoot(), options: CreateOptions(slug: &quot;hello-world&quot;))
+let file = try await client.createText(in: folder.location, text: &quot;Hello, LWS!&quot;, options: CreateOptions(slug: &quot;hello.txt&quot;))
+print(&quot;created: \(file.location)&quot;)
+
+let resource = try await client.read(file.location)
+print(&quot;\(resource.text)  (etag \(resource.etag ?? &quot;-&quot;), parent \(resource.metadata.parent?.absoluteString ?? &quot;-&quot;))&quot;)</code></pre>
 </div>
 <p>Expected output (identifiers vary):</p>
 <pre data-lang="text"><code class="language-text">agent:   did:key:zDnaeYo3bnXyXXgYpknupHmZN6wBoSkPXpoqfqwPYQdTRTZJS
@@ -335,7 +359,7 @@ Hello, LWS!  (etag &quot;y3Np7XKGTBSEU-c181QlqW&quot;, parent http://localhost:8
   <a class="card" href="resources.html"><h3>Reading &amp; writing</h3><p>Conditional updates, JSON Patch, ranges, deletes.</p></a>
   <a class="card" href="authentication.html"><h3>Authentication</h3><p>OpenID Connect, SAML, self-signed agents and custom authenticators.</p></a>
   <a class="card" href="notifications.html"><h3>Notifications</h3><p>Subscribe to changes and verify signed webhooks.</p></a>
-  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all seven languages.</p></a>
+  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all eight languages.</p></a>
 </div>
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>

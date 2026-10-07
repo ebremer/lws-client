@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Swift · LWS Client</title>
+  <meta name="description" content="The LWS client for Swift 6: installation with SwiftPM, configuration, async/await with task cancellation, AsyncSequence pagination, the LWSError enum and build instructions.">
+  <meta property="og:title" content="Swift · LWS Client">
+  <meta property="og:description" content="The LWS client for Swift 6: installation with SwiftPM, configuration, async/await with task cancellation, AsyncSequence pagination, the LWSError enum and build instructions.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="../getting-started.html">Get started</a>
+        <a href="../concepts.html">Concepts</a>
+        <a href="../authentication.html">Auth</a>
+        <a href="../api-reference.html">API</a>
+        <a href="../spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="../index.html">Overview</a></li><li><a href="../getting-started.html">Getting started</a></li><li><a href="../api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1><span class="lang-badge lang-swift">SW</span> Swift</h1>
+<div class="badges">
+  <span class="badge accent">lws-client 0.1.0 (SwiftPM)</span>
+  <span class="badge">Swift 6, strict concurrency</span>
+  <span class="badge">module LWS</span>
+  <span class="badge">1 dependency: swift-crypto (CryptoKit)</span>
+</div>
+<p class="lead">A Swift client for Apple platforms and Linux, built on <code>URLSession</code>. Every operation is
+<code>async throws</code> and honours task cancellation, listings are lazy <code>AsyncSequence</code>s for
+<code>for try await</code>, options and models are <code>Sendable</code> value types, and errors are one
+<code>LWSError</code> enum to match with <code>catch LWSError.notFound</code>.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="install">Install</h2>
+<pre data-lang="bash"><code class="language-bash"># Package.swift: the package is the repository itself (its Package.swift is at the root)
+#   dependencies: [.package(url: &quot;https://github.com/ebremer/lws-client.git&quot;, from: &quot;0.1.0&quot;)]
+#   target dependencies: [.product(name: &quot;LWS&quot;, package: &quot;lws-client&quot;)]
+# Xcode: File &gt; Add Package Dependencies…, https://github.com/ebremer/lws-client.git, product &quot;LWS&quot;
+
+# Swift 6.0+; macOS 13, iOS 16, tvOS 16, watchOS 9, visionOS 1, or Linux.
+# One dependency: swift-crypto (CryptoKit on Apple platforms), for ES256 and Ed25519.</code></pre>
+<p>The package's manifest is the repository's root <code>Package.swift</code> (SwiftPM takes packages from a git repository only
+there); the sources are in <code>swift/</code>.</p>
+
+<h2 id="first">First program</h2>
+<pre data-lang="swift"><code class="language-swift">import Foundation
+import LWS
+
+let credentials = try SelfSignedCredentials.didKey(.generateP256())
+let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))
+print(&quot;agent:   \(credentials.agent)&quot;)
+
+let storage = try await client.discoverStorage(URL(string: &quot;http://localhost:8787/root/&quot;)!)
+print(&quot;storage: \(storage.id)  root: \(try storage.storageRoot())&quot;)
+
+let folder = try await client.createContainer(in: try storage.storageRoot(), options: CreateOptions(slug: &quot;hello-world&quot;))
+let file = try await client.createText(in: folder.location, text: &quot;Hello, LWS!&quot;, options: CreateOptions(slug: &quot;hello.txt&quot;))
+print(&quot;created: \(file.location)&quot;)
+
+let resource = try await client.read(file.location)
+print(&quot;\(resource.text)  (etag \(resource.etag ?? &quot;-&quot;), parent \(resource.metadata.parent?.absoluteString ?? &quot;-&quot;))&quot;)</code></pre>
+<p>This is a complete <code>main.swift</code>: add it to an executable target that depends on the <code>LWS</code> product, and
+<code>swift run</code> it.</p>
+
+<h2 id="configure">Configure the client</h2>
+<pre data-lang="swift"><code class="language-swift">let client = LWSClient(options: LWSClientOptions(
+    authenticator: TokenExchangeAuthenticator(credentials: credentials),
+    userAgent: &quot;my-app/1.0&quot;,                         // default &quot;lws-client-swift/0.1.0&quot;
+    defaultHeaders: [&quot;Accept-Language&quot;: &quot;en&quot;],       // added to every request
+    timeout: 20,                                     // seconds, per request (each redirect hop)
+    maxRedirects: 5                                  // followed by the client itself (default 10)
+    // transport: myTransport,                       // any HTTPTransport (default: URLSessionTransport)
+))
+
+// Per-call headers and time limits; every operation honours task cancellation.
+let page = try await client.readContainer(container, options: RequestOptions(headers: [&quot;X-Trace&quot;: &quot;1&quot;], timeout: 5))
+print(page.totalItems ?? 0)
+
+// Another identity over the same transport:
+let anonymous = client.withAuthenticator(nil)</code></pre>
+<p><code>LWSClient</code> is an immutable, <code>Sendable</code> class: create one and share it between tasks.
+<code>withAuthenticator(a)</code> returns a client with a different authenticator over the same transport. The client follows
+redirects itself and authorizes each hop afresh, so its <code>HTTPTransport</code> must not follow redirects. The default
+<code>URLSessionTransport</code> owns a private <code>URLSession</code> whose delegate refuses them, with cookies and caching off; a
+transport of your own (an AsyncHTTPClient adapter, a test double) implements one method,
+<code>send(_ request: HTTPRequest) async throws -&gt; HTTPResponse</code>.</p>
+
+<h2 id="idioms">Swift idioms</h2>
+<div class="table-wrap"><table><thead><tr><th>Aspect</th><th>How the Swift client does it</th></tr></thead><tbody>
+<tr><td>Calls</td><td>Every operation is <code>async throws</code>. Cancelling the task throws <code>CancellationError</code>; a timeout (the <code>timeout</code> option, a hard limit per request) throws <code>LWSError.transport</code> with <code>isTimeout</code></td></tr>
+<tr><td>Pagination</td><td><code>listContainer</code>, <code>listTypes</code>, <code>searchAll</code>, <code>listSubscriptions</code>… return a lazy <code>PagedSequence</code> (an <code>AsyncSequence</code>): <code>for try await item in …</code>, <code>where</code> clauses, or <code>collect()</code>. Pages are fetched as the iteration advances</td></tr>
+<tr><td>Options</td><td>Value types with defaulted initializers: <code>CreateOptions(slug: …)</code>, <code>UpdateOptions(ifMatch: etag)</code>, <code>DeleteOptions(recursive: true)</code>, <code>ReadOptions(range: .bytes(0...1023))</code>. Every one also has <code>headers</code> and <code>timeout</code></td></tr>
+<tr><td>Bodies</td><td><code>Data</code> in and out, always replayable; <code>createText</code>, <code>createJSON(json:)</code> and <code>createJSON(value:)</code> for any <code>Encodable</code>; <code>Resource.text</code>, <code>.json()</code> and <code>.decode(_:)</code> for any <code>Decodable</code></td></tr>
+<tr><td>JSON</td><td><code>JSONValue</code>, an enum with literals (<code>["name": "Alice", "age": 30]</code>), and <code>JSONObject</code>, which keeps member order so that documents (linksets, access documents, <code>raw</code>) round-trip unchanged</td></tr>
+<tr><td>Models</td><td><code>Sendable</code> structs; absent values are optionals; URLs are <code>URL</code>, absolute in every result</td></tr>
+<tr><td>Errors</td><td>One <code>enum LWSError: Error</code>: a case per status (<code>.notFound</code>, <code>.conflict</code>, <code>.preconditionFailed</code>, … each with its <code>HTTPError</code>), <code>.http</code> for other statuses, <code>.authentication</code>, <code>.protocolError</code>, <code>.signatureVerification</code>, <code>.transport</code>, <code>.invalidArgument</code>. <code>status</code> and <code>httpError</code> help across cases</td></tr>
+<tr><td>Concurrency</td><td>Swift 6 language mode with strict concurrency checking. <code>TokenExchangeAuthenticator</code>, <code>SelfSignedCredentials</code> and <code>WebhookVerifier</code> are actors: concurrent requests share one in-flight token exchange</td></tr>
+<tr><td>Crypto</td><td><a href="https://github.com/apple/swift-crypto">swift-crypto</a>, which is CryptoKit on Apple platforms and BoringSSL elsewhere: P-256, P-384 and Ed25519 keys and signatures, SHA-256 and SHA-512</td></tr>
+</tbody></table></div>
+
+<h2 id="types">Types</h2>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Types</th></tr></thead><tbody>
+<tr><td>Client</td><td><code>LWSClient</code>, <code>LWSClientOptions</code>, <code>RequestOptions</code>, <code>ReadOptions</code>, <code>CreateOptions</code>, <code>UpdateOptions</code>, <code>DeleteOptions</code>, <code>ByteRange</code>, <code>PagedSequence</code>, <code>HTTPTransport</code>, <code>URLSessionTransport</code></td></tr>
+<tr><td>Models</td><td><code>Resource</code>, <code>ResourceMetadata</code>, <code>CreateResult</code>, <code>UpdateResult</code>, <code>ContainerPage</code>, <code>ContainedResource</code>, <code>StorageDescription</code>, <code>Service</code>, <code>Linkset</code>, <code>LinksetDocument</code>, <code>TypeIndexPage</code>, <code>JSONPatch</code>, <code>JSONPointer</code>, <code>TypeQuery</code>, <code>JSONValue</code></td></tr>
+<tr><td>Auth</td><td><code>Authenticator</code>, <code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, <code>CredentialProvider</code>, <code>OpenIDCredentials</code>, <code>SAMLCredentials</code>, <code>SelfSignedCredentials</code>, <code>SigningKey</code>, <code>VerificationKey</code>, <code>JWT</code>, <code>DIDKey</code>, <code>ControlledIdentifierDocument</code></td></tr>
+<tr><td>Notifications</td><td><code>WebhookSubscriptionRequest</code>, <code>Subscription</code>, <code>Notification</code>, <code>Activity</code>, <code>WebhookVerifier</code>, <code>VerifiedNotification</code></td></tr>
+<tr><td>Access</td><td><code>AccessRequest</code>, <code>AccessGrant</code>, <code>AccessPolicy</code>, <code>AccessTarget</code>, <code>Constraint</code></td></tr>
+<tr><td>HTTP</td><td><code>Link</code>, <code>LinkHeader</code>, <code>WWWAuthenticate</code>, <code>AuthChallenge</code>, <code>StructuredFields</code>, <code>ProblemDetails</code>, <code>HTTPHeaders</code>, <code>Slug</code></td></tr>
+<tr><td>Constants</td><td><code>Vocabulary</code> (namespaces, contexts, type matching), <code>LinkRelation</code>, <code>ResourceType</code>, <code>MediaType</code>, <code>ServiceType</code>, <code>TokenType</code>, <code>AccessAction</code>, <code>ConstraintOperand</code>, <code>ConstraintOperator</code>, <code>Prefer</code>, <code>ActivityType</code></td></tr>
+</tbody></table></div>
+
+<h2 id="notes">Notes and deviations</h2>
+<ul>
+  <li>Names follow the Swift API Design Guidelines: acronyms are upper case (<code>LWSClient</code>, <code>JSONPatch</code>,
+  <code>DIDKey</code>, <code>linksetURL</code>), and creation takes the container as a label: <code>create(in:body:contentType:)</code>,
+  <code>createContainer(in:)</code>.</li>
+  <li>The contract's error classes are the cases of <code>LWSError</code>; its <em>ProtocolError</em> is <code>.protocolError</code>, and an
+  argument that is not an absolute http(s) URL is <code>.invalidArgument</code>, thrown before any request.</li>
+  <li>Request and response bodies are <code>Data</code>: there is no streaming read or upload. Every body can therefore be replayed
+  for the single retry after a <code>401</code>.</li>
+  <li><code>storageRoot()</code> is a throwing method, because a description without a <code>StorageRoot</code> service is a protocol
+  error. The other well-known services are optional properties (<code>notificationService</code>, <code>typeSearchService</code>…).</li>
+  <li><code>TypeQuery</code>'s builders throw <code>.invalidArgument</code> for an IRI that is not absolute or an empty OR group, so a query
+  is written <code>try TypeQuery().anyOf(…).allOf(…)</code>. <code>Linkset</code>, <code>JSONPatch</code> and <code>TypeQuery</code> are values:
+  <code>adding</code>, <code>removing</code>, <code>add</code>, <code>replace</code>… return copies.</li>
+  <li><code>WebhookVerifier.verify(method:url:headers:body:)</code> takes the parts of the request, so any server (Vapor, Hummingbird,
+  SwiftNIO…) can host the inbox: pass the inbox URL as registered, not the one a proxy forwarded to.</li>
+  <li>On Linux, <code>URLSession</code> comes from FoundationNetworking, over libcurl. A per-task delegate is ignored there, so the
+  default transport refuses redirects with a session delegate, and an authorization server response from another URL than the one
+  requested is refused as a followed redirect.</li>
+  <li>Extras: <code>request(_:_:body:contentType:)</code> sends any method through the authentication and redirect pipeline;
+  <code>readLinksetResource(_:)</code> reads a linkset at a known URL.</li>
+</ul>
+
+<h2 id="build">Build, test and examples</h2>
+<pre data-lang="bash"><code class="language-bash">swift build                                          # at the repository root: library, tests, examples, driver adapter
+swift test                                           # unit, fixture and HTTP tests (Swift Testing)
+node testing/mock-server/server.mjs --port 8787 &amp;
+LWS_TEST_SERVER=http://localhost:8787 swift test     # adds the cross-language interop scenario
+
+# Examples (swift/Examples/): Quickstart, SelfSignedAuth, WebhookReceiver
+swift run Quickstart http://localhost:8787/root/</code></pre>
+<div class="callout"><p><strong>Source</strong> <a href="https://github.com/ebremer/lws-client/tree/main/swift">swift/</a> in the repository, with its own <a href="https://github.com/ebremer/lws-client/blob/main/swift/README.md">README</a>.</p></div>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

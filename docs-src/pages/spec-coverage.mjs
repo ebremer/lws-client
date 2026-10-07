@@ -30,30 +30,31 @@ ${table(
 )}
 
 <h2 id="features">Feature matrix</h2>
-<p>All seven clients implement the same feature set. Language-specific differences are listed under each
+<p>All eight clients implement the same feature set. Language-specific differences are listed under each
 language guide.</p>
 ${table(
-  ["Feature", "Spec section", "Java", "JS/TS", "C++", "Rust", "Go", "Python", "C#"],
+  ["Feature", "Spec section", "Java", "JS/TS", "C++", "Rust", "Go", "Python", "C#", "Swift"],
   [
-    ["Storage discovery (<code>rel=lws#storage</code>) and storage description", "core §Discovery", Y, Y, Y, Y, Y, Y, Y],
-    ["Read / HEAD / range / conditional requests", "core §Read resource", Y, Y, Y, Y, Y, Y, Y],
-    ["Create data resources and containers (<code>Slug</code>, user links)", "core §Create resource", Y, Y, Y, Y, Y, Y, Y],
-    ["Replace (<code>PUT</code>) with <code>If-Match</code>; <code>Prefer: set-linkset</code>", "core §Update resource", Y, Y, Y, Y, Y, Y, Y],
-    ["JSON Patch (<code>PATCH</code>) and arbitrary advertised patch formats", "core §Update resource", Y, Y, Y, Y, Y, Y, Y],
-    ["Delete, recursive delete (<code>Depth: infinity</code>)", "core §Delete resource", Y, Y, Y, Y, Y, Y, Y],
-    ["Container listing and lazy pagination", "core §Containers, §Pagination", Y, Y, Y, Y, Y, Y, Y],
-    ["Linkset read / replace / patch", "core §Metadata", Y, Y, Y, Y, Y, Y, Y],
-    ["401 challenge → AS metadata → token exchange → retry", "core §Authorization", Y, Y, Y, Y, Y, Y, Y],
-    ["OpenID Connect, SAML 2.0, self-signed (CID, did:key) credentials", "authn suites", Y, Y, Y, Y, Y, Y, Y],
-    ["Webhook subscriptions", "core §Notifications, webhook suite", Y, Y, Y, Y, Y, Y, Y],
-    ["RFC 9421 webhook signature verification", "webhook suite §Authentication", Y, Y, Y, Y, Y, Y, Y],
-    ["Access requests and grants (ODRL access profile)", "core §Access Requests and Grants", Y, Y, Y, Y, Y, Y, Y],
-    ["Type index, type search with <code>QUERY</code>", "index", Y, Y, Y, Y, Y, Y, Y],
-    ["RFC 9457 problem details in errors", "core §REST binding", Y, Y, Y, Y, Y, Y, Y],
+    ["Storage discovery (<code>rel=lws#storage</code>) and storage description", "core §Discovery", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["Read / HEAD / range / conditional requests", "core §Read resource", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["Create data resources and containers (<code>Slug</code>, user links)", "core §Create resource", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["Replace (<code>PUT</code>) with <code>If-Match</code>; <code>Prefer: set-linkset</code>", "core §Update resource", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["JSON Patch (<code>PATCH</code>) and arbitrary advertised patch formats", "core §Update resource", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["Delete, recursive delete (<code>Depth: infinity</code>)", "core §Delete resource", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["Container listing and lazy pagination", "core §Containers, §Pagination", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["Linkset read / replace / patch", "core §Metadata", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["401 challenge → AS metadata → token exchange → retry", "core §Authorization", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["OpenID Connect, SAML 2.0, self-signed (CID, did:key) credentials", "authn suites", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["Webhook subscriptions", "core §Notifications, webhook suite", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["RFC 9421 webhook signature verification", "webhook suite §Authentication", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["Access requests and grants (ODRL access profile)", "core §Access Requests and Grants", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["Type index, type search with <code>QUERY</code>", "index", Y, Y, Y, Y, Y, Y, Y, Y],
+    ["RFC 9457 problem details in errors", "core §REST binding", Y, Y, Y, Y, Y, Y, Y, Y],
   ],
 )}
 
 ${callout("note", "C# specifics", ' The C# client gets Ed25519 (EdDSA) from BouncyCastle.Cryptography, because .NET 10 has none; everything else uses the BCL (<code>ECDsa</code>, <code>SHA256</code>/<code>SHA512</code>, <code>HttpClient</code>, <code>System.Text.Json</code>). Its 501 exception is <code>HttpNotImplementedException</code>, so that it never clashes with <code>System.NotImplementedException</code>. A subscription\'s URL (the contract\'s <code>subscription</code>) is <code>Subscription.Url</code>. See the <a href="languages/csharp.html#notes">C# guide</a>.')}
+${callout("note", "Swift specifics", ' The Swift client gets its keys and signatures (P-256, P-384, Ed25519) and digests from swift-crypto, which is CryptoKit on Apple platforms, and its HTTP from <code>URLSession</code> (FoundationNetworking on Linux). Bodies are <code>Data</code>, so it has no streaming read or upload. Its errors are the cases of one <code>LWSError</code> enum. See the <a href="languages/swift.html#notes">Swift guide</a>.')}
 
 <h2 id="decisions">Interpretation decisions</h2>
 <p>The drafts are still evolving. Where they leave something open, the clients behave as follows, and

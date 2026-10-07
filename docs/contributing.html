@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Contributing &amp; license · LWS Client</title>
-  <meta name="description" content="Repository layout, build and test commands for all seven LWS clients, the shared conformance process, documentation workflow and the MIT license.">
+  <meta name="description" content="Repository layout, build and test commands for all eight LWS clients, the shared conformance process, documentation workflow and the MIT license.">
   <meta property="og:title" content="Contributing &amp; license · LWS Client">
-  <meta property="og:description" content="Repository layout, build and test commands for all seven LWS clients, the shared conformance process, documentation workflow and the MIT license.">
+  <meta property="og:description" content="Repository layout, build and test commands for all eight LWS clients, the shared conformance process, documentation workflow and the MIT license.">
   <meta property="og:type" content="website">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
@@ -38,7 +38,7 @@
       <article class="content">
 
 <h1>Contributing &amp; license</h1>
-<p class="lead">The seven clients evolve together. A behaviour change starts in the shared contract and
+<p class="lead">The eight clients evolve together. A behaviour change starts in the shared contract and
 fixtures, then lands in every language, and the interop scenario keeps them honest.</p>
 <div id="toc" class="toc"></div>
 
@@ -47,7 +47,7 @@ fixtures, then lands in every language, and the interop scenario keeps them hone
 <tr><td><code>design/client-api.md</code></td><td>The cross-language API contract: concepts, wire behaviour, interpretation decisions</td></tr>
 <tr><td><code>conformance/</code></td><td>Shared JSON fixtures, their generator, and the interop scenario (<code>scenario.md</code>)</td></tr>
 <tr><td><code>testing/mock-server/</code></td><td>Zero-dependency Node.js LWS server used by interop tests</td></tr>
-<tr><td><code>java/</code> <code>js/</code> <code>cpp/</code> <code>rust/</code> <code>go/</code> <code>python/</code> <code>csharp/</code></td><td>The clients, each with a README, tests and examples</td></tr>
+<tr><td><code>java/</code> <code>js/</code> <code>cpp/</code> <code>rust/</code> <code>go/</code> <code>python/</code> <code>csharp/</code> <code>swift/</code></td><td>The clients, each with a README, tests and examples (Swift's manifest is the root <code>Package.swift</code>)</td></tr>
 <tr><td><code>wasm/</code></td><td>The Rust client as a WebAssembly component, and its WIT interface (<code>wasm/wit/lws.wit</code>)</td></tr>
 <tr><td><code>docs-src/</code></td><td>Sources of this website: page modules, snippet books, layout</td></tr>
 <tr><td><code>docs/</code></td><td>The generated GitHub Pages site (do not edit the HTML by hand)</td></tr>
@@ -63,6 +63,7 @@ fixtures, then lands in every language, and the interop scenario keeps them hone
 <tr><td>Go</td><td>Go 1.23+</td><td><code>cd go &amp;&amp; go vet ./... &amp;&amp; go test ./...</code></td></tr>
 <tr><td>Python</td><td>Python 3.10+</td><td><code>cd python &amp;&amp; python -m venv .venv &amp;&amp; .venv/bin/pip install -e ".[dev]" &amp;&amp; .venv/bin/pytest</code></td></tr>
 <tr><td>C#</td><td>.NET 10 SDK</td><td><code>dotnet test csharp</code></td></tr>
+<tr><td>Swift</td><td>Swift 6.0+ (Xcode 16+ on macOS)</td><td><code>swift build &amp;&amp; swift test</code> at the repository root</td></tr>
 <tr><td>WebAssembly</td><td>Rust 1.87+ with the <code>wasm32-wasip2</code> target; Node.js 22+</td><td><code>cd wasm &amp;&amp; cargo build --release --target wasm32-wasip2</code>, then test it through its driver adapter (<a href="languages/wasm.html#test">how</a>)</td></tr>
 </tbody></table></div>
 <p>Every suite runs the cross-language interop scenario when <code>LWS_TEST_SERVER</code> points at a running
@@ -77,7 +78,7 @@ export LWS_TEST_SERVER=http://localhost:8787</code></pre>
   <li><strong>Fixtures next.</strong> Add or adjust the vectors in <code>conformance/fixtures/</code>. Cryptographic fixtures are
   regenerated with <code>node conformance/tools/generate-fixtures.mjs</code>.</li>
   <li><strong>Mock server.</strong> Teach <code>testing/mock-server</code> the server side, with tests.</li>
-  <li><strong>All seven clients.</strong> Implement the change idiomatically in each language, run its tests, then run
+  <li><strong>All eight clients.</strong> Implement the change idiomatically in each language, run its tests, then run
   the interop scenario.</li>
   <li><strong>Docs.</strong> Update the snippet books and pages, and re-run the sample checks (below).</li>
 </ol>
@@ -104,11 +105,12 @@ node docs-src/check-samples.mjs      # compiles / type-checks every code sample 
   <li>Pages are ES modules in <code>docs-src/pages/</code> that export <code>{ path, title, description, body }</code>. The sidebar
   order lives in <code>docs/assets/site.js</code>.</li>
   <li>Code samples live in per-language snippet books, <code>docs-src/samples/&lt;lang&gt;.txt</code>, one
-  <code>@@@ topic</code> section per sample. A page shows all seven languages of a topic with
+  <code>@@@ topic</code> section per sample. A page shows all eight languages of a topic with
   <code>tabs(S.topic)</code>.</li>
   <li><code>check-samples.mjs</code> wraps every snippet in a harness and runs the real compilers: <code>tsc</code> against
   <code>js/dist</code>, <code>mypy</code>, <code>go build</code>, <code>javac</code>, <code>cargo check</code>,
-  <code>g++ -fsyntax-only</code> and <code>dotnet build</code> (of throwaway projects that reference <code>csharp/</code>).
+  <code>g++ -fsyntax-only</code>, <code>dotnet build</code> (of throwaway projects that reference <code>csharp/</code>) and
+  <code>swift build</code> (of a throwaway package that depends on the repository).
   Fragments may use the shared names <code>client</code>, <code>storage</code>, <code>container</code>,
   <code>url</code>, <code>etag</code>, <code>credentials</code>, and so on.</li>
   <li>GitHub Pages serves the committed <code>docs/</code> folder (Settings → Pages → <em>Deploy from a branch</em>,
@@ -116,9 +118,10 @@ node docs-src/check-samples.mjs      # compiles / type-checks every code sample 
 </ul>
 
 <h2 id="license">License</h2>
-<p>Everything in the repository is released under the <strong>MIT License</strong>: the seven clients, the mock server, the
+<p>Everything in the repository is released under the <strong>MIT License</strong>: the eight clients, the mock server, the
 fixtures, the tools and this documentation. Each package manifest (<code>pom.xml</code>, <code>package.json</code>,
-<code>Cargo.toml</code>, <code>pyproject.toml</code>, <code>vcpkg.json</code>, and <code>Directory.Build.props</code> for the NuGet package) declares <code>MIT</code>.</p>
+<code>Cargo.toml</code>, <code>pyproject.toml</code>, <code>vcpkg.json</code>, and <code>Directory.Build.props</code> for the NuGet package) declares <code>MIT</code>;
+SwiftPM manifests have no license field, so <code>Package.swift</code>, like every source file, carries the SPDX header.</p>
 <pre data-lang="text" data-title="LICENSE"><code class="language-text">MIT License
 
 Copyright (c) 2026 Erich Bremer and the lws-client contributors

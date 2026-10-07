@@ -157,6 +157,18 @@ await foreach (ContainedResource s in client.ListSubscriptionsAsync(service.Serv
 Subscription current = await client.GetSubscriptionAsync(subscription.Url);
 Console.WriteLine(current.Type);
 await client.UnsubscribeAsync(subscription.Url);</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">// subscribe(_ service: Service, …) checks that the NotificationService supports webhooks.
+guard let service = storage.notificationService else { fatalError(&quot;no notification service&quot;) }
+let subscription = try await client.subscribe(service, request: WebhookSubscriptionRequest(
+    topics: [container],                             // a container topic is recursive
+    inbox: URL(string: &quot;https://my-app.example/hooks/lws&quot;)!,
+    expires: Date().addingTimeInterval(86_400)))
+print(subscription.url, subscription.expires as Any)
+
+for try await s in client.listSubscriptions(service.serviceEndpoint) { print(s.id) }
+let current = try await client.getSubscription(subscription.url)
+print(current.type ?? &quot;&quot;)
+try await client.unsubscribe(subscription.url)</code></pre>
 </div>
 <pre data-lang="http" data-title="On the wire"><code class="language-http">POST /notifications/ HTTP/1.1
 Content-Type: application/lws+json
@@ -201,6 +213,7 @@ body bytes. Most languages also ship a small adapter for their standard server:<
 <tr><td>Go</td><td><code>verifier.Handler(inbox, fn)</code> as an <code>http.Handler</code>, or <code>VerifyRequest(r, inbox)</code></td></tr>
 <tr><td>Python</td><td><code>WebhookVerifier.verify(…)</code>; <code>AsyncWebhookVerifier.verify_asgi(scope, receive, inbox)</code> for ASGI</td></tr>
 <tr><td>C#</td><td><code>verifier.VerifyAsync(context.Request, inbox)</code> for <code>System.Net.HttpListener</code>; ASP.NET Core and others pass the method, inbox, <code>HeaderMap.From(…)</code> and body</td></tr>
+<tr><td>Swift</td><td><code>verifier.verify(method:url:headers:body:)</code>, callable from any server (Vapor, Hummingbird, SwiftNIO…)</td></tr>
 </tbody></table></div>
 <div class="code-tabs">
 <pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">import com.ebremer.lws.LwsClient;
@@ -400,6 +413,29 @@ while (true)
     }
 }
 // Other frameworks (ASP.NET Core, …): verifier.VerifyAsync(method, inbox, HeaderMap.From(headers), body)</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">import Foundation
+import LWS
+
+let client = LWSClient()                             // fetches storage descriptions
+let verifier = WebhookVerifier(options: WebhookVerifierOptions(
+    client: client,
+    trustedStorages: [URL(string: &quot;https://storage.example/&quot;)!]   // only this storage's keys
+))
+let inbox = URL(string: &quot;https://my-app.example/hooks/lws&quot;)!      // the registered (public) URL
+
+// In your HTTP server's handler (Vapor, Hummingbird, SwiftNIO, …), with the request's parts:
+func handle(method: String, headers: [(String, String)], body: Data) async -&gt; Int {
+    do {
+        let verified = try await verifier.verify(method: method, url: inbox, headers: HTTPHeaders(headers), body: body)
+        for a in verified.notification.activities { print(a.types, a.object.id, a.published as Any) }
+        return 204
+    } catch LWSError.signatureVerification(let reason) {
+        print(&quot;rejected: \(reason)&quot;)
+        return 401
+    } catch {
+        return 500
+    }
+}</code></pre>
 </div>
 <div class="callout warn"><p><strong>Use the URL you registered</strong> Verify against the inbox URL you gave the storage, not one rebuilt from the <code>Host</code> header. Behind a reverse proxy, that is your public URL. The signature covers <code>@scheme</code>, <code>@authority</code> and <code>@path</code>, and this is what stops a delivery meant for someone else from being replayed at you.</p></div>
 
@@ -419,7 +455,7 @@ while (true)
   <li>The body is parsed, and its <code>storage</code> must equal the signing key's storage, so one storage cannot
   speak for another.</li>
 </ol>
-<p>All seven verifiers pass the same <a href="testing.html#fixtures">13 shared test vectors</a>. They include tampered
+<p>All eight verifiers pass the same <a href="testing.html#fixtures">13 shared test vectors</a>. They include tampered
 bodies, recomputed digests, wrong hosts, replays, missing components, unauthorised keys, storage spoofing and
 algorithm confusion.</p>
 

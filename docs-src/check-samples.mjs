@@ -4,7 +4,7 @@
 // Compiles / type-checks every code sample in docs-src/samples/<lang>.txt against the real
 // clients, so the documentation never shows an API that does not exist.
 //
-//   node docs-src/check-samples.mjs [java] [ts] [cpp] [rust] [go] [python] [csharp]
+//   node docs-src/check-samples.mjs [java] [ts] [cpp] [rust] [go] [python] [csharp] [swift]
 //
 // Each language is skipped (not failed) when its toolchain or build output is missing:
 //   ts      js/dist and js/node_modules (npm install && npm run build in js/)
@@ -18,6 +18,8 @@
 //   csharp  dotnet (a .NET 10 SDK) on PATH; the harness projects reference
 //           csharp/src/Ebremer.Lws.Client, and every build output (the library's too) goes to
 //           <tmpdir>/lws-docs-check/csharp-artifacts, so csharp/**/bin and obj are left alone
+//   swift   swift (Swift 6.0+) on PATH; the harness package depends on the repository's root Package.swift,
+//           and builds in <tmpdir>/lws-docs-check/swift-build
 //
 // Harness projects are written to <tmpdir>/lws-docs-check/<lang>.
 
@@ -366,7 +368,60 @@ ${top}`);
     { cwd: dir, env });
 }
 
-const CHECKS = { java: checkJava, ts: checkTs, cpp: checkCpp, rust: checkRust, go: checkGo, python: checkPython, csharp: checkCsharp };
+// ---------------------------------------------------------------------------- Swift
+// A sample that starts with an import is a whole program (main.swift of its own executable target); the others are
+// fragments, each the body of a function, with the variables they use declared as module-level computed properties.
+function checkSwift() {
+  if (!has("swift")) return { skipped: "swift not on PATH" };
+  const dir = fresh("swift");
+  // SwiftPM names a path dependency after its directory.
+  const identity = REPO.split("/").pop().toLowerCase();
+  const targets = [];
+  const target = (name, file, source) => {
+    mkdirSync(join(dir, "Sources", name), { recursive: true });
+    writeFileSync(join(dir, "Sources", name, file), source);
+    targets.push(name);
+  };
+  let fragments = "";
+  for (const [topic, code] of Object.entries(book("swift"))) {
+    if (SKIP.has(topic)) continue;
+    if (/^import /m.test(code.split("\n")[0])) { target(`Sample_${ident(topic)}`, "main.swift", `${code}\n`); continue; }
+    fragments += `\nfunc snippet_${ident(topic)}() async throws {\n${indent(code, "    ")}\n}\n`;
+  }
+  target("Fragments", "Fragments.swift", `import Foundation
+import LWS
+
+// Never run: the fragments only have to compile.
+var client: LWSClient { fatalError() }
+var storage: StorageDescription { fatalError() }
+var container: URL { fatalError() }
+var url: URL { fatalError() }
+var requestURL: URL { fatalError() }
+var etag: String { fatalError() }
+var idToken: String { fatalError() }
+var samlAssertionXML: String { fatalError() }
+var accessToken: String { fatalError() }
+var credentials: SelfSignedCredentials { fatalError() }
+${fragments}`);
+  const kinds = targets.map((t) => t === "Fragments"
+    ? `        .target(name: "${t}", dependencies: [.product(name: "LWS", package: "${identity}")])`
+    : `        .executableTarget(name: "${t}", dependencies: [.product(name: "LWS", package: "${identity}")])`);
+  writeFileSync(join(dir, "Package.swift"), `// swift-tools-version:6.0
+import PackageDescription
+
+let package = Package(
+    name: "docs-check",
+    platforms: [.macOS(.v13), .iOS(.v16)],
+    dependencies: [.package(path: "${REPO}")],
+    targets: [
+${kinds.join(",\n")},
+    ]
+)
+`);
+  return run("swift", ["build", "--package-path", dir, "--scratch-path", join(WORK, "swift-build")]);
+}
+
+const CHECKS = { java: checkJava, ts: checkTs, cpp: checkCpp, rust: checkRust, go: checkGo, python: checkPython, csharp: checkCsharp, swift: checkSwift };
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(CHECKS);
 let failed = 0;
 for (const lang of wanted) {
