@@ -10,6 +10,7 @@ const LANGS = [
   ["go", "Go", "GO", "languages/go.html", "github.com/ebremer/lws-client/go", "Go 1.23+ · zero dependencies, context, iter.Seq2, errors.Is"],
   ["python", "Python", "PY", "languages/python.html", "lws-client (PyPI)", "Python 3.10+ · sync and async clients, typed dataclasses"],
   ["csharp", "C#", "C#", "languages/csharp.html", "Ebremer.Lws.Client (NuGet)", ".NET 10 · async/await, CancellationToken, IAsyncEnumerable, nullable annotations"],
+  ["wasm", "WebAssembly", "WA", "languages/wasm.html", "lws_client.wasm (WASI 0.2 component)", "Any component host with wasi:http: jco, Wasmtime · the Rust client behind a WIT interface"],
 ];
 
 const FEATURES = [
@@ -39,7 +40,8 @@ export default {
   <h1>Linked Web Storage clients for <span class="accent">seven languages</span></h1>
   <p class="lead">Read and write data in any W3C Linked Web Storage (LWS) server from Java, JavaScript/TypeScript,
   C++, Rust, Go, Python or C#. Each client is idiomatic to its language, and all seven share the same concepts,
-  wire behaviour and conformance tests.</p>
+  wire behaviour and conformance tests. The Rust client also comes as a WebAssembly component, for any language
+  that can host one.</p>
   <div class="hero-actions">
     <a class="btn primary" href="getting-started.html">Get started →</a>
     <a class="btn" href="concepts.html">Learn the concepts</a>

@@ -1,6 +1,7 @@
 # lws-client
 
-**W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python and C#.**
+**W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python and C#, and a
+WebAssembly component.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0b7a6d.svg)](LICENSE)
 ![Spec baseline](https://img.shields.io/badge/LWS%20spec-2026--10--05-0a6c94.svg)
@@ -10,7 +11,8 @@
 for giving applications secure, permissioned access to data that users keep in a storage of their
 choosing. It is the standards-track successor of the Solid Protocol. This repository contains seven
 independent, idiomatic client libraries that share one API design, one set of conformance fixtures
-and one interop test suite.
+and one interop test suite, and the Rust one built as a WebAssembly component for any language that
+can host components.
 
 📖 **Documentation:** <https://ebremer.github.io/lws-client/>
 
@@ -45,6 +47,7 @@ Every client implements the full client side of the LWS drafts as of **2026-10-0
 | Go | [`go/`](go) | `github.com/ebremer/lws-client/go` | Go 1.23+ | Zero dependencies, `context`, `iter.Seq2`, `errors.Is` sentinels |
 | Python | [`python/`](python) | `lws-client` (PyPI) | Python 3.10+ | Sync and async clients over one sans-I/O core, typed dataclasses |
 | C# | [`csharp/`](csharp) | `Ebremer.Lws.Client` (NuGet) | .NET 10 | `async` throughout with `CancellationToken`, `IAsyncEnumerable` listings, records; Ed25519 from BouncyCastle |
+| WebAssembly | [`wasm/`](wasm) | `lws_client.wasm` (WASI 0.2 component) | A component host with `wasi:http`: Wasmtime, or jco for Node.js | The Rust client behind a WIT interface ([`wasm/wit/lws.wit`](wasm/wit/lws.wit)); requests and TLS through the host's `wasi:http` |
 
 The APIs use the same concept names everywhere (`discoverStorage`, `readContainer`, `listContainer`,
 `create`, `update`, `patch`, `readLinkset`, `subscribe`, `searchTypes`, …). Casing and error handling
@@ -177,6 +180,23 @@ await foreach (ContainedResource item in client.ListContainerAsync(storage.GetSt
 ```
 </details>
 
+<details>
+<summary><b>WebAssembly (from JavaScript, through jco)</b></summary>
+
+```js
+import { client } from "./lws/lws-client.js"; // npx jco transpile lws_client.wasm -o lws …
+
+const lws = client.Client.new({ auth: { tag: "did-key", val: "es256" }, headers: [], allowInsecureHttp: false });
+const storage = lws.discoverStorage("https://storage.example/root/");
+const todo = lws.create(storage.storageRoot, new TextEncoder().encode('{"task":"write docs","done":false}'),
+  "application/json", { slug: "todo.json", types: [], links: [], headers: [] }).location;
+lws.patch(todo, [{ op: "replace", path: "/done", value: "true" }], { links: [], setLinkset: false, headers: [] });
+
+const items = lws.listContainer(storage.storageRoot);
+for (let item; (item = items.next()) !== undefined; ) console.log(item.id, item.format);
+```
+</details>
+
 ## Try it locally
 
 The repository ships a zero-dependency [mock LWS server](testing/mock-server) (Node.js 22+) that
@@ -191,8 +211,8 @@ Each language directory has a `README.md` with build, test and example commands.
 
 ## Driving the clients
 
-[`driver/`](driver) is an MCP server (Spring AI) that controls all seven clients through a small adapter per
-language, so that a test service such as [Touchstone](https://github.com/ebremer/touchstone) can make any
+[`driver/`](driver) is an MCP server (Spring AI) that controls all seven clients, and the component, through a
+small adapter per language, so that a test service such as [Touchstone](https://github.com/ebremer/touchstone) can make any
 of them perform LWS operations and judge what it sends. See [`driver/README.md`](driver/README.md).
 
 ## Repository layout
@@ -202,6 +222,7 @@ design/            Cross-language API contract (client-api.md)
 conformance/       Shared fixtures (JSON test vectors) and the interop scenario
 testing/           Mock LWS server used for interop tests
 java/ js/ cpp/ rust/ go/ python/ csharp/   The seven clients
+wasm/              The Rust client as a WebAssembly component (its interface: wasm/wit/lws.wit)
 driver/            MCP server that drives every client, and one adapter per language
 docs/              GitHub Pages site (generated from docs-src/ with `node docs-src/build.mjs`)
 ```
@@ -220,4 +241,5 @@ This is an independent implementation, not a W3C publication.
 
 ## License
 
-[MIT](LICENSE). This covers all seven clients, the mock server, the fixtures and the documentation.
+[MIT](LICENSE). This covers all seven clients, the component, the mock server, the fixtures and the
+documentation.

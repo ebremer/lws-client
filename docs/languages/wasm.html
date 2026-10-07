@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WebAssembly · LWS Client</title>
+  <meta name="description" content="The Rust LWS client as a WebAssembly component (WASI 0.2): its WIT interface, use from JavaScript through jco and from Rust through Wasmtime, and build instructions.">
+  <meta property="og:title" content="WebAssembly · LWS Client">
+  <meta property="og:description" content="The Rust LWS client as a WebAssembly component (WASI 0.2): its WIT interface, use from JavaScript through jco and from Rust through Wasmtime, and build instructions.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="../getting-started.html">Get started</a>
+        <a href="../concepts.html">Concepts</a>
+        <a href="../authentication.html">Auth</a>
+        <a href="../api-reference.html">API</a>
+        <a href="../spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="../index.html">Overview</a></li><li><a href="../getting-started.html">Getting started</a></li><li><a href="../api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1><span class="lang-badge lang-wasm">WA</span> WebAssembly</h1>
+<div class="badges">
+  <span class="badge accent">lws_client.wasm 0.1.0</span>
+  <span class="badge">WASI 0.2 component</span>
+  <span class="badge">WIT package ebremer:lws@0.1.0</span>
+  <span class="badge">about 1.1 MB</span>
+</div>
+<p class="lead">The <a href="rust.html">Rust client</a> built for <code>wasm32-wasip2</code> into a WebAssembly component,
+behind a WIT interface. One client for every language that can host components: JavaScript through
+<a href="https://github.com/bytecodealliance/jco">jco</a>, and Rust, Python, Go or .NET through
+<a href="https://wasmtime.dev/">Wasmtime</a>. It behaves on the wire exactly as the Rust client does. Only the transport
+differs: the component sends its requests through the host's <code>wasi:http</code>, so the host does TLS and decides
+which hosts the component may reach.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="build">Build</h2>
+<pre data-lang="bash"><code class="language-bash">rustup target add wasm32-wasip2                    # Rust 1.87 or later
+cd wasm
+cargo build --release --target wasm32-wasip2
+# target/wasm32-wasip2/release/lws_client.wasm</code></pre>
+<p>The component imports <code>wasi:http</code>, <code>wasi:io</code>, <code>wasi:clocks</code>, <code>wasi:random</code>,
+<code>wasi:cli</code> (environment, exit, standard streams) and <code>ebremer:lws/token-source</code>. It needs no files and
+no sockets.</p>
+
+<h2 id="interface">The interface</h2>
+<p><a href="https://github.com/ebremer/lws-client/blob/main/wasm/wit/lws.wit">wasm/wit/lws.wit</a> defines the world
+<code>lws-client</code>:</p>
+<div class="table-wrap"><table><thead><tr><th>Interface</th><th>What</th></tr></thead><tbody>
+<tr><td><code>types</code></td><td>The values: <code>metadata</code>, <code>read-result</code>, <code>page</code>, <code>item</code>, <code>created</code>, <code>updated</code>, <code>storage-description</code>, <code>linkset-document</code>, <code>subscription</code>, <code>patch-operation</code>, <code>type-query</code>, and <code>error</code> with its <code>error-kind</code></td></tr>
+<tr><td><code>client</code> (export)</td><td>The <code>client</code> resource, made by <code>client.new(options)</code>, with the operations of the API contract under their kebab-case names: <code>discover-storage</code>, <code>read</code>, <code>list-container</code>, <code>create</code>, <code>patch-linkset</code>, <code>subscribe</code>, <code>search-all</code>, … Lazy listings are the <code>items</code> and <code>type-iris</code> resources, read with <code>next</code></td></tr>
+<tr><td><code>webhook</code> (export)</td><td>The <code>verifier</code> resource: verifies signed notification deliveries (RFC 9421, RFC 9530) with the storage's published keys</td></tr>
+<tr><td><code>token-source</code> (import)</td><td>Subject tokens from the host, for an <code>openid</code> or <code>saml</code> client made with <code>subject-token.host</code></td></tr>
+</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Aspect</th><th>How the component does it</th></tr></thead><tbody>
+<tr><td>Calls</td><td>Synchronous: a call blocks until the host's <code>wasi:http</code> has the answer (WASI 0.2 exports are synchronous). A host that runs a storage in the same thread blocks itself</td></tr>
+<tr><td>Authentication</td><td><code>options.auth</code>: <code>none</code>, <code>bearer</code>, <code>openid</code>, <code>saml</code>, <code>self-signed</code> (an agent and a private JWK) or <code>did-key</code> (a fresh key). The 401 → token exchange → retry flow is the Rust client's</td></tr>
+<tr><td>Values</td><td>URLs are strings, absolute in every result. JSON-LD documents (storage descriptions, access requests and grants, linksets, notifications) cross as JSON text; everything else is typed. JSON Patch is a list of typed operations</td></tr>
+<tr><td>Errors</td><td>Every operation returns <code>result&lt;_, error&gt;</code>. An <code>error</code> has its <code>error-kind</code> (<code>not-found</code>, <code>precondition-failed</code>, …, <code>authentication</code>, <code>protocol</code>, <code>transport</code>), a message, and for an error response the status, headers and problem details</td></tr>
+<tr><td>Bodies</td><td><code>list&lt;u8&gt;</code>, in and out. Request bodies are never streamed</td></tr>
+<tr><td>Timeouts</td><td><code>options.timeout-ms</code> becomes the host's connect, first-byte and between-bytes timeouts</td></tr>
+</tbody></table></div>
+
+<h2 id="javascript">From JavaScript</h2>
+<p><code>jco transpile</code> turns the component into an ES module that runs on Node.js with
+<code>@bytecodealliance/preview2-shim</code>. Give it a <code>token-source</code> module, even one with no tokens:</p>
+<pre data-lang="bash"><code class="language-bash">npm install @bytecodealliance/jco @bytecodealliance/preview2-shim
+npx jco transpile lws_client.wasm -o lws --name lws-client --map 'ebremer:lws/token-source=../token-source.js'</code></pre>
+<pre data-lang="js"><code class="language-js">// token-source.js
+export function subjectToken(kind, issuer, realm) {
+  throw `no ${kind} token for ${realm}`;
+}</code></pre>
+<pre data-lang="js"><code class="language-js">import { client } from &quot;./lws/lws-client.js&quot;;
+
+const lws = client.Client.new({ auth: { tag: &quot;did-key&quot;, val: &quot;es256&quot; }, headers: [], allowInsecureHttp: false });
+const storage = lws.discoverStorage(&quot;https://storage.example/root/&quot;);
+const notes = lws.createContainer(storage.storageRoot, { slug: &quot;notes&quot;, types: [], links: [], headers: [] }).location;
+const hello = lws.create(notes, new TextEncoder().encode(&quot;Hello, LWS!&quot;), &quot;text/plain&quot;,
+  { slug: &quot;hello.txt&quot;, types: [], links: [], headers: [] }).location;
+console.log(new TextDecoder().decode(lws.read(hello, { headers: [] }).body));
+
+const items = lws.listContainer(notes);
+for (let item; (item = items.next()) !== undefined; ) console.log(item.id, item.types);
+
+try {
+  lws.update(hello, new TextEncoder().encode(&quot;again&quot;), &quot;text/plain&quot;,
+    { ifMatch: '&quot;stale&quot;', links: [], setLinkset: false, headers: [] });
+} catch (e) {
+  console.log(e.payload.kind, e.payload.http?.status); // precondition-failed 412
+}</code></pre>
+<p>Variant tags and enum values are kebab-case (<code>"did-key"</code>, <code>"precondition-failed"</code>), record fields
+camelCase, and an <code>error</code> is thrown with the record as its <code>payload</code>.</p>
+
+<h2 id="rust">From Rust, with Wasmtime</h2>
+<pre data-lang="rust"><code class="language-rust">let engine = Engine::default();
+let component = Component::from_file(&amp;engine, &quot;lws_client.wasm&quot;)?;
+let mut linker = Linker::new(&amp;engine);
+wasmtime_wasi::p2::add_to_linker_sync(&amp;mut linker)?;
+wasmtime_wasi_http::p2::add_only_http_to_linker_sync(&amp;mut linker)?;
+LwsClient::add_to_linker::&lt;Host, HasSelf&lt;Host&gt;&gt;(&amp;mut linker, |host| host)?;
+
+let mut store = Store::new(&amp;engine, host);
+let lws = LwsClient::instantiate(&amp;mut store, &amp;component, &amp;linker)?;
+let client = lws.ebremer_lws_client().client();
+let me = client.call_new(&amp;mut store, &amp;options)??;
+let metadata = client.call_head(&amp;mut store, me, &quot;https://storage.example/root/&quot;)??;</code></pre>
+<p><code>LwsClient</code> comes from <code>wasmtime::component::bindgen!</code> on <code>wasm/wit</code>. The driver's
+WebAssembly adapter, <a href="https://github.com/ebremer/lws-client/blob/main/driver/adapters/wasm/src/runtime.rs">driver/adapters/wasm</a>,
+is a complete host. To limit where the component's requests go, implement <code>WasiHttpHooks::send_request</code>.</p>
+
+<h2 id="test">Test</h2>
+<p>The component is tested through its interface, as a host uses it: the driver's WebAssembly adapter runs it in Wasmtime,
+and <code>check.mjs</code> takes it through every operation against the mock server.</p>
+<pre data-lang="bash"><code class="language-bash">cargo build --release --manifest-path driver/adapters/wasm/Cargo.toml
+node driver/adapters/check.mjs -- driver/adapters/wasm/target/release/lws-driver-adapter-wasm wasm/target/wasm32-wasip2/release/lws_client.wasm
+# wasm: 35 passed, 0 failed, 0 skipped</code></pre>
+<div class="callout"><p><strong>Source</strong> <a href="https://github.com/ebremer/lws-client/tree/main/wasm">wasm/</a> in the repository, with its own <a href="https://github.com/ebremer/lws-client/blob/main/wasm/README.md">README</a>.</p></div>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,6 +1,7 @@
 # LWS Client — Cross-Language API Contract
 
-Status: v0.1.0 design contract for all seven clients (Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#).
+Status: v0.1.0 design contract for all seven clients (Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#),
+and for the WebAssembly component built from the Rust one (section 13).
 
 Every client in this repository implements the **same capabilities** described here, using the
 **same conceptual names**, while expressing them in the idioms of its language (naming case,
@@ -522,7 +523,8 @@ Python exception classes; Rust `enum Error` + `status()` + `is_not_found()`-styl
 Go `*HTTPError` + sentinels usable with `errors.Is` (`ErrNotFound`, `ErrConflict`, …) and
 `errors.As`; C++ exception classes deriving from `lws::Error : std::runtime_error`; C# exceptions
 deriving from `Ebremer.Lws.LwsException` (the 501 one is `HttpNotImplementedException`, so as not to clash
-with `System.NotImplementedException`).
+with `System.NotImplementedException`); the WebAssembly component one `error` record whose `error-kind`
+names the class (`not-found`, `precondition-failed`, …, `authentication`, `protocol`, `transport`).
 
 ## 11. Testing requirements (all languages)
 
@@ -548,6 +550,36 @@ with `System.NotImplementedException`).
 | Go | `github.com/ebremer/lws-client/go` | package `lws` | Go 1.23 |
 | Python | `lws-client` (PyPI) | `import lws_client` | Python 3.10 |
 | C# | `Ebremer.Lws.Client` (NuGet) | `namespace Ebremer.Lws` | .NET 10 |
+| WebAssembly | `lws_client.wasm`, a WASI 0.2 component | WIT package `ebremer:lws@0.1.0`, world `lws-client` | a component host with `wasi:http` |
 
 All code is MIT licensed; every package manifest declares `MIT` and every source tree points to
 the repository root `LICENSE`.
+
+## 13. The WebAssembly component
+
+`wasm/` builds the Rust client for `wasm32-wasip2` into a WASI 0.2 component, so that one client serves
+every language that can host components (Wasmtime embeddings, jco for JavaScript). It is the Rust
+client, not a port: its behaviour on the wire is the Rust client's, and a change to the Rust client
+reaches it by rebuilding. Its interface, [`wasm/wit/lws.wit`](../wasm/wit/lws.wit), follows this
+contract:
+
+- **Transport.** On WASI the crate sends requests through the host's `wasi:http/outgoing-handler`
+  instead of reqwest (`rust/src/transport/`). The host does TLS and may refuse destinations. `wasi:http`
+  follows no redirects, so the client's own redirect handling (re-authorizing every hop, never
+  following one from an authorization server) applies unchanged. Request bodies are bytes.
+- **Names.** The operations keep the concept names in kebab-case (`discover-storage`,
+  `read-container`, `patch-linkset`, `search-all`, …) as functions of the `client` resource, built with
+  `client.new(options)`; `options.auth` selects the authenticator of section 6 (`none`, `bearer`,
+  `openid`, `saml`, `self-signed`, `did-key`).
+- **Values.** URLs are strings, absolute in every result. Typed records carry the results of section 5
+  (`metadata`, `read-result`, `page`, `item`, `created`, `updated`, `storage-description`, `subscription`).
+  JSON-LD documents (storage descriptions in `raw`, access requests and grants, linksets, notifications)
+  cross as JSON text, parsed and checked by the Rust models on the way in. JSON Patch is a list of
+  typed `patch-operation`s, a type query a typed `type-query`, both rebuilt with the Rust builders.
+- **Lazy sequences** are resources (`items`, `type-iris`) whose `next` fetches pages as needed.
+- **Calls are synchronous.** WASI 0.2 exports are; a call blocks until `wasi:http` has the answer.
+- **Credentials from the host.** An `openid` or `saml` client takes a fixed subject token, or asks the
+  imported `token-source.subject-token` for each exchange (section 6.3's supplier/callback).
+- **Webhooks.** The `webhook.verifier` resource is section 7.1's `WebhookVerifier`, fetching storage
+  descriptions with a given client.
+

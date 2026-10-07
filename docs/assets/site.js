@@ -33,6 +33,7 @@
       ["languages/go.html", "Go", "go"],
       ["languages/python.html", "Python", "python"],
       ["languages/csharp.html", "C#", "csharp"],
+      ["languages/wasm.html", "WebAssembly", "wasm"],
     ] },
     { title: "Reference", items: [
       ["api-reference.html", "API cross-reference"],
@@ -41,7 +42,7 @@
       ["contributing.html", "Contributing & license"],
     ] },
   ];
-  var LANG_COLORS = { java: "#b0721a", js: "#2f74c0", cpp: "#00599c", rust: "#a04f26", go: "#00838f", python: "#3a6e9f", csharp: "#68217a" };
+  var LANG_COLORS = { java: "#b0721a", js: "#2f74c0", cpp: "#00599c", rust: "#a04f26", go: "#00838f", python: "#3a6e9f", csharp: "#68217a", wasm: "#654ff0" };
 
   function currentPath() {
     var path = location.pathname.replace(/\\/g, "/");

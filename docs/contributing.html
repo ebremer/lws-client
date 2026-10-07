@@ -48,6 +48,7 @@ fixtures, then lands in every language, and the interop scenario keeps them hone
 <tr><td><code>conformance/</code></td><td>Shared JSON fixtures, their generator, and the interop scenario (<code>scenario.md</code>)</td></tr>
 <tr><td><code>testing/mock-server/</code></td><td>Zero-dependency Node.js LWS server used by interop tests</td></tr>
 <tr><td><code>java/</code> <code>js/</code> <code>cpp/</code> <code>rust/</code> <code>go/</code> <code>python/</code> <code>csharp/</code></td><td>The clients, each with a README, tests and examples</td></tr>
+<tr><td><code>wasm/</code></td><td>The Rust client as a WebAssembly component, and its WIT interface (<code>wasm/wit/lws.wit</code>)</td></tr>
 <tr><td><code>docs-src/</code></td><td>Sources of this website: page modules, snippet books, layout</td></tr>
 <tr><td><code>docs/</code></td><td>The generated GitHub Pages site (do not edit the HTML by hand)</td></tr>
 <tr><td><code>.github/workflows/ci.yml</code></td><td>CI: builds and tests every client and runs the interop scenario</td></tr>
@@ -62,6 +63,7 @@ fixtures, then lands in every language, and the interop scenario keeps them hone
 <tr><td>Go</td><td>Go 1.23+</td><td><code>cd go &amp;&amp; go vet ./... &amp;&amp; go test ./...</code></td></tr>
 <tr><td>Python</td><td>Python 3.10+</td><td><code>cd python &amp;&amp; python -m venv .venv &amp;&amp; .venv/bin/pip install -e ".[dev]" &amp;&amp; .venv/bin/pytest</code></td></tr>
 <tr><td>C#</td><td>.NET 10 SDK</td><td><code>dotnet test csharp</code></td></tr>
+<tr><td>WebAssembly</td><td>Rust 1.87+ with the <code>wasm32-wasip2</code> target; Node.js 22+</td><td><code>cd wasm &amp;&amp; cargo build --release --target wasm32-wasip2</code>, then test it through its driver adapter (<a href="languages/wasm.html#test">how</a>)</td></tr>
 </tbody></table></div>
 <p>Every suite runs the cross-language interop scenario when <code>LWS_TEST_SERVER</code> points at a running
 <a href="testing.html#mock-server">mock server</a>:</p>

@@ -22,6 +22,7 @@ ${table(
     ["<code>conformance/</code>", "Shared JSON fixtures, their generator, and the interop scenario (<code>scenario.md</code>)"],
     ["<code>testing/mock-server/</code>", "Zero-dependency Node.js LWS server used by interop tests"],
     ["<code>java/</code> <code>js/</code> <code>cpp/</code> <code>rust/</code> <code>go/</code> <code>python/</code> <code>csharp/</code>", "The clients, each with a README, tests and examples"],
+    ["<code>wasm/</code>", "The Rust client as a WebAssembly component, and its WIT interface (<code>wasm/wit/lws.wit</code>)"],
     ["<code>docs-src/</code>", "Sources of this website: page modules, snippet books, layout"],
     ["<code>docs/</code>", "The generated GitHub Pages site (do not edit the HTML by hand)"],
     ["<code>.github/workflows/ci.yml</code>", "CI: builds and tests every client and runs the interop scenario"],
@@ -39,6 +40,7 @@ ${table(
     ["Go", "Go 1.23+", "<code>cd go &amp;&amp; go vet ./... &amp;&amp; go test ./...</code>"],
     ["Python", "Python 3.10+", "<code>cd python &amp;&amp; python -m venv .venv &amp;&amp; .venv/bin/pip install -e \".[dev]\" &amp;&amp; .venv/bin/pytest</code>"],
     ["C#", ".NET 10 SDK", "<code>dotnet test csharp</code>"],
+    ["WebAssembly", "Rust 1.87+ with the <code>wasm32-wasip2</code> target; Node.js 22+", "<code>cd wasm &amp;&amp; cargo build --release --target wasm32-wasip2</code>, then test it through its driver adapter (<a href=\"languages/wasm.html#test\">how</a>)"],
   ],
 )}
 <p>Every suite runs the cross-language interop scenario when <code>LWS_TEST_SERVER</code> points at a running
