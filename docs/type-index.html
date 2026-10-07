@@ -87,6 +87,12 @@ if index is not None:
         print(type)                                  // e.g. https://schema.org/Person
     }
 }</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$index = $storage-&gt;typeIndexService();
+if ($index !== null) {
+    foreach ($client-&gt;listTypes($index-&gt;serviceEndpoint) as $type) {
+        echo $type, &quot;\n&quot;;                            // e.g. https://schema.org/Person
+    }
+}</code></pre>
 </div>
 
 <h2 id="search">Searching by type</h2>
@@ -263,6 +269,24 @@ let shaped = try TypeQuery().relation(&quot;describedby&quot;).allOf(&quot;https
 print(try await client.searchTypes(search, query: shaped).items.count)
 
 print(try await client.acceptedQueryFormats(search))               // [&quot;application/lws-query+json&quot;, …]</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$search = $storage-&gt;typeSearchService()-&gt;serviceEndpoint ?? throw new RuntimeException('no type search service');
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+$query = TypeQuery::create()
+    -&gt;anyOf('https://schema.org/Person', 'http://xmlns.com/foaf/0.1/Person')
+    -&gt;allOf(ResourceType::DATA_RESOURCE);
+$first = $client-&gt;searchTypes($search, $query);      // HTTP QUERY
+echo $first-&gt;totalItems ?? 0, ' ', $first-&gt;next ?? '', &quot;\n&quot;;
+
+foreach ($client-&gt;searchAll($search, TypeQuery::create()-&gt;allOf('https://schema.org/Event')) as $hit) {
+    echo $hit-&gt;id, ' ', implode(', ', $hit-&gt;types), &quot;\n&quot;;
+}
+
+// Indexed descriptive relations use the same grammar.
+$shaped = TypeQuery::create()-&gt;relation('describedby')-&gt;allOf('https://example.org/shapes/person');
+echo count($client-&gt;searchTypes($search, $shaped)-&gt;items), &quot;\n&quot;;
+
+echo implode(', ', $client-&gt;acceptedQueryFormats($search)), &quot;\n&quot;;   // application/lws-query+json, …</code></pre>
 </div>
 <pre data-lang="http" data-title="On the wire"><code class="language-http">QUERY /types/search HTTP/1.1
 Content-Type: application/lws-query+json

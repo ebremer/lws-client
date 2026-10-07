@@ -669,6 +669,7 @@ a.card:hover {
 .lang-python { background: #3a6e9f; }
 .lang-csharp { background: #68217a; }
 .lang-swift { background: #d8452f; }
+.lang-php { background: #777bb3; }
 .lang-wasm { background: #654ff0; }
 
 /* hero */

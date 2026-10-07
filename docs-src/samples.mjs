@@ -10,14 +10,14 @@
 // contributing.html#docs). Fragments assume these variables are in scope: client, storage,
 // container, url, etag (and, for auth samples, credentials / idToken / accessToken …).
 //
-// S[topic] = { java: {lang, code}, ts: {…}, cpp: {…}, rust: {…}, go: {…}, python: {…}, csharp: {…}, swift: {…} }
+// S[topic] = { java: {lang, code}, ts: {…}, cpp: {…}, rust: {…}, go: {…}, python: {…}, csharp: {…}, swift: {…}, php: {…} }
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const LANGS = ["java", "ts", "cpp", "rust", "go", "python", "csharp", "swift"];
+const LANGS = ["java", "ts", "cpp", "rust", "go", "python", "csharp", "swift", "php"];
 
 function parseBook(lang) {
   const text = readFileSync(join(here, "samples", `${lang}.txt`), "utf8").replace(/\r\n/g, "\n");

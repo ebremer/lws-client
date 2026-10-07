@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LWS Client — W3C Linked Web Storage clients</title>
-  <meta name="description" content="Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C# and Swift, sharing one API design, one conformance suite and one interop scenario.">
+  <meta name="description" content="Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift and PHP, sharing one API design, one conformance suite and one interop scenario.">
   <meta property="og:title" content="LWS Client — W3C Linked Web Storage clients">
-  <meta property="og:description" content="Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C# and Swift, sharing one API design, one conformance suite and one interop scenario.">
+  <meta property="og:description" content="Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift and PHP, sharing one API design, one conformance suite and one interop scenario.">
   <meta property="og:type" content="website">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
@@ -41,12 +41,12 @@
   <div class="badges">
     <span class="badge accent">MIT licensed</span>
     <span class="badge">LWS drafts as of 2026-10-05</span>
-    <span class="badge">8 languages · 1 API design</span>
+    <span class="badge">9 languages · 1 API design</span>
     <span class="badge">v0.1.0</span>
   </div>
-  <h1>Linked Web Storage clients for <span class="accent">eight languages</span></h1>
+  <h1>Linked Web Storage clients for <span class="accent">nine languages</span></h1>
   <p class="lead">Read and write data in any W3C Linked Web Storage (LWS) server from Java, JavaScript/TypeScript,
-  C++, Rust, Go, Python, C# or Swift. Each client is idiomatic to its language, and all eight share the same concepts,
+  C++, Rust, Go, Python, C#, Swift or PHP. Each client is idiomatic to its language, and all nine share the same concepts,
   wire behaviour and conformance tests. The Rust client also comes as a WebAssembly component, for any language
   that can host one.</p>
   <div class="hero-actions">
@@ -68,7 +68,7 @@
       (controlled identifier documents and <code>did:key</code>) with ES256 and EdDSA.</li>
       <li><strong>Verified webhooks:</strong> RFC 9421 HTTP Message Signatures and RFC 9530
       <code>Content-Digest</code>, checked against the storage's published keys.</li>
-      <li><strong>One contract, eight idioms:</strong> the same concept names everywhere, expressed with each
+      <li><strong>One contract, nine idioms:</strong> the same concept names everywhere, expressed with each
       language's async model, iteration and error style.</li>
     </ul>
   </div>
@@ -175,6 +175,16 @@ _ = try await client.patch(todo.location, patch: JSONPatch().replace(&quot;/done
 for try await item in client.listContainer(try storage.storageRoot()) {
     print(item.id, item.format ?? &quot;container&quot;)
 }</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$credentials = SelfSignedCredentials::didKey(SigningKey::generateP256());
+$client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));
+
+$storage = $client-&gt;discoverStorage('https://storage.example/root/');
+$todo = $client-&gt;createJson($storage-&gt;storageRoot(), ['task' =&gt; 'write docs', 'done' =&gt; false]);
+$client-&gt;patch($todo-&gt;location, (new JsonPatch())-&gt;replace('/done', true));
+
+foreach ($client-&gt;listContainer($storage-&gt;storageRoot()) as $item) {
+    echo $item-&gt;id, ' ', $item-&gt;format ?? 'container', &quot;\n&quot;;
+}</code></pre>
 </div>
   </div>
 </div>
@@ -201,6 +211,7 @@ for try await item in client.listContainer(try storage.storageRoot()) {
   <a class="card" href="languages/python.html"><h3><span class="lang-badge lang-python">PY</span>Python</h3><p>Python 3.10+ · sync and async clients, typed dataclasses</p><div class="meta">lws-client (PyPI)</div></a>
   <a class="card" href="languages/csharp.html"><h3><span class="lang-badge lang-csharp">C#</span>C#</h3><p>.NET 10 · async/await, CancellationToken, IAsyncEnumerable, nullable annotations</p><div class="meta">Ebremer.Lws.Client (NuGet)</div></a>
   <a class="card" href="languages/swift.html"><h3><span class="lang-badge lang-swift">SW</span>Swift</h3><p>Swift 6 · async/await, AsyncSequence listings, Sendable values, URLSession, CryptoKit</p><div class="meta">lws-client (SwiftPM)</div></a>
+  <a class="card" href="languages/php.html"><h3><span class="lang-badge lang-php">PHP</span>PHP</h3><p>PHP 8.2+ · named arguments, lazy foreach listings, readonly models, ext-curl or any PSR-18 client</p><div class="meta">ebremer/lws-client (Composer)</div></a>
   <a class="card" href="languages/wasm.html"><h3><span class="lang-badge lang-wasm">WA</span>WebAssembly</h3><p>Any component host with wasi:http: jco, Wasmtime · the Rust client behind a WIT interface</p><div class="meta">lws_client.wasm (WASI 0.2 component)</div></a>
 </div>
 
@@ -222,7 +233,7 @@ for try await item in client.listContainer(try storage.storageRoot()) {
 RFC 9421 webhook vectors and the did:key specification vector. They also all pass the same
 <a href="testing.html#interop">end-to-end interop scenario</a> against a bundled mock LWS server.
 Every code sample on this site is type-checked or compiled against the real libraries before it is published.
-The getting-started program is also run against the mock server in all eight languages.</p>
+The getting-started program is also run against the mock server in all nine languages.</p>
 <p>The baseline is the W3C LWS Working Group's documents as of 2026-10-05, including the switch of
 the baseline <code>PATCH</code> format to JSON Patch. See <a href="spec-coverage.html">spec coverage</a> for
 details and interpretation decisions.</p>

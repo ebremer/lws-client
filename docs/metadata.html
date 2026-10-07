@@ -112,6 +112,13 @@ print(doc.url, doc.etag ?? &quot;&quot;, doc.allow, doc.acceptPatch)
 
 for link in doc.linkset.links { print(link.rel, &quot;→&quot;, link.href) }
 let shapes = doc.linkset.targets(&quot;describedby&quot;).map(\.href)</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$doc = $client-&gt;readLinkset($url);                   // HEAD for rel=&quot;linkset&quot;, then GET
+echo $doc-&gt;url, ' ', $doc-&gt;etag ?? '', ' ', implode(', ', $doc-&gt;allow), ' ', implode(', ', $doc-&gt;acceptPatch), &quot;\n&quot;;
+
+foreach ($doc-&gt;linkset-&gt;links() as $link) {
+    echo $link-&gt;rel, ' → ', $link-&gt;href, &quot;\n&quot;;
+}
+$shapes = $doc-&gt;linkset-&gt;hrefs('describedby');</code></pre>
 </div>
 
 <h2 id="patch">Patching a linkset</h2>
@@ -220,6 +227,16 @@ let patch = doc.linkset.targets(rel).isEmpty
     ? JSONPatch().add(JSONPointer.from(&quot;linkset&quot;, &quot;0&quot;, rel), [reviewer])
     : JSONPatch().add(JSONPointer.from(&quot;linkset&quot;, &quot;0&quot;, rel, &quot;-&quot;), reviewer)
 _ = try await client.patchLinkset(doc.url, patch: patch, options: UpdateOptions(ifMatch: doc.etag))</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$doc = $client-&gt;readLinkset($url);
+$rel = 'https://example.org/rel/reviewer';           // extension relation types are URIs
+$reviewer = ['href' =&gt; 'https://id.example/bob'];
+
+// JsonPointer escapes &quot;/&quot; in the relation URI as &quot;~1&quot;.
+// &quot;add&quot; on an existing member replaces it, so append with &quot;/-&quot; when the relation exists.
+$patch = $doc-&gt;linkset-&gt;targets($rel) === []
+    ? (new JsonPatch())-&gt;add(JsonPointer::fromSegments('linkset', '0', $rel), [$reviewer])
+    : (new JsonPatch())-&gt;add(JsonPointer::fromSegments('linkset', '0', $rel, '-'), $reviewer);
+$client-&gt;patchLinkset($doc-&gt;url, $patch, ifMatch: $doc-&gt;etag);</code></pre>
 </div>
 <div class="callout tip"><p><strong>Always send If-Match</strong> Several agents may edit the same metadata. Pass the linkset's ETag so a concurrent change produces <code>412 Precondition Failed</code> instead of a silent overwrite.</p></div>
 
@@ -278,6 +295,11 @@ if doc.supportsPut {                                 // Allow lists PUT
     let updated = doc.linkset                        // Linkset is a value: adding returns a copy
         .adding(anchor: url.absoluteString, rel: &quot;license&quot;, href: &quot;https://creativecommons.org/licenses/by/4.0/&quot;)
     _ = try await client.updateLinkset(doc.url, linkset: updated, options: UpdateOptions(ifMatch: doc.etag))
+}</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$doc = $client-&gt;readLinkset($url);
+if ($doc-&gt;supportsPut()) {                           // Allow lists PUT
+    $doc-&gt;linkset-&gt;add($url, 'license', 'https://creativecommons.org/licenses/by/4.0/');   // changes it in place
+    $client-&gt;updateLinkset($doc-&gt;url, $doc-&gt;linkset, ifMatch: $doc-&gt;etag);
 }</code></pre>
 </div>
 

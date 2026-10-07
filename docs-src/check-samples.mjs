@@ -4,7 +4,7 @@
 // Compiles / type-checks every code sample in docs-src/samples/<lang>.txt against the real
 // clients, so the documentation never shows an API that does not exist.
 //
-//   node docs-src/check-samples.mjs [java] [ts] [cpp] [rust] [go] [python] [csharp] [swift]
+//   node docs-src/check-samples.mjs [java] [ts] [cpp] [rust] [go] [python] [csharp] [swift] [php]
 //
 // Each language is skipped (not failed) when its toolchain or build output is missing:
 //   ts      js/dist and js/node_modules (npm install && npm run build in js/)
@@ -20,6 +20,8 @@
 //           <tmpdir>/lws-docs-check/csharp-artifacts, so csharp/**/bin and obj are left alone
 //   swift   swift (Swift 6.0+) on PATH; the harness package depends on the repository's root Package.swift,
 //           and builds in <tmpdir>/lws-docs-check/swift-build
+//   php     php (PHP 8.2+) on PATH lints every sample; with vendor/ at the repository root (composer install),
+//           PHPStan (level 8, as for the library) also type-checks them against php/src
 //
 // Harness projects are written to <tmpdir>/lws-docs-check/<lang>.
 
@@ -421,7 +423,77 @@ ${kinds.join(",\n")},
   return run("swift", ["build", "--package-path", dir, "--scratch-path", join(WORK, "swift-build")]);
 }
 
-const CHECKS = { java: checkJava, ts: checkTs, cpp: checkCpp, rust: checkRust, go: checkGo, python: checkPython, csharp: checkCsharp, swift: checkSwift };
+// ---------------------------------------------------------------------------- PHP
+// A sample that starts with <?php is a whole program (its own file, whose require of vendor/autoload.php reaches the
+// repository's autoloader); the others are fragments, each the body of a function whose parameters are the shared
+// variables, in a file that imports every public class of the library.
+function checkPhp() {
+  if (!has("php")) return { skipped: "php not on PATH" };
+  const dir = fresh("php");
+  const classes = [];
+  const walk = (d, ns) => {
+    for (const n of readdirSync(d).sort()) {
+      const p = join(d, n);
+      if (statSync(p).isDirectory()) { if (n !== "Internal") walk(p, `${ns}\\${n}`); }
+      else if (n.endsWith(".php")) classes.push(`${ns}\\${n.slice(0, -4)}`);
+    }
+  };
+  walk(join(REPO, "php/src"), "Ebremer\\Lws");
+  const short = (c) => c.split("\\").pop();
+  const names = new Set();
+  for (const c of classes) {
+    if (names.has(short(c))) throw new Error(`two library classes are named ${short(c)}`);
+    names.add(short(c));
+  }
+  const files = [];
+  let fragments = `<?php
+declare(strict_types=1);
+
+${classes.map((c) => `use ${c};`).join("\n")}
+
+// Never run: the fragments only have to type-check.
+`;
+  for (const [topic, code] of Object.entries(book("php"))) {
+    if (SKIP.has(topic)) continue;
+    if (code.startsWith("<?php")) {
+      writeFileSync(join(dir, `prog_${ident(topic)}.php`), `${code}\n`);
+      files.push(`prog_${ident(topic)}.php`);
+      continue;
+    }
+    fragments += `
+function snippet_${ident(topic)}(LwsClient $client, StorageDescription $storage, string $container, string $url, string $etag,
+    SelfSignedCredentials $credentials, string $idToken, string $samlAssertionXml, string $accessToken, string $requestUrl): void
+{
+${indent(code, "    ")}
+}
+`;
+  }
+  writeFileSync(join(dir, "fragments.php"), fragments);
+  files.push("fragments.php");
+  for (const f of files) {
+    const lint = run("php", ["-l", f], { cwd: dir, shell: false });
+    if (!lint.ok) return lint;
+  }
+  const autoload = join(REPO, "vendor/autoload.php");
+  const phpstan = join(REPO, "vendor/bin/phpstan");
+  if (!existsSync(autoload) || !existsSync(phpstan)) return { skipped: `linted ${files.length} files; composer install at the repository root to type-check them` };
+  mkdirSync(join(dir, "vendor"));
+  writeFileSync(join(dir, "vendor/autoload.php"), `<?php\nrequire ${JSON.stringify(autoload)};\n`);
+  writeFileSync(join(dir, "phpstan.neon"), `parameters:
+    level: 8
+    phpVersion: 80200
+    paths:
+        - ${dir}
+    excludePaths:
+        - ${join(dir, "vendor")}
+    tmpDir: ${join(WORK, "php-phpstan")}
+    bootstrapFiles:
+        - ${autoload}
+`);
+  return run("php", [phpstan, "analyse", "-c", join(dir, "phpstan.neon"), "--no-progress", "--memory-limit=1G", "--error-format=raw"], { cwd: dir, shell: false });
+}
+
+const CHECKS = { java: checkJava, ts: checkTs, cpp: checkCpp, rust: checkRust, go: checkGo, python: checkPython, csharp: checkCsharp, swift: checkSwift, php: checkPhp };
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(CHECKS);
 let failed = 0;
 for (const lang of wanted) {

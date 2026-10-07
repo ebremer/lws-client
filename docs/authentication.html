@@ -151,6 +151,13 @@ print(credentials.agent)                             // did:key:zDn…
 
 let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))
 _ = try await client.head(url)   // 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// A did:key agent: the identifier is derived from the public key, nothing to host.
+$key = SigningKey::generateP256();                   // or SigningKey::generateEd25519()
+$credentials = SelfSignedCredentials::didKey($key);
+echo $credentials-&gt;agent, &quot;\n&quot;;                      // did:key:zDn…
+
+$client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));
+$client-&gt;head($url);   // 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
 </div>
 
 <h3 id="cid">HTTPS agents with a controlled identifier document</h3>
@@ -252,6 +259,15 @@ print(JSONValue.object(cid).serialized(pretty: true))     // serve this at https
 // …and signs credentials with the matching private key (kid = the verification method id).
 let credentials = SelfSignedCredentials.forAgent(agent, key: key, keyID: &quot;https://bot.example/agent#key-1&quot;)
 let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// An HTTPS agent publishes a controlled identifier document listing its key…
+$key = SigningKey::generateP256();
+$agent = 'https://bot.example/agent';
+$cid = ControlledIdentifierDocument::create($agent, $key-&gt;publicKey, 'key-1');
+echo json_encode($cid, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), &quot;\n&quot;;   // serve this at $agent
+
+// …and signs credentials with the matching private key (kid = the verification method id).
+$credentials = SelfSignedCredentials::forAgent($agent, $key, 'https://bot.example/agent#key-1');
+$client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));</code></pre>
 </div>
 <pre data-lang="json" data-title="https://bot.example/agent"><code class="language-json">{
   &quot;@context&quot;: [&quot;https://www.w3.org/ns/cid/v1&quot;],
@@ -369,6 +385,16 @@ let did = try DIDKey.did(for: key.publicKey)         // did:key:zDn…
 let kid = try DIDKey.keyID(forDID: did)              // did:key:zDn…#zDn…
 let fromDID = try DIDKey.publicKey(did)
 print(credentials.agent, kid, fromDID.algorithm)</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$key = SigningKey::generateP256();
+$privateJwk = $key-&gt;jwk();                           // includes &quot;d&quot;: store securely
+$restored = SigningKey::fromJwk($privateJwk);
+$credentials = SelfSignedCredentials::didKey($restored);
+
+// did:key &lt;-&gt; public key
+$did = DidKey::did($key-&gt;publicKey);                 // did:key:zDn…
+$kid = DidKey::keyIdForDid($did);                    // did:key:zDn…#zDn…
+$fromDid = DidKey::publicKey($did);
+echo $credentials-&gt;agent, ' ', $kid, ' ', $fromDid-&gt;algorithm(), &quot;\n&quot;;</code></pre>
 </div>
 <div class="callout warn"><p><strong>Protect private keys</strong> A private JWK or PEM is a long-lived credential. Keep it in a secret store, never in a repository. JavaScript keys are non-extractable unless you ask otherwise.</p></div>
 
@@ -458,6 +484,14 @@ let authenticator = TokenExchangeAuthenticator(credentials: credentials, options
     authorizationServerFilter: { asURI, realm in asURI.absoluteString == &quot;https://auth.example&quot; }
 ))
 let client = LWSClient(authenticator: authenticator)</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// The ID token from your OpenID Connect login (any OIDC library). OpenIdCredentials also takes a
+// closure, fn (CredentialContext $c): string, that supplies a fresh token whenever one is needed.
+$credentials = new OpenIdCredentials($idToken);
+$authenticator = new TokenExchangeAuthenticator($credentials,
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    authorizationServerFilter: static fn (string $asUri, string $realm): bool =&gt; $asUri === 'https://auth.example',
+);
+$client = new LwsClient(authenticator: $authenticator);</code></pre>
 </div>
 
 <h2 id="saml">SAML 2.0</h2>
@@ -496,6 +530,9 @@ using var client = new LwsClient(new LwsClientOptions { Authenticator = authenti
 <pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
 let credentials = SAMLCredentials.fromXML(samlAssertionXML)
 let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+$credentials = SamlCredentials::fromXml($samlAssertionXml);
+$client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));</code></pre>
 </div>
 
 <h2 id="bearer">Existing access tokens</h2>
@@ -535,6 +572,8 @@ using var client = new LwsClient(new LwsClientOptions
 });</code></pre>
 <pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">// An access token you obtained yourself; it is only sent to URLs inside the realm.
 let client = LWSClient(authenticator: BearerTokenAuthenticator(token: accessToken, realm: URL(string: &quot;https://storage.example/&quot;)!))</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// An access token you obtained yourself; it is only sent to URLs inside the realm.
+$client = new LwsClient(authenticator: new BearerTokenAuthenticator($accessToken, realm: 'https://storage.example/'));</code></pre>
 </div>
 
 <h2 id="options">Options</h2>
@@ -607,6 +646,15 @@ let authenticator = TokenExchangeAuthenticator(
         timeout: 10                                  // metadata and token requests, in seconds
     ))
 let client = LWSClient(authenticator: authenticator)</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$trusted = ['https://auth.example'];
+$authenticator = new TokenExchangeAuthenticator(
+    $credentials-&gt;withLifetime(300),                 // self-signed JWT lifetime in seconds (default 300)
+    allowInsecureHttp: false,                        // plain-http AS only on loopback (default)
+    authorizationServerFilter: static fn (string $asUri, string $realm): bool =&gt; in_array($asUri, $trusted, true),
+    refreshMargin: 30,                               // refresh 30 s before expiry (default)
+    timeout: 10,                                     // metadata and token requests, in seconds
+);
+$client = new LwsClient(authenticator: $authenticator);</code></pre>
 </div>
 <div class="table-wrap"><table><thead><tr><th>Option</th><th>Default</th><th>Purpose</th></tr></thead><tbody>
 <tr><td><code>allowInsecureHttp</code></td><td><code>false</code></td><td>Permit <code>http://</code> authorization servers on non-loopback hosts (testing only)</td></tr>
@@ -768,6 +816,37 @@ struct APIKeyAuthenticator: Authenticator {
 }
 
 let client = LWSClient(authenticator: APIKeyAuthenticator(key: &quot;my-api-key&quot;))</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">&lt;?php
+require __DIR__ . '/vendor/autoload.php';
+
+use Ebremer\Lws\Auth\Authenticator;
+use Ebremer\Lws\Auth\AuthRequest;
+use Ebremer\Lws\Auth\AuthResponse;
+use Ebremer\Lws\LwsClient;
+
+// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator interface.
+final class ApiKeyAuthenticator implements Authenticator
+{
+    public function __construct(#[\SensitiveParameter] private readonly string $key)
+    {
+    }
+
+    public function authorize(AuthRequest $request): AuthRequest
+    {
+        if (parse_url($request-&gt;url, PHP_URL_HOST) !== 'storage.example') {
+            return $request;
+        }
+        return $request-&gt;withHeaders($request-&gt;headers-&gt;with('X-Api-Key', $this-&gt;key));
+    }
+
+    // Nothing to refresh: the 401 surfaces as UnauthorizedException.
+    public function handleChallenge(AuthRequest $request, AuthResponse $response): bool
+    {
+        return false;
+    }
+}
+
+$client = new LwsClient(authenticator: new ApiKeyAuthenticator('my-api-key'));</code></pre>
 </div>
 
 <h2 id="security">Security considerations</h2>

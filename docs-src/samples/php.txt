@@ -1,0 +1,412 @@
+@@@ install bash
+# From Packagist (once published)
+composer require ebremer/lws-client
+
+# From GitHub today: the package is the repository itself (its composer.json is at the root)
+composer config repositories.lws-client vcs https://github.com/ebremer/lws-client
+composer require ebremer/lws-client:dev-main
+
+# PHP 8.2+ with ext-curl, ext-openssl and ext-sodium (bundled with most PHP builds). No Composer
+# dependencies; psr/http-client is optional (Psr18Transport, for Guzzle, Symfony HttpClient, …).
+@@@ first-program
+<?php
+require __DIR__ . '/vendor/autoload.php';
+
+use Ebremer\Lws\Auth\SelfSignedCredentials;
+use Ebremer\Lws\Auth\SigningKey;
+use Ebremer\Lws\Auth\TokenExchangeAuthenticator;
+use Ebremer\Lws\LwsClient;
+
+$credentials = SelfSignedCredentials::didKey(SigningKey::generateP256());
+$client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));
+echo "agent:   {$credentials->agent}\n";
+
+$storage = $client->discoverStorage('http://localhost:8787/root/');
+echo "storage: {$storage->id}  root: {$storage->storageRoot()}\n";
+
+$folder = $client->createContainer($storage->storageRoot(), slug: 'hello-world');
+$file = $client->createText($folder->location, 'Hello, LWS!', slug: 'hello.txt');
+echo "created: {$file->location}\n";
+
+$resource = $client->read($file->location);
+printf("%s  (etag %s, parent %s)\n", $resource->text(), $resource->etag ?? '-', $resource->metadata->parent ?? '-');
+@@@ hero
+$credentials = SelfSignedCredentials::didKey(SigningKey::generateP256());
+$client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));
+
+$storage = $client->discoverStorage('https://storage.example/root/');
+$todo = $client->createJson($storage->storageRoot(), ['task' => 'write docs', 'done' => false]);
+$client->patch($todo->location, (new JsonPatch())->replace('/done', true));
+
+foreach ($client->listContainer($storage->storageRoot()) as $item) {
+    echo $item->id, ' ', $item->format ?? 'container', "\n";
+}
+@@@ client-config
+$client = new LwsClient(
+    authenticator: new TokenExchangeAuthenticator($credentials),
+    userAgent: 'my-app/1.0',                         // default "lws-client-php/0.1.0"
+    defaultHeaders: ['Accept-Language' => 'en'],     // added to every request
+    timeout: 20,                                     // seconds, per request (each redirect hop)
+    maxRedirects: 5,                                 // followed by the client itself (default 10)
+    // transport: $myTransport,                      // any HttpTransport (default: CurlTransport)
+);
+
+// Per-call headers and time limits, as named arguments of every operation.
+$page = $client->readContainer($container, headers: ['X-Trace' => '1'], timeout: 5);
+echo $page->totalItems ?? 0, "\n";
+
+// Another identity over the same transport:
+$anonymous = $client->withAuthenticator(null);
+@@@ discover
+// Any URL inside the storage is a valid starting point.
+$storage = $client->discoverStorage('https://storage.example/root/notes/');
+$root = $storage->storageRoot();                     // the required StorageRoot service
+echo $storage->id, ' ', implode(', ', $storage->types), ' ', $root, "\n";
+
+$notifications = $storage->notificationService();
+if ($notifications !== null) {
+    echo $notifications->serviceEndpoint, ' ', implode(', ', $notifications->subscriptionTypes()), "\n";
+}
+foreach ($storage->services as $service) {
+    echo implode(', ', $service->types), ' → ', $service->serviceEndpoint, "\n";
+}
+$format = $storage->capability('https://feature.example/PatchSupport')?->property('format');
+
+// When you already know the storage URL:
+$same = $client->getStorageDescription($storage->id);
+@@@ create
+// A container (POST with Link: <https://www.w3.org/ns/lws#Container>; rel="type")
+$notes = $client->createContainer($container, slug: 'notes')->location;
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+$list = $client->createText($notes, "milk\neggs\n", slug: 'shopping.txt');
+$todo = $client->createJson($notes, ['task' => 'write docs'],
+    slug: 'todo.json',
+    links: [new Link('https://example.org/shapes/todo', 'describedby')],   // user metadata
+    types: ['https://schema.org/Action'],                                  // extra rel="type"
+);
+$png = file_get_contents('photo.png') ?: throw new RuntimeException('cannot read photo.png');
+$photo = $client->create($notes, $png, 'image/png', slug: 'photo.png');
+
+echo $list->location, ' ', $todo->linkset ?? '-', ' ', $photo->metadata->parent ?? '-', "\n";
+@@@ read
+$resource = $client->read($url);
+$meta = $resource->metadata;
+echo $resource->status, ' ', $resource->contentType ?? '', ' ', $resource->etag ?? '', ' ', $meta->lastModified ?? '', "\n";
+echo implode(', ', $meta->types), ' ', $meta->isDataResource() ? 'data' : 'container', ' ', $meta->parent ?? '', "\n";
+
+$text = $resource->text();                           // decoded using the Content-Type charset
+$bytes = $resource->body;                            // a PHP string holds the raw bytes
+$json = $client->read($url, accept: 'application/json')->json();   // objects as arrays
+
+// Headers and links only
+$head = $client->head($url);
+echo $head->contentLength ?? 0, ' ', implode(', ', $head->allow), ' ', implode(', ', $head->acceptPatch), "\n";
+foreach ($head->links('describedby') as $shape) {
+    echo $shape->href, "\n";
+}
+@@@ conditional
+$first = $client->read($url);
+$etag = $first->etag ?? throw new RuntimeException('the server sent no ETag');
+
+// Revalidate: 304 Not Modified is a normal result, not an error.
+if ($client->read($url, ifNoneMatch: $etag)->notModified) {
+    echo "cached copy is still fresh\n";
+}
+
+// Optimistic concurrency: only overwrite the version you read.
+try {
+    $client->update($url, 'new content', 'text/plain', ifMatch: $etag);
+} catch (PreconditionFailedException) {
+    // Someone else changed it (412): re-read, merge, retry.
+}
+@@@ range
+$start = $client->read($url, range: ByteRange::of(0, 1023));    // first KiB
+echo $start->status, ' ', $start->contentRange ?? '', "\n";     // 206 bytes 0-1023/52311
+
+$rest = $client->read($url, range: ByteRange::from(1024));      // to the end
+$tail = $client->read($url, range: ByteRange::last(512));       // last 512 bytes
+echo strlen($rest->body), ' ', strlen($tail->body), "\n";
+@@@ update
+// PUT replaces the whole representation.
+$client->update($url, Json::encode(['name' => 'Alice', 'age' => 31]), 'application/json', ifMatch: $etag);
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+$client->update($url, 'v2', 'text/plain',
+    links: [new Link('https://creativecommons.org/licenses/by/4.0/', 'license')],
+    setLinkset: true,
+);
+@@@ patch
+// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+$patch = (new JsonPatch())
+    ->test('/version', 3)
+    ->replace('/status', 'done')
+    ->add('/tags/-', 'urgent')
+    ->remove('/draft');
+$client->patch($url, $patch, ifMatch: $etag);
+
+// Other formats only when the server advertises them in Accept-Patch.
+if (in_array('application/sparql-update', $client->head($url)->acceptPatch, true)) {
+    $client->patch($url, 'INSERT DATA { <#me> <http://xmlns.com/foaf/0.1/name> "Alice" }', 'application/sparql-update');
+}
+@@@ delete
+$client->delete($url, ifMatch: $etag);
+
+try {
+    $client->delete($container);                     // 409 Conflict when not empty
+} catch (ConflictException) {
+    $client->delete($container, recursive: true);    // Depth: infinity
+}
+@@@ read-container
+$page = $client->readContainer($container);
+echo $page->id, ' ', $page->totalItems ?? 0, ' ', $page->etag ?? '', "\n";
+foreach ($page->items as $item) {
+    echo $item->id, ' ', $item->isContainer() ? 'container' : ($item->format ?? ''), ' ', $item->size ?? 0, ' ',
+        $item->modified?->format(DATE_ATOM) ?? $item->modifiedRaw ?? '', "\n";
+}
+if ($page->next !== null) {                          // opaque, server-issued URL
+    echo count($client->readContainer($page->next)->items), "\n";
+}
+@@@ list-container
+// A lazy PagedSequence: pages are fetched only as the foreach advances.
+foreach ($client->listContainer($container) as $item) {
+    if ($item->hasType('https://schema.org/Person')) {
+        echo $item->id, "\n";
+    }
+}
+
+// Every page, collected; or just the first few members (fetching only the pages needed).
+$ids = array_map(static fn (ContainedResource $i): string => $i->id, $client->listContainer($container)->toArray());
+$firstTen = $client->listContainer($container)->take(10);
+@@@ read-linkset
+$doc = $client->readLinkset($url);                   // HEAD for rel="linkset", then GET
+echo $doc->url, ' ', $doc->etag ?? '', ' ', implode(', ', $doc->allow), ' ', implode(', ', $doc->acceptPatch), "\n";
+
+foreach ($doc->linkset->links() as $link) {
+    echo $link->rel, ' → ', $link->href, "\n";
+}
+$shapes = $doc->linkset->hrefs('describedby');
+@@@ patch-linkset
+$doc = $client->readLinkset($url);
+$rel = 'https://example.org/rel/reviewer';           // extension relation types are URIs
+$reviewer = ['href' => 'https://id.example/bob'];
+
+// JsonPointer escapes "/" in the relation URI as "~1".
+// "add" on an existing member replaces it, so append with "/-" when the relation exists.
+$patch = $doc->linkset->targets($rel) === []
+    ? (new JsonPatch())->add(JsonPointer::fromSegments('linkset', '0', $rel), [$reviewer])
+    : (new JsonPatch())->add(JsonPointer::fromSegments('linkset', '0', $rel, '-'), $reviewer);
+$client->patchLinkset($doc->url, $patch, ifMatch: $doc->etag);
+@@@ put-linkset
+$doc = $client->readLinkset($url);
+if ($doc->supportsPut()) {                           // Allow lists PUT
+    $doc->linkset->add($url, 'license', 'https://creativecommons.org/licenses/by/4.0/');   // changes it in place
+    $client->updateLinkset($doc->url, $doc->linkset, ifMatch: $doc->etag);
+}
+@@@ auth-didkey
+// A did:key agent: the identifier is derived from the public key, nothing to host.
+$key = SigningKey::generateP256();                   // or SigningKey::generateEd25519()
+$credentials = SelfSignedCredentials::didKey($key);
+echo $credentials->agent, "\n";                      // did:key:zDn…
+
+$client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));
+$client->head($url);   // 401 → AS metadata → token exchange → retried with a Bearer token
+@@@ auth-cid
+// An HTTPS agent publishes a controlled identifier document listing its key…
+$key = SigningKey::generateP256();
+$agent = 'https://bot.example/agent';
+$cid = ControlledIdentifierDocument::create($agent, $key->publicKey, 'key-1');
+echo json_encode($cid, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), "\n";   // serve this at $agent
+
+// …and signs credentials with the matching private key (kid = the verification method id).
+$credentials = SelfSignedCredentials::forAgent($agent, $key, 'https://bot.example/agent#key-1');
+$client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));
+@@@ keys
+$key = SigningKey::generateP256();
+$privateJwk = $key->jwk();                           // includes "d": store securely
+$restored = SigningKey::fromJwk($privateJwk);
+$credentials = SelfSignedCredentials::didKey($restored);
+
+// did:key <-> public key
+$did = DidKey::did($key->publicKey);                 // did:key:zDn…
+$kid = DidKey::keyIdForDid($did);                    // did:key:zDn…#zDn…
+$fromDid = DidKey::publicKey($did);
+echo $credentials->agent, ' ', $kid, ' ', $fromDid->algorithm(), "\n";
+@@@ auth-openid
+// The ID token from your OpenID Connect login (any OIDC library). OpenIdCredentials also takes a
+// closure, fn (CredentialContext $c): string, that supplies a fresh token whenever one is needed.
+$credentials = new OpenIdCredentials($idToken);
+$authenticator = new TokenExchangeAuthenticator($credentials,
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    authorizationServerFilter: static fn (string $asUri, string $realm): bool => $asUri === 'https://auth.example',
+);
+$client = new LwsClient(authenticator: $authenticator);
+@@@ auth-saml
+// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+$credentials = SamlCredentials::fromXml($samlAssertionXml);
+$client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));
+@@@ auth-bearer
+// An access token you obtained yourself; it is only sent to URLs inside the realm.
+$client = new LwsClient(authenticator: new BearerTokenAuthenticator($accessToken, realm: 'https://storage.example/'));
+@@@ auth-options
+$trusted = ['https://auth.example'];
+$authenticator = new TokenExchangeAuthenticator(
+    $credentials->withLifetime(300),                 // self-signed JWT lifetime in seconds (default 300)
+    allowInsecureHttp: false,                        // plain-http AS only on loopback (default)
+    authorizationServerFilter: static fn (string $asUri, string $realm): bool => in_array($asUri, $trusted, true),
+    refreshMargin: 30,                               // refresh 30 s before expiry (default)
+    timeout: 10,                                     // metadata and token requests, in seconds
+);
+$client = new LwsClient(authenticator: $authenticator);
+@@@ custom-authenticator
+<?php
+require __DIR__ . '/vendor/autoload.php';
+
+use Ebremer\Lws\Auth\Authenticator;
+use Ebremer\Lws\Auth\AuthRequest;
+use Ebremer\Lws\Auth\AuthResponse;
+use Ebremer\Lws\LwsClient;
+
+// Any scheme (API keys, cookies, DPoP…) plugs in through the Authenticator interface.
+final class ApiKeyAuthenticator implements Authenticator
+{
+    public function __construct(#[\SensitiveParameter] private readonly string $key)
+    {
+    }
+
+    public function authorize(AuthRequest $request): AuthRequest
+    {
+        if (parse_url($request->url, PHP_URL_HOST) !== 'storage.example') {
+            return $request;
+        }
+        return $request->withHeaders($request->headers->with('X-Api-Key', $this->key));
+    }
+
+    // Nothing to refresh: the 401 surfaces as UnauthorizedException.
+    public function handleChallenge(AuthRequest $request, AuthResponse $response): bool
+    {
+        return false;
+    }
+}
+
+$client = new LwsClient(authenticator: new ApiKeyAuthenticator('my-api-key'));
+@@@ subscribe
+// subscribe(Service, …) checks that the NotificationService supports webhooks.
+$service = $storage->notificationService() ?? throw new RuntimeException('no notification service');
+$subscription = $client->subscribe($service, new WebhookSubscriptionRequest(
+    [$container],                                    // a container topic is recursive
+    'https://my-app.example/hooks/lws',
+    new DateTimeImmutable('+1 day'),
+));
+echo $subscription->url, ' ', $subscription->expires?->format(DATE_ATOM) ?? '', "\n";
+
+foreach ($client->listSubscriptions($service->serviceEndpoint) as $s) {
+    echo $s->id, "\n";
+}
+$current = $client->getSubscription($subscription->url);
+echo $current->type ?? '', "\n";
+$client->unsubscribe($subscription->url);
+@@@ webhook
+<?php
+// hooks/lws.php, the inbox (under PHP-FPM, Apache mod_php, or php -S).
+require __DIR__ . '/vendor/autoload.php';
+
+use Ebremer\Lws\Exception\SignatureVerificationException;
+use Ebremer\Lws\LwsClient;
+use Ebremer\Lws\Notification\WebhookVerifier;
+
+$verifier = new WebhookVerifier(
+    client: new LwsClient(),                         // fetches storage descriptions
+    trustedStorages: ['https://storage.example/'],   // only this storage's keys
+);
+try {
+    // The registered (public) inbox URL, not the one a proxy forwarded to. With a PSR-7 framework,
+    // call $verifier->verifyServerRequest($request, $inbox) instead.
+    $verified = $verifier->verifyGlobals('https://my-app.example/hooks/lws');
+    foreach ($verified->notification->activities as $a) {
+        error_log(implode(',', $a->types) . ' ' . $a->object->id . ' ' . ($a->publishedRaw ?? ''));
+    }
+    http_response_code(204);
+} catch (SignatureVerificationException $e) {
+    error_log('rejected: ' . $e->getMessage());
+    http_response_code(401);
+}
+@@@ access-request
+$policy = new AccessPolicy(
+    actions: [AccessAction::READ, AccessAction::CREATE],
+    assignee: 'https://id.example/agent',
+    target: AccessTarget::storageResources($container),
+    constraints: [
+        Constraint::purpose('https://purpose.example/collaboration'),
+        Constraint::notAfter(new DateTimeImmutable('2026-12-31T23:59:59Z')),
+    ],
+);
+$request = AccessRequest::create($storage->id, [$policy], inbox: 'https://id.example/agent/inbox/');
+$requests = $storage->accessRequestService()->serviceEndpoint ?? throw new RuntimeException('no access request service');
+$requestUrl = $client->requestAccess($requests, $request);
+
+foreach ($client->listAccessRequests($requests) as $r) {
+    echo $r->id, "\n";
+}
+$pending = $client->getAccessRequest($requestUrl);
+echo implode(', ', $pending->access[0]->actions), "\n";
+$client->cancelAccessRequest($requestUrl);
+@@@ access-grant
+// A storage controller approves a request by recording a grant with the same policy model.
+$pending = $client->getAccessRequest($requestUrl);
+$grants = $storage->accessGrantService()->serviceEndpoint ?? throw new RuntimeException('no access grant service');
+$grantUrl = $client->grantAccess($grants, AccessGrant::create($pending->storage, $pending->access, $pending->inbox));
+
+foreach ($client->listAccessGrants($grants) as $g) {
+    echo $g->id, "\n";
+}
+$client->revokeAccessGrant($grantUrl);   // the server withdraws the underlying permissions
+@@@ list-types
+$index = $storage->typeIndexService();
+if ($index !== null) {
+    foreach ($client->listTypes($index->serviceEndpoint) as $type) {
+        echo $type, "\n";                            // e.g. https://schema.org/Person
+    }
+}
+@@@ search
+$search = $storage->typeSearchService()->serviceEndpoint ?? throw new RuntimeException('no type search service');
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+$query = TypeQuery::create()
+    ->anyOf('https://schema.org/Person', 'http://xmlns.com/foaf/0.1/Person')
+    ->allOf(ResourceType::DATA_RESOURCE);
+$first = $client->searchTypes($search, $query);      // HTTP QUERY
+echo $first->totalItems ?? 0, ' ', $first->next ?? '', "\n";
+
+foreach ($client->searchAll($search, TypeQuery::create()->allOf('https://schema.org/Event')) as $hit) {
+    echo $hit->id, ' ', implode(', ', $hit->types), "\n";
+}
+
+// Indexed descriptive relations use the same grammar.
+$shaped = TypeQuery::create()->relation('describedby')->allOf('https://example.org/shapes/person');
+echo count($client->searchTypes($search, $shaped)->items), "\n";
+
+echo implode(', ', $client->acceptedQueryFormats($search)), "\n";   // application/lws-query+json, …
+@@@ errors
+try {
+    $client->read($url);
+} catch (NotFoundException) {
+    echo "no such resource\n";
+} catch (UnauthorizedException $e) {
+    echo 'not authenticated: ', count($e->challenges()), " challenge(s)\n";
+} catch (HttpException $e) {                         // any other error status
+    echo $e->status, ' ', $e->problem->title ?? $e->getMessage(), "\n";
+} catch (AuthenticationException $e) {
+    echo 'token exchange failed: ', $e->oauthError ?? '?', ' ', $e->oauthErrorDescription ?? '', "\n";
+} catch (TransportException $e) {
+    echo $e->isTimeout() ? "timed out\n" : $e->getMessage() . "\n";
+}
+@@@ problem
+try {
+    $client->delete($container);
+} catch (ConflictException $e) {
+    $p = $e->problem;
+    if ($p !== null) {
+        echo $p->type ?? '', ' ', $p->title ?? '', ' ', $p->detail ?? '', ' ', $p->instance ?? '', ' ', $p->extensions['itemCount'] ?? '', "\n";
+    }
+}

@@ -62,6 +62,7 @@ ${table(
     ["Python", "<code>Iterator[ContainedResource]</code>; <code>AsyncIterator</code> on <code>AsyncLwsClient</code>"],
     ["C#", "<code>IAsyncEnumerable&lt;ContainedResource&gt;</code> (<code>await foreach</code>, <code>System.Linq.AsyncEnumerable</code> operators)"],
     ["Swift", "<code>PagedSequence&lt;ContainedResource&gt;</code>, an <code>AsyncSequence</code> (<code>for try await</code>, <code>where</code>, <code>collect()</code>)"],
+    ["PHP", "<code>PagedSequence</code>, an <code>IteratorAggregate</code> (<code>foreach</code>, <code>toArray()</code>, <code>take($n)</code>)"],
   ],
 )}
 ${tabs(S["list-container"])}

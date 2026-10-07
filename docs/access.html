@@ -238,6 +238,25 @@ for try await r in client.listAccessRequests(requests) { print(r.id) }
 let pending = try await client.getAccessRequest(requestURL)
 print(pending.access[0].actions)
 try await client.cancelAccessRequest(requestURL)</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$policy = new AccessPolicy(
+    actions: [AccessAction::READ, AccessAction::CREATE],
+    assignee: 'https://id.example/agent',
+    target: AccessTarget::storageResources($container),
+    constraints: [
+        Constraint::purpose('https://purpose.example/collaboration'),
+        Constraint::notAfter(new DateTimeImmutable('2026-12-31T23:59:59Z')),
+    ],
+);
+$request = AccessRequest::create($storage-&gt;id, [$policy], inbox: 'https://id.example/agent/inbox/');
+$requests = $storage-&gt;accessRequestService()-&gt;serviceEndpoint ?? throw new RuntimeException('no access request service');
+$requestUrl = $client-&gt;requestAccess($requests, $request);
+
+foreach ($client-&gt;listAccessRequests($requests) as $r) {
+    echo $r-&gt;id, &quot;\n&quot;;
+}
+$pending = $client-&gt;getAccessRequest($requestUrl);
+echo implode(', ', $pending-&gt;access[0]-&gt;actions), &quot;\n&quot;;
+$client-&gt;cancelAccessRequest($requestUrl);</code></pre>
 </div>
 
 <h2 id="grant">Granting and revoking</h2>
@@ -322,6 +341,15 @@ let grantURL = try await client.grantAccess(grants, grant: .approving(pending))
 
 for try await g in client.listAccessGrants(grants) { print(g.id) }
 try await client.revokeAccessGrant(grantURL)   // the server withdraws the underlying permissions</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// A storage controller approves a request by recording a grant with the same policy model.
+$pending = $client-&gt;getAccessRequest($requestUrl);
+$grants = $storage-&gt;accessGrantService()-&gt;serviceEndpoint ?? throw new RuntimeException('no access grant service');
+$grantUrl = $client-&gt;grantAccess($grants, AccessGrant::create($pending-&gt;storage, $pending-&gt;access, $pending-&gt;inbox));
+
+foreach ($client-&gt;listAccessGrants($grants) as $g) {
+    echo $g-&gt;id, &quot;\n&quot;;
+}
+$client-&gt;revokeAccessGrant($grantUrl);   // the server withdraws the underlying permissions</code></pre>
 </div>
 <div class="callout"><p><strong>Notifications</strong> If a request or grant has an <code>inbox</code>, the server should notify it: the controller about new requests, and the requester when a grant is created. These deliveries use the LWS notification format, so you can verify them with the same <a href="notifications.html#verify">webhook verifier</a>.</p></div>
 

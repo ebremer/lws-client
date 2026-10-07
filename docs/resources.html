@@ -181,6 +181,20 @@ let photo = try await client.create(in: notes, body: try Data(contentsOf: URL(fi
                                     contentType: &quot;image/png&quot;, options: CreateOptions(slug: &quot;photo.png&quot;))
 
 print(list.location, todo.linkset as Any, photo.metadata.parent as Any)</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// A container (POST with Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel=&quot;type&quot;)
+$notes = $client-&gt;createContainer($container, slug: 'notes')-&gt;location;
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+$list = $client-&gt;createText($notes, &quot;milk\neggs\n&quot;, slug: 'shopping.txt');
+$todo = $client-&gt;createJson($notes, ['task' =&gt; 'write docs'],
+    slug: 'todo.json',
+    links: [new Link('https://example.org/shapes/todo', 'describedby')],   // user metadata
+    types: ['https://schema.org/Action'],                                  // extra rel=&quot;type&quot;
+);
+$png = file_get_contents('photo.png') ?: throw new RuntimeException('cannot read photo.png');
+$photo = $client-&gt;create($notes, $png, 'image/png', slug: 'photo.png');
+
+echo $list-&gt;location, ' ', $todo-&gt;linkset ?? '-', ' ', $photo-&gt;metadata-&gt;parent ?? '-', &quot;\n&quot;;</code></pre>
 </div>
 <div class="table-wrap"><table><thead><tr><th>Option</th><th>Wire effect</th></tr></thead><tbody>
 <tr><td><code>slug</code></td><td><code>Slug</code> header: a <em>hint</em> for the new name (percent-encoded). The server may change it to keep names unique.</td></tr>
@@ -316,12 +330,27 @@ let person = try await client.read(url).decode(Person.self)          // Codable 
 let head = try await client.head(url)
 print(head.contentLength ?? 0, head.allow, head.acceptPatch)
 for shape in head.links(&quot;describedby&quot;) { print(shape.href) }</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$resource = $client-&gt;read($url);
+$meta = $resource-&gt;metadata;
+echo $resource-&gt;status, ' ', $resource-&gt;contentType ?? '', ' ', $resource-&gt;etag ?? '', ' ', $meta-&gt;lastModified ?? '', &quot;\n&quot;;
+echo implode(', ', $meta-&gt;types), ' ', $meta-&gt;isDataResource() ? 'data' : 'container', ' ', $meta-&gt;parent ?? '', &quot;\n&quot;;
+
+$text = $resource-&gt;text();                           // decoded using the Content-Type charset
+$bytes = $resource-&gt;body;                            // a PHP string holds the raw bytes
+$json = $client-&gt;read($url, accept: 'application/json')-&gt;json();   // objects as arrays
+
+// Headers and links only
+$head = $client-&gt;head($url);
+echo $head-&gt;contentLength ?? 0, ' ', implode(', ', $head-&gt;allow), ' ', implode(', ', $head-&gt;acceptPatch), &quot;\n&quot;;
+foreach ($head-&gt;links('describedby') as $shape) {
+    echo $shape-&gt;href, &quot;\n&quot;;
+}</code></pre>
 </div>
 
 <h3 id="streaming">Streaming large bodies</h3>
 <p>Where the platform supports it, the clients can hand you the body as a stream instead of buffering it.
 Streamed uploads cannot be replayed after a <code>401</code>, so the JS, Python, Go and C# clients first send a
-<code>HEAD</code> to obtain a token. Java bodies are always replayable. C++ bodies are buffered strings and Swift
+<code>HEAD</code> to obtain a token. Java bodies are always replayable. C++ and PHP bodies are buffered strings and Swift
 bodies are buffered <code>Data</code>, so use range requests to process large resources in pieces.</p>
 <div class="code-tabs">
 <pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">try (ResourceStream stream = client.readStream(url)) {    // nothing is buffered
@@ -531,6 +560,20 @@ do {
 } catch LWSError.preconditionFailed {
     // Someone else changed it (412): re-read, merge, retry.
 }</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$first = $client-&gt;read($url);
+$etag = $first-&gt;etag ?? throw new RuntimeException('the server sent no ETag');
+
+// Revalidate: 304 Not Modified is a normal result, not an error.
+if ($client-&gt;read($url, ifNoneMatch: $etag)-&gt;notModified) {
+    echo &quot;cached copy is still fresh\n&quot;;
+}
+
+// Optimistic concurrency: only overwrite the version you read.
+try {
+    $client-&gt;update($url, 'new content', 'text/plain', ifMatch: $etag);
+} catch (PreconditionFailedException) {
+    // Someone else changed it (412): re-read, merge, retry.
+}</code></pre>
 </div>
 
 <h3 id="range">Byte ranges</h3>
@@ -593,6 +636,12 @@ print(start.status, start.contentRange ?? &quot;&quot;)                         
 let rest = try await client.read(url, options: ReadOptions(range: .from(1024)))         // to the end
 let tail = try await client.read(url, options: ReadOptions(range: .suffix(512)))        // last 512 bytes
 print(rest.body.count, tail.body.count)</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$start = $client-&gt;read($url, range: ByteRange::of(0, 1023));    // first KiB
+echo $start-&gt;status, ' ', $start-&gt;contentRange ?? '', &quot;\n&quot;;     // 206 bytes 0-1023/52311
+
+$rest = $client-&gt;read($url, range: ByteRange::from(1024));      // to the end
+$tail = $client-&gt;read($url, range: ByteRange::last(512));       // last 512 bytes
+echo strlen($rest-&gt;body), ' ', strlen($tail-&gt;body), &quot;\n&quot;;</code></pre>
 </div>
 
 <h2 id="update">Replace (PUT)</h2>
@@ -681,6 +730,14 @@ _ = try await client.update(url, body: Data(&quot;v2&quot;.utf8), contentType: &
     links: [Link(href: URL(string: &quot;https://creativecommons.org/licenses/by/4.0/&quot;)!, rel: &quot;license&quot;)],
     setLinkset: true
 ))</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// PUT replaces the whole representation.
+$client-&gt;update($url, Json::encode(['name' =&gt; 'Alice', 'age' =&gt; 31]), 'application/json', ifMatch: $etag);
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+$client-&gt;update($url, 'v2', 'text/plain',
+    links: [new Link('https://creativecommons.org/licenses/by/4.0/', 'license')],
+    setLinkset: true,
+);</code></pre>
 </div>
 
 <h2 id="patch">Partial updates (PATCH)</h2>
@@ -799,6 +856,18 @@ if try await client.head(url).acceptPatch.contains(&quot;application/sparql-upda
     _ = try await client.patch(url, body: Data(#&quot;INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }&quot;#.utf8),
                                contentType: &quot;application/sparql-update&quot;)
 }</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// JSON Patch (RFC 6902) is the baseline format every LWS server accepts.
+$patch = (new JsonPatch())
+    -&gt;test('/version', 3)
+    -&gt;replace('/status', 'done')
+    -&gt;add('/tags/-', 'urgent')
+    -&gt;remove('/draft');
+$client-&gt;patch($url, $patch, ifMatch: $etag);
+
+// Other formats only when the server advertises them in Accept-Patch.
+if (in_array('application/sparql-update', $client-&gt;head($url)-&gt;acceptPatch, true)) {
+    $client-&gt;patch($url, 'INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }', 'application/sparql-update');
+}</code></pre>
 </div>
 
 <h2 id="delete">Delete</h2>
@@ -866,6 +935,13 @@ do {
     try await client.delete(container)                                       // 409 Conflict when not empty
 } catch LWSError.conflict {
     try await client.delete(container, options: DeleteOptions(recursive: true))   // Depth: infinity
+}</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$client-&gt;delete($url, ifMatch: $etag);
+
+try {
+    $client-&gt;delete($container);                     // 409 Conflict when not empty
+} catch (ConflictException) {
+    $client-&gt;delete($container, recursive: true);    // Depth: infinity
 }</code></pre>
 </div>
 

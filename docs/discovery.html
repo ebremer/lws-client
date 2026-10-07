@@ -203,6 +203,22 @@ if let format = storage.capability(&quot;https://feature.example/PatchSupport&qu
 
 // When you already know the storage URL:
 let same = try await client.getStorageDescription(storage.id)</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// Any URL inside the storage is a valid starting point.
+$storage = $client-&gt;discoverStorage('https://storage.example/root/notes/');
+$root = $storage-&gt;storageRoot();                     // the required StorageRoot service
+echo $storage-&gt;id, ' ', implode(', ', $storage-&gt;types), ' ', $root, &quot;\n&quot;;
+
+$notifications = $storage-&gt;notificationService();
+if ($notifications !== null) {
+    echo $notifications-&gt;serviceEndpoint, ' ', implode(', ', $notifications-&gt;subscriptionTypes()), &quot;\n&quot;;
+}
+foreach ($storage-&gt;services as $service) {
+    echo implode(', ', $service-&gt;types), ' → ', $service-&gt;serviceEndpoint, &quot;\n&quot;;
+}
+$format = $storage-&gt;capability('https://feature.example/PatchSupport')?-&gt;property('format');
+
+// When you already know the storage URL:
+$same = $client-&gt;getStorageDescription($storage-&gt;id);</code></pre>
 </div>
 
 <h2 id="services">Services</h2>

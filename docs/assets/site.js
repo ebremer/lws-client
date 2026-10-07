@@ -34,6 +34,7 @@
       ["languages/python.html", "Python", "python"],
       ["languages/csharp.html", "C#", "csharp"],
       ["languages/swift.html", "Swift", "swift"],
+      ["languages/php.html", "PHP", "php"],
       ["languages/wasm.html", "WebAssembly", "wasm"],
     ] },
     { title: "Reference", items: [
@@ -43,7 +44,7 @@
       ["contributing.html", "Contributing & license"],
     ] },
   ];
-  var LANG_COLORS = { java: "#b0721a", js: "#2f74c0", cpp: "#00599c", rust: "#a04f26", go: "#00838f", python: "#3a6e9f", csharp: "#68217a", swift: "#d8452f", wasm: "#654ff0" };
+  var LANG_COLORS = { java: "#b0721a", js: "#2f74c0", cpp: "#00599c", rust: "#a04f26", go: "#00838f", python: "#3a6e9f", csharp: "#68217a", swift: "#d8452f", php: "#777bb3", wasm: "#654ff0" };
 
   function currentPath() {
     var path = location.pathname.replace(/\\/g, "/");
@@ -162,7 +163,8 @@
     python: "and as assert async await break class continue def del elif else except False finally for from global if import in is lambda None nonlocal not or pass raise return True try while with yield self",
     csharp: "abstract and as async await base bool break byte case catch char checked class const continue decimal default delegate do double dynamic else enum event explicit extern false file finally fixed float for foreach get global goto if implicit in init int interface internal is lock long nameof namespace new not null object operator or out override params partial private protected public readonly record ref required return sbyte sealed set short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using var virtual void volatile when where while with yield",
     swift: "actor any as associatedtype async await break case catch class continue default defer deinit do else enum extension fallthrough false fileprivate final for func guard if import in init inout internal is lazy let mutating nil nonisolated open operator override private protocol public repeat rethrows return self Self some static struct subscript super switch throw throws true try var where while",
-    bash: "if then else fi for do done case esac in function export cd echo cmake cargo go npm npx node mvn pip python git dotnet swift",
+    php: "abstract and array as break callable case catch class clone const continue declare default do echo else elseif empty enum extends false final finally fn for foreach function global goto if implements include include_once instanceof insteadof interface isset list match namespace new null or parent print private protected public readonly require require_once return self static switch throw trait true try unset use var while xor yield bool int float string iterable object mixed void never __DIR__ __FILE__ __LINE__ __CLASS__ __FUNCTION__ __METHOD__ __NAMESPACE__",
+    bash: "if then else fi for do done case esac in function export cd echo cmake cargo go npm npx node mvn pip python git dotnet swift php composer",
     json: "true false null",
     http: "",
   };
@@ -190,8 +192,13 @@
     var out = "";
     var i = 0;
     var n = code.length;
+    var lastSig = "";   // the last character of code (not whitespace, not a comment) emitted so far
     function push(cls, text) {
       out += cls ? '<span class="tok-' + cls + '">' + esc(text) + "</span>" : esc(text);
+      if (cls !== "c") {
+        var t = text.replace(/\s+$/, "");
+        if (t) lastSig = t[t.length - 1];
+      }
     }
     while (i < n) {
       var ch = code[i];
@@ -270,6 +277,46 @@
         }
         push("s", code.slice(i, sk + 1)); i = sk + 1; continue;
       }
+      if (lang === "php" && rest.startsWith("<?php")) {
+        push("a", "<?php"); i += 5; continue;
+      }
+      if (lang === "php" && ch === "#") {
+        if (code[i + 1] === "[") {
+          // Attribute: #[\SensitiveParameter]
+          var ae = code.indexOf("]", i);
+          ae = ae < 0 ? n : ae + 1;
+          push("a", code.slice(i, ae)); i = ae; continue;
+        }
+        var pe = code.indexOf("\n", i);
+        if (pe < 0) pe = n;
+        push("c", code.slice(i, pe)); i = pe; continue;
+      }
+      if (lang === "php" && (m = /^<<<[ \t]*(['"]?)([A-Za-z_]\w*)\1\n/.exec(rest))) {
+        // Heredoc / nowdoc: up to the closing identifier at the start of a line.
+        var hd = new RegExp("\\n[ \\t]*" + m[2] + "\\b").exec(code.slice(i + m[0].length - 1));
+        var he = hd ? i + m[0].length - 1 + hd.index + hd[0].length : n;
+        push("s", code.slice(i, he)); i = he; continue;
+      }
+      if (lang === "php" && ch === '"') {
+        // Interpolation: quotes inside {$…} belong to nested expressions.
+        var pk = i + 1;
+        var pdepth = 0;
+        while (pk < n && code[pk] !== "\n") {
+          var pc = code[pk];
+          if (pdepth === 0) {
+            if (pc === "\\") { pk += 2; continue; }
+            if (pc === '"') break;
+            if (pc === "{" && code[pk + 1] === "$") pdepth = 1;
+          } else if (pc === '"' || pc === "'") {
+            var pq = pc;
+            pk++;
+            while (pk < n && code[pk] !== pq && code[pk] !== "\n") pk += code[pk] === "\\" ? 2 : 1;
+          } else if (pc === "{") pdepth++;
+          else if (pc === "}") pdepth--;
+          pk++;
+        }
+        push("s", code.slice(i, pk + 1)); i = pk + 1; continue;
+      }
       if (lang === "cpp" && (m = /^R"([^(]*)\(/.exec(rest))) {
         var t2 = ")" + m[1] + '"';
         var ce2 = code.indexOf(t2, i);
@@ -298,6 +345,13 @@
         push("a", m[0]); i += m[0].length; continue;
       }
       if (lang === "python" && ch === "@" && (m = /^@[\w.]+/.exec(rest))) {
+        push("a", m[0]); i += m[0].length; continue;
+      }
+      if (lang === "php" && (m = /^\$[A-Za-z_]\w*/.exec(rest))) {
+        push(m[0] === "$this" ? "k" : "a", m[0]); i += m[0].length; continue;
+      }
+      if (lang === "php" && (lastSig === "(" || lastSig === ",") && (m = /^[A-Za-z_]\w*(?=:(?!:))/.exec(rest))) {
+        // A named argument: slug: 'a.txt'
         push("a", m[0]); i += m[0].length; continue;
       }
       if ((m = /^[A-Za-z_$][\w$]*/.exec(rest))) {
@@ -348,7 +402,7 @@
   }
 
   // ------------------------------------------------------------------ language tabs
-  var LANG_LABELS = { java: "Java", ts: "TypeScript", js: "JavaScript", javascript: "JavaScript", typescript: "TypeScript", cpp: "C++", rust: "Rust", go: "Go", python: "Python", csharp: "C#", swift: "Swift", bash: "Shell", http: "HTTP", json: "JSON" };
+  var LANG_LABELS = { java: "Java", ts: "TypeScript", js: "JavaScript", javascript: "JavaScript", typescript: "TypeScript", cpp: "C++", rust: "Rust", go: "Go", python: "Python", csharp: "C#", swift: "Swift", php: "PHP", bash: "Shell", http: "HTTP", json: "JSON" };
   var LANG_KEYS = { ts: "js", typescript: "js", javascript: "js", js: "js" };
   function tabKey(lang) { return LANG_KEYS[lang] || lang; }
 

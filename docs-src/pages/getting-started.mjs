@@ -5,7 +5,7 @@ import { S } from "../samples.mjs";
 export default {
   path: "getting-started.html",
   title: "Getting started",
-  description: "Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C# or Swift and run your first authenticated request against a Linked Web Storage server.",
+  description: "Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#, Swift or PHP and run your first authenticated request against a Linked Web Storage server.",
   body: `
 <h1>Getting started</h1>
 <p class="lead">Install the client for your language, start the bundled mock server, and run a
@@ -23,10 +23,11 @@ five minutes.</p>
   <li><strong>Python</strong> 3.10+ (httpx; the <code>crypto</code> extra adds <code>cryptography</code>)</li>
   <li><strong>C#</strong>: .NET 10 (one dependency: BouncyCastle.Cryptography, for Ed25519)</li>
   <li><strong>Swift</strong> 6.0+ on macOS 13, iOS 16 or Linux (one dependency: swift-crypto, which is CryptoKit on Apple platforms)</li>
+  <li><strong>PHP</strong> 8.2+ with ext-curl, ext-openssl and ext-sodium (no Composer dependencies)</li>
 </ul>
 
 <h2 id="install">Install</h2>
-${callout("note", "Package registries", " The packages are not on Maven Central, npm, crates.io, PyPI or NuGet yet (Swift packages come straight from the git repository). Until they are, install from the GitHub repository as shown. The registry names are already reserved in each manifest, so switching later is a one-line change.")}
+${callout("note", "Package registries", " The packages are not on Maven Central, npm, crates.io, PyPI, NuGet or Packagist yet (Swift packages come straight from the git repository). Until they are, install from the GitHub repository as shown. The registry names are already reserved in each manifest, so switching later is a one-line change.")}
 ${tabs(S.install)}
 
 <h2 id="mock-server">Start a server to talk to</h2>
@@ -74,7 +75,7 @@ Hello, LWS!  (etag "y3Np7XKGTBSEU-c181QlqW", parent http://localhost:8787/root/h
   <a class="card" href="resources.html"><h3>Reading &amp; writing</h3><p>Conditional updates, JSON Patch, ranges, deletes.</p></a>
   <a class="card" href="authentication.html"><h3>Authentication</h3><p>OpenID Connect, SAML, self-signed agents and custom authenticators.</p></a>
   <a class="card" href="notifications.html"><h3>Notifications</h3><p>Subscribe to changes and verify signed webhooks.</p></a>
-  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all eight languages.</p></a>
+  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all nine languages.</p></a>
 </div>
 `,
 };

@@ -144,6 +144,15 @@ for item in page.items {
 if let next = page.next {                            // opaque, server-issued URL
     print(try await client.readContainer(next).items.count)
 }</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">$page = $client-&gt;readContainer($container);
+echo $page-&gt;id, ' ', $page-&gt;totalItems ?? 0, ' ', $page-&gt;etag ?? '', &quot;\n&quot;;
+foreach ($page-&gt;items as $item) {
+    echo $item-&gt;id, ' ', $item-&gt;isContainer() ? 'container' : ($item-&gt;format ?? ''), ' ', $item-&gt;size ?? 0, ' ',
+        $item-&gt;modified?-&gt;format(DATE_ATOM) ?? $item-&gt;modifiedRaw ?? '', &quot;\n&quot;;
+}
+if ($page-&gt;next !== null) {                          // opaque, server-issued URL
+    echo count($client-&gt;readContainer($page-&gt;next)-&gt;items), &quot;\n&quot;;
+}</code></pre>
 </div>
 <p>The clients accept the three equivalent container media types (<code>application/lws+json</code>,
 <code>application/ld+json</code>, <code>application/json</code>). Any other content type, or a body whose type is
@@ -162,6 +171,7 @@ lazy-sequence type:</p>
 <tr><td>Python</td><td><code>Iterator[ContainedResource]</code>; <code>AsyncIterator</code> on <code>AsyncLwsClient</code></td></tr>
 <tr><td>C#</td><td><code>IAsyncEnumerable&lt;ContainedResource&gt;</code> (<code>await foreach</code>, <code>System.Linq.AsyncEnumerable</code> operators)</td></tr>
 <tr><td>Swift</td><td><code>PagedSequence&lt;ContainedResource&gt;</code>, an <code>AsyncSequence</code> (<code>for try await</code>, <code>where</code>, <code>collect()</code>)</td></tr>
+<tr><td>PHP</td><td><code>PagedSequence</code>, an <code>IteratorAggregate</code> (<code>foreach</code>, <code>toArray()</code>, <code>take($n)</code>)</td></tr>
 </tbody></table></div>
 <div class="code-tabs">
 <pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// A lazy Stream: pages are fetched only as the stream is consumed.
@@ -224,6 +234,16 @@ for try await item in client.listContainer(container) where item.hasType(&quot;h
 
 // Every page, collected.
 let ids = try await client.listContainer(container).collect().map(\.id)</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// A lazy PagedSequence: pages are fetched only as the foreach advances.
+foreach ($client-&gt;listContainer($container) as $item) {
+    if ($item-&gt;hasType('https://schema.org/Person')) {
+        echo $item-&gt;id, &quot;\n&quot;;
+    }
+}
+
+// Every page, collected; or just the first few members (fetching only the pages needed).
+$ids = array_map(static fn (ContainedResource $i): string =&gt; $i-&gt;id, $client-&gt;listContainer($container)-&gt;toArray());
+$firstTen = $client-&gt;listContainer($container)-&gt;take(10);</code></pre>
 </div>
 
 <h2 id="visibility">What you can see</h2>
