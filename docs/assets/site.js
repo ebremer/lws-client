@@ -32,6 +32,7 @@
       ["languages/rust.html", "Rust", "rust"],
       ["languages/go.html", "Go", "go"],
       ["languages/python.html", "Python", "python"],
+      ["languages/csharp.html", "C#", "csharp"],
     ] },
     { title: "Reference", items: [
       ["api-reference.html", "API cross-reference"],
@@ -40,7 +41,7 @@
       ["contributing.html", "Contributing & license"],
     ] },
   ];
-  var LANG_COLORS = { java: "#b0721a", js: "#2f74c0", cpp: "#00599c", rust: "#a04f26", go: "#00838f", python: "#3a6e9f" };
+  var LANG_COLORS = { java: "#b0721a", js: "#2f74c0", cpp: "#00599c", rust: "#a04f26", go: "#00838f", python: "#3a6e9f", csharp: "#68217a" };
 
   function currentPath() {
     var path = location.pathname.replace(/\\/g, "/");
@@ -157,11 +158,12 @@
     rust: "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while Some None Ok Err",
     go: "break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var nil true false err",
     python: "and as assert async await break class continue def del elif else except False finally for from global if import in is lambda None nonlocal not or pass raise return True try while with yield self",
-    bash: "if then else fi for do done case esac in function export cd echo cmake cargo go npm npx node mvn pip python git",
+    csharp: "abstract and as async await base bool break byte case catch char checked class const continue decimal default delegate do double dynamic else enum event explicit extern false file finally fixed float for foreach get global goto if implicit in init int interface internal is lock long nameof namespace new not null object operator or out override params partial private protected public readonly record ref required return sbyte sealed set short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using var virtual void volatile when where while with yield",
+    bash: "if then else fi for do done case esac in function export cd echo cmake cargo go npm npx node mvn pip python git dotnet",
     json: "true false null",
     http: "",
   };
-  var ALIASES = { javascript: "ts", js: "ts", typescript: "ts", "c++": "cpp", sh: "bash", shell: "bash", console: "bash", py: "python", golang: "go", kotlin: "java", toml: "bash", xml: "http", text: "http", cmake: "bash", powershell: "bash", groovy: "java" };
+  var ALIASES = { javascript: "ts", js: "ts", typescript: "ts", "c++": "cpp", cs: "csharp", "c#": "csharp", sh: "bash", shell: "bash", console: "bash", py: "python", golang: "go", kotlin: "java", toml: "bash", xml: "http", text: "http", cmake: "bash", powershell: "bash", groovy: "java" };
   var kwCache = {};
   function keywordSet(lang) {
     if (!kwCache[lang]) {
@@ -207,7 +209,7 @@
         if (e2 < 0) e2 = n;
         push("c", code.slice(i, e2)); i = e2; continue;
       }
-      if (lang === "python" && (rest.startsWith('"""') || rest.startsWith("'''"))) {
+      if ((lang === "python" && (rest.startsWith('"""') || rest.startsWith("'''"))) || (lang === "csharp" && rest.startsWith('"""'))) {
         var q3 = rest.slice(0, 3);
         var c3 = code.indexOf(q3, i + 3);
         c3 = c3 < 0 ? n : c3 + 3;
@@ -219,6 +221,25 @@
         var ce = code.indexOf(term, i + m[0].length);
         ce = ce < 0 ? n : ce + term.length;
         push("s", code.slice(i, ce)); i = ce; continue;
+      }
+      if (lang === "csharp" && (m = /^(?:\$@?|@\$)"/.exec(rest))) {
+        // Interpolated string: quotes inside {…} holes belong to nested expressions.
+        var k = i + m[0].length;
+        var depth = 0;
+        while (k < n && code[k] !== "\n") {
+          var c = code[k];
+          if (depth === 0) {
+            if (c === "\\") { k += 2; continue; }
+            if (c === '"') break;
+            if (c === "{") { if (code[k + 1] === "{") { k += 2; continue; } depth++; }
+          } else if (c === '"') {
+            k++;
+            while (k < n && code[k] !== '"' && code[k] !== "\n") k += code[k] === "\\" ? 2 : 1;
+          } else if (c === "{") depth++;
+          else if (c === "}") depth--;
+          k++;
+        }
+        push("s", code.slice(i, k + 1)); i = k + 1; continue;
       }
       if (lang === "cpp" && (m = /^R"([^(]*)\(/.exec(rest))) {
         var t2 = ")" + m[1] + '"';
@@ -298,7 +319,7 @@
   }
 
   // ------------------------------------------------------------------ language tabs
-  var LANG_LABELS = { java: "Java", ts: "TypeScript", js: "JavaScript", javascript: "JavaScript", typescript: "TypeScript", cpp: "C++", rust: "Rust", go: "Go", python: "Python", bash: "Shell", http: "HTTP", json: "JSON" };
+  var LANG_LABELS = { java: "Java", ts: "TypeScript", js: "JavaScript", javascript: "JavaScript", typescript: "TypeScript", cpp: "C++", rust: "Rust", go: "Go", python: "Python", csharp: "C#", bash: "Shell", http: "HTTP", json: "JSON" };
   var LANG_KEYS = { ts: "js", typescript: "js", javascript: "js", js: "js" };
   function tabKey(lang) { return LANG_KEYS[lang] || lang; }
 

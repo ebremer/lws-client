@@ -68,6 +68,7 @@ ${table(
     ["Rust", "<code>verify_request(&amp;inbox, &amp;http::Request)</code> for any <code>http</code>-based framework"],
     ["Go", "<code>verifier.Handler(inbox, fn)</code> as an <code>http.Handler</code>, or <code>VerifyRequest(r, inbox)</code>"],
     ["Python", "<code>WebhookVerifier.verify(…)</code>; <code>AsyncWebhookVerifier.verify_asgi(scope, receive, inbox)</code> for ASGI"],
+    ["C#", "<code>verifier.VerifyAsync(context.Request, inbox)</code> for <code>System.Net.HttpListener</code>; ASP.NET Core and others pass the method, inbox, <code>HeaderMap.From(…)</code> and body"],
   ],
 )}
 ${tabs(S.webhook)}
@@ -89,7 +90,7 @@ ${callout("warn", "Use the URL you registered", " Verify against the inbox URL y
   <li>The body is parsed, and its <code>storage</code> must equal the signing key's storage, so one storage cannot
   speak for another.</li>
 </ol>
-<p>All six verifiers pass the same <a href="testing.html#fixtures">13 shared test vectors</a>. They include tampered
+<p>All seven verifiers pass the same <a href="testing.html#fixtures">13 shared test vectors</a>. They include tampered
 bodies, recomputed digests, wrong hosts, replays, missing components, unauthorised keys, storage spoofing and
 algorithm confusion.</p>
 

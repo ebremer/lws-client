@@ -102,6 +102,11 @@ print(doc.url, doc.etag, doc.allow, doc.accept_patch)
 for link in doc.linkset.links():
     print(link.rel, &quot;→&quot;, link.href)
 shapes = doc.linkset.targets(&quot;describedby&quot;)   # list of hrefs</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">LinksetDocument doc = await client.ReadLinksetAsync(url);      // HEAD for rel=&quot;linkset&quot;, then GET
+Console.WriteLine($&quot;{doc.Url} {doc.ETag} {string.Join(&quot;, &quot;, doc.Allow)} {string.Join(&quot;, &quot;, doc.AcceptPatch)}&quot;);
+
+foreach (Link link in doc.Linkset.GetLinks()) Console.WriteLine($&quot;{link.Rel} → {link.Href}&quot;);
+List&lt;string&gt; shapes = doc.Linkset.GetTargets(&quot;describedby&quot;).Select(target =&gt; target.Href).ToList();</code></pre>
 </div>
 
 <h2 id="patch">Patching a linkset</h2>
@@ -190,6 +195,16 @@ if doc.linkset.targets(rel):
 else:
     patch = JsonPatch().add(JsonPointer.from_segments(&quot;linkset&quot;, 0, rel), [reviewer])
 client.patch_linkset(doc.url, patch, if_match=doc.etag)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">LinksetDocument doc = await client.ReadLinksetAsync(url);
+string rel = &quot;https://example.org/rel/reviewer&quot;;             // extension relation types are URIs
+var reviewer = new JsonObject { [&quot;href&quot;] = &quot;https://id.example/bob&quot; };
+
+// JsonPointer escapes &quot;/&quot; in the relation URI as &quot;~1&quot;.
+// &quot;add&quot; on an existing member replaces it, so append with &quot;/-&quot; when the relation exists.
+JsonPatch patch = doc.Linkset.GetTargets(rel).Count == 0
+    ? new JsonPatch().Add(JsonPointer.Of(&quot;linkset&quot;, &quot;0&quot;, rel), new JsonArray(reviewer))
+    : new JsonPatch().Add(JsonPointer.Of(&quot;linkset&quot;, &quot;0&quot;, rel, &quot;-&quot;), reviewer);
+await client.PatchLinksetAsync(doc.Url, patch, new UpdateOptions { IfMatch = doc.ETag });</code></pre>
 </div>
 <div class="callout tip"><p><strong>Always send If-Match</strong> Several agents may edit the same metadata. Pass the linkset's ETag so a concurrent change produces <code>412 Precondition Failed</code> instead of a silent overwrite.</p></div>
 
@@ -236,6 +251,13 @@ if &quot;PUT&quot; in doc.allow:
     linkset = doc.linkset.copy()
     linkset.add(url, &quot;license&quot;, &quot;https://creativecommons.org/licenses/by/4.0/&quot;)
     client.update_linkset(doc.url, linkset, if_match=doc.etag)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">LinksetDocument doc = await client.ReadLinksetAsync(url);
+if (doc.SupportsPut)                                   // Allow lists PUT
+{
+    Linkset updated = doc.Linkset                      // Linkset is immutable: Add returns a copy
+        .Add(url.AbsoluteUri, &quot;license&quot;, &quot;https://creativecommons.org/licenses/by/4.0/&quot;);
+    await client.UpdateLinksetAsync(doc.Url, updated, new UpdateOptions { IfMatch = doc.ETag });
+}</code></pre>
 </div>
 
 <h2 id="combined">Content and links together</h2>

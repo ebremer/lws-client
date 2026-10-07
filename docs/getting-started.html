@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Getting started · LWS Client</title>
-  <meta name="description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go or Python and run your first authenticated request against a Linked Web Storage server.">
+  <meta name="description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python or C# and run your first authenticated request against a Linked Web Storage server.">
   <meta property="og:title" content="Getting started · LWS Client">
-  <meta property="og:description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go or Python and run your first authenticated request against a Linked Web Storage server.">
+  <meta property="og:description" content="Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python or C# and run your first authenticated request against a Linked Web Storage server.">
   <meta property="og:type" content="website">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
@@ -51,10 +51,11 @@ five minutes.</p>
   <li><strong>Rust</strong> 1.85+ (edition 2024, tokio)</li>
   <li><strong>Go</strong> 1.23+ (no third-party dependencies)</li>
   <li><strong>Python</strong> 3.10+ (httpx; the <code>crypto</code> extra adds <code>cryptography</code>)</li>
+  <li><strong>C#</strong>: .NET 10 (one dependency: BouncyCastle.Cryptography, for Ed25519)</li>
 </ul>
 
 <h2 id="install">Install</h2>
-<div class="callout"><p><strong>Package registries</strong> The packages are not on Maven Central, npm, crates.io or PyPI yet. Until they are, install from the GitHub repository as shown. The registry names are already reserved in each manifest, so switching later is a one-line change.</p></div>
+<div class="callout"><p><strong>Package registries</strong> The packages are not on Maven Central, npm, crates.io, PyPI or NuGet yet. Until they are, install from the GitHub repository as shown. The registry names are already reserved in each manifest, so switching later is a one-line change.</p></div>
 <div class="code-tabs">
 <pre data-lang="bash" data-tab="java" data-label="Java"><code class="language-bash"># Until it is on Maven Central: build and install into your local repository (~/.m2)
 git clone https://github.com/ebremer/lws-client.git
@@ -104,6 +105,14 @@ pip install &quot;lws-client[crypto]&quot;
 pip install &quot;lws-client[crypto] @ git+https://github.com/ebremer/lws-client#subdirectory=python&quot;
 
 # The crypto extra (cryptography) enables self-signed identities and webhook verification.</code></pre>
+<pre data-lang="bash" data-tab="csharp" data-label="C#"><code class="language-bash"># From NuGet (once published)
+dotnet add package Ebremer.Lws.Client --version 0.1.0
+
+# Until then: clone the repository and reference the project from yours
+git clone https://github.com/ebremer/lws-client.git
+dotnet add reference lws-client/csharp/src/Ebremer.Lws.Client/Ebremer.Lws.Client.csproj
+
+# Targets .NET 10 (net10.0). One dependency: BouncyCastle.Cryptography, for Ed25519.</code></pre>
 </div>
 
 <h2 id="mock-server">Start a server to talk to</h2>
@@ -279,6 +288,23 @@ with LwsClient(authenticator=TokenExchangeAuthenticator(credentials)) as client:
 
     resource = client.read(file.location)
     print(resource.text, f&quot; (etag {resource.etag}, parent {resource.parent})&quot;)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">using Ebremer.Lws;
+using Ebremer.Lws.Auth;
+
+var credentials = SelfSignedCredentials.DidKey(SigningKey.GenerateP256());
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
+Console.WriteLine($&quot;agent:   {credentials.Agent}&quot;);
+
+StorageDescription storage = await client.DiscoverStorageAsync(new Uri(&quot;http://localhost:8787/root/&quot;));
+Console.WriteLine($&quot;storage: {storage.Id}  root: {storage.GetStorageRoot()}&quot;);
+
+CreateResult folder = await client.CreateContainerAsync(storage.GetStorageRoot(), new CreateOptions { Slug = &quot;hello-world&quot; });
+CreateResult file = await client.CreateTextAsync(folder.Location, &quot;Hello, LWS!&quot;, options: new CreateOptions { Slug = &quot;hello.txt&quot; });
+Console.WriteLine($&quot;created: {file.Location}&quot;);
+
+Resource resource = await client.ReadAsync(file.Location);
+Console.WriteLine($&quot;{resource.GetText()}  (etag {resource.ETag ?? &quot;-&quot;}, parent {resource.Metadata.Parent})&quot;);</code></pre>
 </div>
 <p>Expected output (identifiers vary):</p>
 <pre data-lang="text"><code class="language-text">agent:   did:key:zDnaeYo3bnXyXXgYpknupHmZN6wBoSkPXpoqfqwPYQdTRTZJS
@@ -309,7 +335,7 @@ Hello, LWS!  (etag &quot;y3Np7XKGTBSEU-c181QlqW&quot;, parent http://localhost:8
   <a class="card" href="resources.html"><h3>Reading &amp; writing</h3><p>Conditional updates, JSON Patch, ranges, deletes.</p></a>
   <a class="card" href="authentication.html"><h3>Authentication</h3><p>OpenID Connect, SAML, self-signed agents and custom authenticators.</p></a>
   <a class="card" href="notifications.html"><h3>Notifications</h3><p>Subscribe to changes and verify signed webhooks.</p></a>
-  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all six languages.</p></a>
+  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all seven languages.</p></a>
 </div>
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>

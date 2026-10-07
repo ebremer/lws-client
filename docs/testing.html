@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Testing &amp; mock server · LWS Client</title>
-  <meta name="description" content="Shared conformance fixtures, the zero-dependency LWS mock server, and the cross-language interop scenario used to keep six clients in lockstep.">
+  <meta name="description" content="Shared conformance fixtures, the zero-dependency LWS mock server, and the cross-language interop scenario used to keep seven clients in lockstep.">
   <meta property="og:title" content="Testing &amp; mock server · LWS Client">
-  <meta property="og:description" content="Shared conformance fixtures, the zero-dependency LWS mock server, and the cross-language interop scenario used to keep six clients in lockstep.">
+  <meta property="og:description" content="Shared conformance fixtures, the zero-dependency LWS mock server, and the cross-language interop scenario used to keep seven clients in lockstep.">
   <meta property="og:type" content="website">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
@@ -38,14 +38,14 @@
       <article class="content">
 
 <h1>Testing &amp; mock server</h1>
-<p class="lead">Six independent implementations only stay consistent if they are tested against the
+<p class="lead">Seven independent implementations only stay consistent if they are tested against the
 same data. The repository has three layers of shared testing: conformance fixtures, a mock LWS
 server, and an end-to-end interop scenario.</p>
 <div id="toc" class="toc"></div>
 
 <h2 id="fixtures">Conformance fixtures</h2>
 <p><code>conformance/fixtures/</code> holds language-neutral JSON test vectors. Every client's unit tests load
-them directly, so a parsing bug fixed in one language is caught in all six.</p>
+them directly, so a parsing bug fixed in one language is caught in all seven.</p>
 <div class="table-wrap"><table><thead><tr><th>Fixture</th><th>Covers</th></tr></thead><tbody>
 <tr><td><code>link-headers.json</code></td><td>RFC 8288 <code>Link</code> parsing: quoting, commas inside URIs, multiple relation types, relative targets</td></tr>
 <tr><td><code>www-authenticate.json</code></td><td>Challenge parsing including several challenges in one header and <code>token68</code></td></tr>
@@ -105,7 +105,8 @@ export LWS_TEST_SERVER=http://localhost:8787
 (cd cpp &amp;&amp; ctest --preset debug)            # or: ctest --test-dir build/mingw-debug
 (cd rust &amp;&amp; cargo test --test interop)
 (cd go &amp;&amp; go test -run TestInterop -v .)
-(cd python &amp;&amp; .venv/bin/pytest tests/test_interop.py)   # Windows: .venv\Scripts\pytest</code></pre>
+(cd python &amp;&amp; .venv/bin/pytest tests/test_interop.py)   # Windows: .venv\Scripts\pytest
+(cd csharp &amp;&amp; dotnet test)</code></pre>
 
 <h2 id="unit">Running each test suite</h2>
 <p>Unit tests need no server. See each <a href="contributing.html#building">language's build commands</a>.

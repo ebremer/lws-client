@@ -152,6 +152,21 @@ png = b&quot;\x89PNG\r\n\x1a\n&quot;                                           #
 photo = client.create(notes, png, &quot;image/png&quot;, slug=&quot;photo.png&quot;)
 
 print(shopping.location, todo.metadata.linkset, photo.metadata.parent)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// A container (POST with Link: &lt;https://www.w3.org/ns/lws#Container&gt;; rel=&quot;type&quot;)
+Uri notes = (await client.CreateContainerAsync(container, new CreateOptions { Slug = &quot;notes&quot; })).Location;
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+CreateResult list = await client.CreateTextAsync(notes, &quot;milk\neggs\n&quot;, options: new CreateOptions { Slug = &quot;shopping.txt&quot; });
+CreateResult todo = await client.CreateJsonAsync(notes, new { task = &quot;write docs&quot; }, new CreateOptions
+{
+    Slug = &quot;todo.json&quot;,
+    Types = [&quot;https://schema.org/Action&quot;],                                // extra rel=&quot;type&quot;
+    Links = [new Link(&quot;https://example.org/shapes/todo&quot;, &quot;describedby&quot;)],  // user metadata
+});
+CreateResult photo = await client.CreateAsync(notes, await File.ReadAllBytesAsync(&quot;photo.png&quot;), &quot;image/png&quot;,
+    new CreateOptions { Slug = &quot;photo.png&quot; });
+
+Console.WriteLine($&quot;{list.Location} {todo.Linkset} {photo.Metadata.Parent}&quot;);</code></pre>
 </div>
 <div class="table-wrap"><table><thead><tr><th>Option</th><th>Wire effect</th></tr></thead><tbody>
 <tr><td><code>slug</code></td><td><code>Slug</code> header: a <em>hint</em> for the new name (percent-encoded). The server may change it to keep names unique.</td></tr>
@@ -252,11 +267,27 @@ profile = client.read_json(url)   # GET with Accept: application/json, parsed
 # Headers and links only
 meta = client.head(url)
 print(meta.content_length, meta.allow, meta.accept_patch, meta.links_for(&quot;describedby&quot;))</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">Resource resource = await client.ReadAsync(url);
+ResourceMetadata meta = resource.Metadata;
+Console.WriteLine($&quot;{resource.Status} {resource.ContentType} {resource.ETag} {meta.LastModified}&quot;);
+Console.WriteLine($&quot;{string.Join(&quot;, &quot;, meta.Types)} {meta.IsDataResource} {meta.Parent} {meta.Linkset}&quot;);
+
+string text = resource.GetText();                    // decoded using the Content-Type charset
+ReadOnlyMemory&lt;byte&gt; bytes = resource.Body;
+JsonElement json = (await client.ReadAsync(url, new ReadOptions { Accept = &quot;application/json&quot; })).GetJson();
+Person? person = (await client.ReadAsync(url)).GetJson&lt;Person&gt;(JsonSerializerOptions.Web);   // System.Text.Json binding
+
+// Headers and links only
+ResourceMetadata head = await client.HeadAsync(url);
+Console.WriteLine($&quot;{head.ContentLength} {string.Join(&quot;, &quot;, head.Allow)} {string.Join(&quot;, &quot;, head.AcceptPatch)}&quot;);
+foreach (Link shape in head.GetLinks(&quot;describedby&quot;)) Console.WriteLine(shape.Href);
+
+record Person(string Name, int Age);</code></pre>
 </div>
 
 <h3 id="streaming">Streaming large bodies</h3>
 <p>Where the platform supports it, the clients can hand you the body as a stream instead of buffering it.
-Streamed uploads cannot be replayed after a <code>401</code>, so the JS, Python and Go clients first send a
+Streamed uploads cannot be replayed after a <code>401</code>, so the JS, Python, Go and C# clients first send a
 <code>HEAD</code> to obtain a token. Java bodies are always replayable. C++ bodies are buffered strings,
 so use range requests to process large resources in pieces.</p>
 <div class="code-tabs">
@@ -331,6 +362,16 @@ def chunks() -&gt; Iterator[bytes]:
 
 
 client.create(container, chunks(), &quot;application/octet-stream&quot;, slug=&quot;big.bin&quot;)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">await using (ResourceStream stream = await client.ReadStreamAsync(url))      // nothing is buffered
+await using (FileStream copy = File.Create(&quot;copy.bin&quot;))
+{
+    await stream.Content.CopyToAsync(copy);
+    Console.WriteLine($&quot;received {copy.Length} bytes&quot;);
+}
+
+// A Stream body is sent once: the client obtains a token first (HEAD), because it cannot replay it after a 401.
+await using FileStream upload = File.OpenRead(&quot;big.bin&quot;);
+await client.CreateAsync(container, upload, &quot;application/octet-stream&quot;, new CreateOptions { Slug = &quot;big.bin&quot; });</code></pre>
 </div>
 
 <h2 id="conditional">Conditional requests</h2>
@@ -428,6 +469,22 @@ try:
     client.update(url, &quot;new content&quot;, &quot;text/plain&quot;, if_match=first.etag)
 except PreconditionFailedError:
     pass   # someone else changed it (412): re-read, merge, retry</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">Resource first = await client.ReadAsync(url);
+string etag = first.ETag ?? throw new InvalidOperationException(&quot;the server sent no ETag&quot;);
+
+// Revalidate: 304 Not Modified is a normal result, not an exception.
+Resource again = await client.ReadAsync(url, new ReadOptions { IfNoneMatch = etag });
+if (again.NotModified) Console.WriteLine(&quot;cached copy is still fresh&quot;);
+
+// Optimistic concurrency: only overwrite the version you read.
+try
+{
+    await client.UpdateAsync(url, &quot;new content&quot;u8.ToArray(), &quot;text/plain&quot;, new UpdateOptions { IfMatch = etag });
+}
+catch (PreconditionFailedException)
+{
+    // Someone else changed it (412): re-read, merge, retry.
+}</code></pre>
 </div>
 
 <h3 id="range">Byte ranges</h3>
@@ -478,6 +535,12 @@ print(start.is_partial, start.content_range)     # True &quot;bytes 0-1023/52311
 rest = client.read(url, range=(1024, None))      # from byte 1024 to the end
 tail = client.read(url, range=&quot;bytes=-512&quot;)      # raw Range value: the last 512 bytes
 print(len(rest.content), len(tail.content))</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">Resource start = await client.ReadAsync(url, new ReadOptions { Range = new RangeHeaderValue(0, 1023) });   // first KiB
+Console.WriteLine($&quot;{start.Status} {start.ContentRange}&quot;);                                                  // 206 bytes 0-1023/52311
+
+Resource rest = await client.ReadAsync(url, new ReadOptions { Range = new RangeHeaderValue(1024, null) });  // to the end
+Resource tail = await client.ReadAsync(url, new ReadOptions { Range = new RangeHeaderValue(null, 512) });   // last 512 bytes
+Console.WriteLine($&quot;{rest.Body.Length} {tail.Body.Length}&quot;);</code></pre>
 </div>
 
 <h2 id="update">Replace (PUT)</h2>
@@ -547,6 +610,16 @@ client.update(
     set_linkset=True,
     links=[Link(&quot;https://creativecommons.org/licenses/by/4.0/&quot;, &quot;license&quot;)],
 )</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// PUT replaces the whole representation.
+byte[] alice = JsonSerializer.SerializeToUtf8Bytes(new { name = &quot;Alice&quot;, age = 31 });
+await client.UpdateAsync(url, alice, &quot;application/json&quot;, new UpdateOptions { IfMatch = etag });
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+await client.UpdateAsync(url, &quot;v2&quot;u8.ToArray(), &quot;text/plain&quot;, new UpdateOptions
+{
+    SetLinkset = true,
+    Links = [new Link(&quot;https://creativecommons.org/licenses/by/4.0/&quot;, &quot;license&quot;)],
+});</code></pre>
 </div>
 
 <h2 id="patch">Partial updates (PATCH)</h2>
@@ -638,6 +711,20 @@ if &quot;application/sparql-update&quot; in client.head(url).accept_patch:
         'INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }',
         content_type=&quot;application/sparql-update&quot;,
     )</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// JSON Patch (RFC 6902) is the baseline format every LWS server accepts. JsonPatch is immutable.
+JsonPatch patch = new JsonPatch()
+    .Test(&quot;/version&quot;, 3)
+    .Replace(&quot;/status&quot;, &quot;done&quot;)
+    .Add(&quot;/tags/-&quot;, &quot;urgent&quot;)
+    .Remove(&quot;/draft&quot;);
+await client.PatchAsync(url, patch, new UpdateOptions { IfMatch = etag });
+
+// Other formats only when the server advertises them in Accept-Patch.
+if ((await client.HeadAsync(url)).AcceptPatch.Contains(&quot;application/sparql-update&quot;))
+{
+    await client.PatchAsync(url, &quot;&quot;&quot;INSERT DATA { &lt;#me&gt; &lt;http://xmlns.com/foaf/0.1/name&gt; &quot;Alice&quot; }&quot;&quot;&quot;u8.ToArray(),
+        &quot;application/sparql-update&quot;);
+}</code></pre>
 </div>
 
 <h2 id="delete">Delete</h2>
@@ -689,6 +776,16 @@ try:
     client.delete(container)                  # 409 Conflict when not empty
 except ConflictError:
     client.delete(container, recursive=True)  # Depth: infinity</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">await client.DeleteAsync(url, new DeleteOptions { IfMatch = etag });
+
+try
+{
+    await client.DeleteAsync(container);                                          // 409 Conflict when not empty
+}
+catch (ConflictException)
+{
+    await client.DeleteAsync(container, new DeleteOptions { Recursive = true });  // Depth: infinity
+}</code></pre>
 </div>
 
 <h2 id="status-codes">Status codes at a glance</h2>

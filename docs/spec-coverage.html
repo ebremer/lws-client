@@ -56,25 +56,27 @@
 </tbody></table></div>
 
 <h2 id="features">Feature matrix</h2>
-<p>All six clients implement the same feature set. Language-specific differences are listed under each
+<p>All seven clients implement the same feature set. Language-specific differences are listed under each
 language guide.</p>
-<div class="table-wrap"><table><thead><tr><th>Feature</th><th>Spec section</th><th>Java</th><th>JS/TS</th><th>C++</th><th>Rust</th><th>Go</th><th>Python</th></tr></thead><tbody>
-<tr><td>Storage discovery (<code>rel=lws#storage</code>) and storage description</td><td>core §Discovery</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>Read / HEAD / range / conditional requests</td><td>core §Read resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>Create data resources and containers (<code>Slug</code>, user links)</td><td>core §Create resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>Replace (<code>PUT</code>) with <code>If-Match</code>; <code>Prefer: set-linkset</code></td><td>core §Update resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>JSON Patch (<code>PATCH</code>) and arbitrary advertised patch formats</td><td>core §Update resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>Delete, recursive delete (<code>Depth: infinity</code>)</td><td>core §Delete resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>Container listing and lazy pagination</td><td>core §Containers, §Pagination</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>Linkset read / replace / patch</td><td>core §Metadata</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>401 challenge → AS metadata → token exchange → retry</td><td>core §Authorization</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>OpenID Connect, SAML 2.0, self-signed (CID, did:key) credentials</td><td>authn suites</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>Webhook subscriptions</td><td>core §Notifications, webhook suite</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>RFC 9421 webhook signature verification</td><td>webhook suite §Authentication</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>Access requests and grants (ODRL access profile)</td><td>core §Access Requests and Grants</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>Type index, type search with <code>QUERY</code></td><td>index</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>RFC 9457 problem details in errors</td><td>core §REST binding</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<div class="table-wrap"><table><thead><tr><th>Feature</th><th>Spec section</th><th>Java</th><th>JS/TS</th><th>C++</th><th>Rust</th><th>Go</th><th>Python</th><th>C#</th></tr></thead><tbody>
+<tr><td>Storage discovery (<code>rel=lws#storage</code>) and storage description</td><td>core §Discovery</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Read / HEAD / range / conditional requests</td><td>core §Read resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Create data resources and containers (<code>Slug</code>, user links)</td><td>core §Create resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Replace (<code>PUT</code>) with <code>If-Match</code>; <code>Prefer: set-linkset</code></td><td>core §Update resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>JSON Patch (<code>PATCH</code>) and arbitrary advertised patch formats</td><td>core §Update resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Delete, recursive delete (<code>Depth: infinity</code>)</td><td>core §Delete resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Container listing and lazy pagination</td><td>core §Containers, §Pagination</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Linkset read / replace / patch</td><td>core §Metadata</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>401 challenge → AS metadata → token exchange → retry</td><td>core §Authorization</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>OpenID Connect, SAML 2.0, self-signed (CID, did:key) credentials</td><td>authn suites</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Webhook subscriptions</td><td>core §Notifications, webhook suite</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>RFC 9421 webhook signature verification</td><td>webhook suite §Authentication</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Access requests and grants (ODRL access profile)</td><td>core §Access Requests and Grants</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Type index, type search with <code>QUERY</code></td><td>index</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>RFC 9457 problem details in errors</td><td>core §REST binding</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
 </tbody></table></div>
+
+<div class="callout"><p><strong>C# specifics</strong> The C# client gets Ed25519 (EdDSA) from BouncyCastle.Cryptography, because .NET 10 has none; everything else uses the BCL (<code>ECDsa</code>, <code>SHA256</code>/<code>SHA512</code>, <code>HttpClient</code>, <code>System.Text.Json</code>). Its 501 exception is <code>HttpNotImplementedException</code>, so that it never clashes with <code>System.NotImplementedException</code>. A subscription's URL (the contract's <code>subscription</code>) is <code>Subscription.Url</code>. See the <a href="languages/csharp.html#notes">C# guide</a>.</p></div>
 
 <h2 id="decisions">Interpretation decisions</h2>
 <p>The drafts are still evolving. Where they leave something open, the clients behave as follows, and

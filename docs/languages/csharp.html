@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>C# · LWS Client</title>
+  <meta name="description" content="The LWS client for C# and .NET 10: installation, configuration, async/await with CancellationToken, IAsyncEnumerable pagination, exceptions and build instructions.">
+  <meta property="og:title" content="C# · LWS Client">
+  <meta property="og:description" content="The LWS client for C# and .NET 10: installation, configuration, async/await with CancellationToken, IAsyncEnumerable pagination, exceptions and build instructions.">
+  <meta property="og:type" content="website">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <button class="icon-btn menu-toggle" id="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="../index.html"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M9 10.5h6.5M9 16h14M9 21.5h9" stroke="var(--accent-contrast)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="10.5" r="2.4" fill="var(--accent-contrast)"/><circle cx="22" cy="21.5" r="2.4" fill="none" stroke="var(--accent-contrast)" stroke-width="2"/></svg><span>LWS Client</span><span class="version">v0.1.0</span></a>
+    <nav class="header-nav" aria-label="Primary">
+        <a href="../getting-started.html">Get started</a>
+        <a href="../concepts.html">Concepts</a>
+        <a href="../authentication.html">Auth</a>
+        <a href="../api-reference.html">API</a>
+        <a href="../spec-coverage.html">Spec</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      <a class="icon-btn" href="https://github.com/ebremer/lws-client" aria-label="GitHub repository"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg></a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar" aria-label="Documentation">
+      <ul><li><a href="../index.html">Overview</a></li><li><a href="../getting-started.html">Getting started</a></li><li><a href="../api-reference.html">API cross-reference</a></li></ul>
+    </nav>
+    <main id="main">
+      <article class="content">
+
+<h1><span class="lang-badge lang-csharp">C#</span> C#</h1>
+<div class="badges">
+  <span class="badge accent">Ebremer.Lws.Client 0.1.0</span>
+  <span class="badge">.NET 10</span>
+  <span class="badge">namespace Ebremer.Lws</span>
+  <span class="badge">1 dependency: BouncyCastle (Ed25519)</span>
+</div>
+<p class="lead">A .NET client built on <code>HttpClient</code> and <code>System.Text.Json</code>. Every operation is
+<code>async</code> and takes a <code>CancellationToken</code>, listings are lazy <code>IAsyncEnumerable&lt;T&gt;</code>s for
+<code>await foreach</code>, options are <code>init</code>-only records, and nullable reference types mark every value
+that may be absent.</p>
+<div id="toc" class="toc"></div>
+
+<h2 id="install">Install</h2>
+<pre data-lang="bash"><code class="language-bash"># From NuGet (once published)
+dotnet add package Ebremer.Lws.Client --version 0.1.0
+
+# Until then: clone the repository and reference the project from yours
+git clone https://github.com/ebremer/lws-client.git
+dotnet add reference lws-client/csharp/src/Ebremer.Lws.Client/Ebremer.Lws.Client.csproj
+
+# Targets .NET 10 (net10.0). One dependency: BouncyCastle.Cryptography, for Ed25519.</code></pre>
+
+<h2 id="first">First program</h2>
+<pre data-lang="csharp"><code class="language-csharp">using Ebremer.Lws;
+using Ebremer.Lws.Auth;
+
+var credentials = SelfSignedCredentials.DidKey(SigningKey.GenerateP256());
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
+Console.WriteLine($&quot;agent:   {credentials.Agent}&quot;);
+
+StorageDescription storage = await client.DiscoverStorageAsync(new Uri(&quot;http://localhost:8787/root/&quot;));
+Console.WriteLine($&quot;storage: {storage.Id}  root: {storage.GetStorageRoot()}&quot;);
+
+CreateResult folder = await client.CreateContainerAsync(storage.GetStorageRoot(), new CreateOptions { Slug = &quot;hello-world&quot; });
+CreateResult file = await client.CreateTextAsync(folder.Location, &quot;Hello, LWS!&quot;, options: new CreateOptions { Slug = &quot;hello.txt&quot; });
+Console.WriteLine($&quot;created: {file.Location}&quot;);
+
+Resource resource = await client.ReadAsync(file.Location);
+Console.WriteLine($&quot;{resource.GetText()}  (etag {resource.ETag ?? &quot;-&quot;}, parent {resource.Metadata.Parent})&quot;);</code></pre>
+<p>This is a complete <code>Program.cs</code> with top-level statements: create a console project
+(<code>dotnet new console</code>), add the package or project reference, and run it with <code>dotnet run</code>.</p>
+
+<h2 id="configure">Configure the client</h2>
+<pre data-lang="csharp"><code class="language-csharp">using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions
+{
+    Authenticator = authenticator,
+    UserAgent = &quot;my-app/1.0&quot;,                                       // default &quot;lws-client-csharp/0.1.0&quot;
+    DefaultHeaders = new Dictionary&lt;string, string&gt; { [&quot;Accept-Language&quot;] = &quot;en&quot; },   // added to every request
+    Timeout = TimeSpan.FromSeconds(20),                             // per request (each redirect hop)
+    MaxRedirects = 5,                                               // followed by the client itself (default 10)
+    // HttpClient = myHttpClient,                                   // bring your own (with AllowAutoRedirect = false)
+});
+
+// Per-call headers and timeouts; every operation also takes a CancellationToken.
+using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+ContainerPage page = await client.ReadContainerAsync(container, new RequestOptions
+{
+    Headers = new Dictionary&lt;string, string&gt; { [&quot;X-Trace&quot;] = &quot;1&quot; },
+    Timeout = TimeSpan.FromSeconds(5),
+}, cts.Token);
+Console.WriteLine(page.TotalItems);
+
+// Another identity over the same connections:
+using LwsClient anonymous = client.WithAuthenticator(null);</code></pre>
+<p><code>LwsClient</code> is immutable and thread-safe: create one, share it, and dispose it when you are done. It owns its
+<code>HttpClient</code> unless you pass one in. <code>WithAuthenticator(a)</code> returns a client with a different
+authenticator that shares the same connections. The client follows redirects itself and re-checks credentials on
+each hop, so an <code>HttpClient</code> or <code>HttpMessageHandler</code> you supply must not follow redirects
+(<code>AllowAutoRedirect = false</code>). One that does bypasses that protection.</p>
+
+<h2 id="idioms">C# idioms</h2>
+<div class="table-wrap"><table><thead><tr><th>Aspect</th><th>How the C# client does it</th></tr></thead><tbody>
+<tr><td>Calls</td><td>Every operation is an <code>…Async</code> method returning a <code>Task</code>, with an optional trailing <code>CancellationToken</code>. Cancelling throws <code>OperationCanceledException</code>; a timeout throws <code>LwsTransportException</code></td></tr>
+<tr><td>Pagination</td><td><code>ListContainerAsync</code>, <code>ListTypesAsync</code>, <code>SearchAllAsync</code>, <code>ListSubscriptionsAsync</code>… return lazy <code>IAsyncEnumerable&lt;T&gt;</code>s: <code>await foreach</code>, or .NET 10's <code>System.Linq.AsyncEnumerable</code> operators (<code>Where</code>, <code>Select</code>, <code>ToListAsync</code>)</td></tr>
+<tr><td>Options</td><td>Records with <code>init</code> properties, set with object initializers: <code>new CreateOptions { Slug = … }</code>, <code>new UpdateOptions { IfMatch = etag }</code>, <code>new DeleteOptions { Recursive = true }</code>, <code>new ReadOptions { Range = new RangeHeaderValue(0, 1023) }</code>. Every one also has <code>Headers</code> and <code>Timeout</code></td></tr>
+<tr><td>Bodies</td><td><code>ReadOnlyMemory&lt;byte&gt;</code> (replayable) or a <code>Stream</code> (sent once, after a <code>HEAD</code> obtains a token); <code>CreateTextAsync</code> and <code>CreateJsonAsync</code>; <code>ReadStreamAsync</code> for unbuffered reads</td></tr>
+<tr><td>Models</td><td>Immutable classes and records. Absent values are <code>null</code> under nullable reference types; JSON is <code>JsonElement</code> / <code>JsonObject</code>; <code>GetJson&lt;T&gt;()</code> binds with <code>System.Text.Json</code></td></tr>
+<tr><td>Errors</td><td><code>LwsException</code> → <code>HttpException</code> (<code>Status</code>, <code>Problem</code>, <code>Headers</code>, <code>Body</code>) → <code>NotFoundException</code>, <code>ConflictException</code>, …; narrow them with <code>catch … when</code></td></tr>
+<tr><td>Disposal</td><td><code>LwsClient</code>, <code>TokenExchangeAuthenticator</code>, <code>WebhookVerifier</code> and <code>ResourceStream</code> are disposable: <code>using var</code> / <code>await using</code></td></tr>
+<tr><td>Crypto</td><td>The BCL's <code>ECDsa</code> (P-256, and P-384 for imported keys and webhook signatures) and <code>SHA256</code>/<code>SHA512</code>. Ed25519 comes from BouncyCastle.Cryptography, because .NET 10 has none</td></tr>
+</tbody></table></div>
+
+<h2 id="namespaces">Namespaces</h2>
+<div class="table-wrap"><table><thead><tr><th>Namespace</th><th>Contents</th></tr></thead><tbody>
+<tr><td><code>Ebremer.Lws</code></td><td><code>LwsClient</code>, options, models (<code>Resource</code>, <code>ResourceMetadata</code>, <code>ContainerPage</code>, <code>StorageDescription</code>, <code>Linkset</code>…), <code>JsonPatch</code>, <code>JsonPointer</code>, <code>TypeQuery</code>, exceptions, <code>Lws</code> constants</td></tr>
+<tr><td><code>Ebremer.Lws.Auth</code></td><td><code>IAuthenticator</code>, <code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, credentials, <code>SigningKey</code>, <code>VerificationKey</code>, <code>Jwk</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifierDocument</code></td></tr>
+<tr><td><code>Ebremer.Lws.Notifications</code></td><td><code>WebhookSubscriptionRequest</code>, <code>Subscription</code>, <code>Notification</code>, <code>Activity</code>, <code>WebhookVerifier</code></td></tr>
+<tr><td><code>Ebremer.Lws.Access</code></td><td><code>AccessRequest</code>, <code>AccessGrant</code>, <code>AccessPolicy</code>, <code>AccessTarget</code>, <code>Constraint</code></td></tr>
+<tr><td><code>Ebremer.Lws.Http</code></td><td><code>Link</code>, <code>LinkHeader</code>, <code>WwwAuthenticate</code>, <code>AuthChallenge</code>, <code>StructuredFields</code>, <code>ProblemDetails</code>, <code>HeaderMap</code>, <code>Slug</code></td></tr>
+</tbody></table></div>
+
+<h2 id="notes">Notes and deviations</h2>
+<ul>
+  <li>The 501 exception is <code>HttpNotImplementedException</code>, so that <code>using Ebremer.Lws;</code> never clashes with
+  <code>System.NotImplementedException</code>. The contract's <em>HttpError</em> is <code>HttpException</code>, <em>ProtocolError</em> is
+  <code>ProtocolException</code>, and transport failures are <code>LwsTransportException</code> (its <code>InnerException</code> is the
+  <code>HttpRequestException</code>, <code>IOException</code> or <code>TimeoutException</code>). An argument that is not an absolute
+  http(s) URL throws <code>ArgumentException</code>.</li>
+  <li>A subscription's URL is <code>Subscription.Url</code>. <code>SubscribeAsync(Service, …)</code> checks the service's
+  <code>subscriptionType</code>; <code>SubscribeAsync(Uri, …)</code> takes a raw endpoint.</li>
+  <li><code>StorageDescription.GetStorageRoot()</code> is a method because it throws <code>ProtocolException</code> when there is no
+  <code>StorageRoot</code> service. The other well-known services are nullable properties (<code>NotificationService</code>,
+  <code>TypeSearchService</code>…).</li>
+  <li><code>ContainerPage.Id</code> is never null: a search page without an <code>id</code> takes the page URL.</li>
+  <li><code>Linkset</code>, <code>JsonPatch</code> and <code>TypeQuery</code> are immutable, so <code>Add</code>, <code>Remove</code>,
+  <code>Replace</code>, <code>AllOf</code>… return new instances. Start a query from <code>new TypeQuery()</code>.</li>
+  <li><code>ReadLinksetResourceAsync(linksetUrl)</code> complements <code>ReadLinksetAsync(resourceUrl)</code> when you already know the linkset URL.</li>
+  <li><code>WebhookVerifier.VerifyAsync(HttpListenerRequest, inbox)</code> serves <code>System.Net.HttpListener</code>. ASP.NET Core and other
+  frameworks pass the method, the registered inbox URL, <code>HeaderMap.From(…)</code> and the body bytes.</li>
+  <li><code>CreateJsonAsync&lt;T&gt;</code> and <code>GetJson&lt;T&gt;</code> use reflection-based serialization. For trimming and native AOT,
+  <code>CreateJsonAsync</code> has a <code>JsonTypeInfo&lt;T&gt;</code> overload.</li>
+  <li>Extras: <code>RequestAsync(method, url, …)</code> sends any request through the authentication and redirect pipeline;
+  <code>ReadStreamAsync</code>, <code>SigningKey.FromECDsa</code> (P-256 or P-384) and <code>Jwt</code> helpers.</li>
+</ul>
+
+<h2 id="build">Build, test and examples</h2>
+<pre data-lang="bash"><code class="language-bash">cd csharp
+dotnet build                                        # library, tests and examples (warnings are errors)
+dotnet test                                         # unit, fixture and HTTP tests
+node ../testing/mock-server/server.mjs --port 8787 &amp;
+LWS_TEST_SERVER=http://localhost:8787 dotnet test   # adds the cross-language interop scenario
+dotnet pack src/Ebremer.Lws.Client -c Release       # the NuGet package
+
+# Examples (examples/): Quickstart, SelfSignedAuth, WebhookReceiver
+dotnet run --project examples/Quickstart -- http://localhost:8787/root/</code></pre>
+<div class="callout"><p><strong>Source</strong> <a href="https://github.com/ebremer/lws-client/tree/main/csharp">csharp/</a> in the repository, with its own <a href="https://github.com/ebremer/lws-client/blob/main/csharp/README.md">README</a>.</p></div>
+
+        <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
+        <footer class="site-footer">
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+        </footer>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

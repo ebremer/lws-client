@@ -7,10 +7,10 @@ const LICENSE_TEXT = readFileSync(new URL("../../LICENSE", import.meta.url), "ut
 export default {
   path: "contributing.html",
   title: "Contributing & license",
-  description: "Repository layout, build and test commands for all six LWS clients, the shared conformance process, documentation workflow and the MIT license.",
+  description: "Repository layout, build and test commands for all seven LWS clients, the shared conformance process, documentation workflow and the MIT license.",
   body: `
 <h1>Contributing &amp; license</h1>
-<p class="lead">The six clients evolve together. A behaviour change starts in the shared contract and
+<p class="lead">The seven clients evolve together. A behaviour change starts in the shared contract and
 fixtures, then lands in every language, and the interop scenario keeps them honest.</p>
 <div id="toc" class="toc"></div>
 
@@ -21,7 +21,7 @@ ${table(
     ["<code>design/client-api.md</code>", "The cross-language API contract: concepts, wire behaviour, interpretation decisions"],
     ["<code>conformance/</code>", "Shared JSON fixtures, their generator, and the interop scenario (<code>scenario.md</code>)"],
     ["<code>testing/mock-server/</code>", "Zero-dependency Node.js LWS server used by interop tests"],
-    ["<code>java/</code> <code>js/</code> <code>cpp/</code> <code>rust/</code> <code>go/</code> <code>python/</code>", "The clients, each with a README, tests and examples"],
+    ["<code>java/</code> <code>js/</code> <code>cpp/</code> <code>rust/</code> <code>go/</code> <code>python/</code> <code>csharp/</code>", "The clients, each with a README, tests and examples"],
     ["<code>docs-src/</code>", "Sources of this website: page modules, snippet books, layout"],
     ["<code>docs/</code>", "The generated GitHub Pages site (do not edit the HTML by hand)"],
     ["<code>.github/workflows/ci.yml</code>", "CI: builds and tests every client and runs the interop scenario"],
@@ -38,6 +38,7 @@ ${table(
     ["Rust", "Rust 1.85+", "<code>cd rust &amp;&amp; cargo test &amp;&amp; cargo clippy --all-targets -- -D warnings</code>"],
     ["Go", "Go 1.23+", "<code>cd go &amp;&amp; go vet ./... &amp;&amp; go test ./...</code>"],
     ["Python", "Python 3.10+", "<code>cd python &amp;&amp; python -m venv .venv &amp;&amp; .venv/bin/pip install -e \".[dev]\" &amp;&amp; .venv/bin/pytest</code>"],
+    ["C#", ".NET 10 SDK", "<code>dotnet test csharp</code>"],
   ],
 )}
 <p>Every suite runs the cross-language interop scenario when <code>LWS_TEST_SERVER</code> points at a running
@@ -53,7 +54,7 @@ export LWS_TEST_SERVER=http://localhost:8787`)}
   <li><strong>Fixtures next.</strong> Add or adjust the vectors in <code>conformance/fixtures/</code>. Cryptographic fixtures are
   regenerated with <code>node conformance/tools/generate-fixtures.mjs</code>.</li>
   <li><strong>Mock server.</strong> Teach <code>testing/mock-server</code> the server side, with tests.</li>
-  <li><strong>All six clients.</strong> Implement the change idiomatically in each language, run its tests, then run
+  <li><strong>All seven clients.</strong> Implement the change idiomatically in each language, run its tests, then run
   the interop scenario.</li>
   <li><strong>Docs.</strong> Update the snippet books and pages, and re-run the sample checks (below).</li>
 </ol>
@@ -81,20 +82,21 @@ node docs-src/check-samples.mjs      # compiles / type-checks every code sample 
   <li>Pages are ES modules in <code>docs-src/pages/</code> that export <code>{ path, title, description, body }</code>. The sidebar
   order lives in <code>docs/assets/site.js</code>.</li>
   <li>Code samples live in per-language snippet books, <code>docs-src/samples/&lt;lang&gt;.txt</code>, one
-  <code>@@@ topic</code> section per sample. A page shows all six languages of a topic with
+  <code>@@@ topic</code> section per sample. A page shows all seven languages of a topic with
   <code>tabs(S.topic)</code>.</li>
   <li><code>check-samples.mjs</code> wraps every snippet in a harness and runs the real compilers: <code>tsc</code> against
-  <code>js/dist</code>, <code>mypy</code>, <code>go build</code>, <code>javac</code>, <code>cargo check</code> and
-  <code>g++ -fsyntax-only</code>. Fragments may use the shared names <code>client</code>, <code>storage</code>, <code>container</code>,
+  <code>js/dist</code>, <code>mypy</code>, <code>go build</code>, <code>javac</code>, <code>cargo check</code>,
+  <code>g++ -fsyntax-only</code> and <code>dotnet build</code> (of throwaway projects that reference <code>csharp/</code>).
+  Fragments may use the shared names <code>client</code>, <code>storage</code>, <code>container</code>,
   <code>url</code>, <code>etag</code>, <code>credentials</code>, and so on.</li>
   <li>GitHub Pages serves the committed <code>docs/</code> folder (Settings → Pages → <em>Deploy from a branch</em>,
   <code>main</code> / <code>docs</code>). CI fails if <code>docs/</code> is out of date with <code>docs-src/</code>.</li>
 </ul>
 
 <h2 id="license">License</h2>
-<p>Everything in the repository is released under the <strong>MIT License</strong>: the six clients, the mock server, the
+<p>Everything in the repository is released under the <strong>MIT License</strong>: the seven clients, the mock server, the
 fixtures, the tools and this documentation. Each package manifest (<code>pom.xml</code>, <code>package.json</code>,
-<code>Cargo.toml</code>, <code>pyproject.toml</code>, <code>vcpkg.json</code>) declares <code>MIT</code>.</p>
+<code>Cargo.toml</code>, <code>pyproject.toml</code>, <code>vcpkg.json</code>, and <code>Directory.Build.props</code> for the NuGet package) declares <code>MIT</code>.</p>
 ${code("text", LICENSE_TEXT, { title: "LICENSE" })}
 ${callout("note", "Not a W3C publication", " This is an independent implementation of the W3C Linked Web Storage Working Group's drafts. The specifications themselves are published by the W3C under its own document license.")}
 `,

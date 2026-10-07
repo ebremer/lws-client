@@ -176,6 +176,20 @@ print(storage.type_search_service())    # endpoint shortcuts return the URL or N
 
 # When you already know the storage URL:
 same = client.get_storage_description(storage.id)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// Any URL inside the storage is a valid starting point.
+StorageDescription storage = await client.DiscoverStorageAsync(new Uri(&quot;https://storage.example/root/notes/&quot;));
+Uri root = storage.GetStorageRoot();                 // the required StorageRoot service
+Console.WriteLine($&quot;{storage.Id} [{string.Join(&quot;, &quot;, storage.Types)}] {root}&quot;);
+
+if (storage.NotificationService is { } notifications)
+    Console.WriteLine($&quot;{notifications.ServiceEndpoint} {string.Join(&quot;, &quot;, notifications.SubscriptionTypes)}&quot;);
+foreach (Service service in storage.Services)
+    Console.WriteLine($&quot;{string.Join(&quot;, &quot;, service.Types)} → {service.ServiceEndpoint}&quot;);
+if (storage.GetCapability(&quot;https://feature.example/PatchSupport&quot;)?.GetProperty(&quot;format&quot;) is { } format)
+    Console.WriteLine(format);
+
+// When you already know the storage URL:
+StorageDescription same = await client.GetStorageDescriptionAsync(storage.Id);</code></pre>
 </div>
 
 <h2 id="services">Services</h2>

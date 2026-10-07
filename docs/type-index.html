@@ -77,6 +77,11 @@ if (index) {
 if index is not None:
     for type_iri in client.list_types(index):
         print(type_iri)    # e.g. https://schema.org/Person</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">if (storage.TypeIndexService is { } index)
+{
+    await foreach (string type in client.ListTypesAsync(index.ServiceEndpoint))
+        Console.WriteLine(type);                                             // e.g. https://schema.org/Person
+}</code></pre>
 </div>
 
 <h2 id="search">Searching by type</h2>
@@ -218,6 +223,23 @@ shaped = TypeQuery().relation(&quot;describedby&quot;).all_of(&quot;https://exam
 print(len(client.search_types(search, shaped).items))
 
 print(client.accepted_query_formats(search))             # ['application/lws-query+json', …]</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">Uri search = storage.TypeSearchService?.ServiceEndpoint ?? throw new InvalidOperationException(&quot;no type search service&quot;);
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+TypeQuery query = new TypeQuery()
+    .AnyOf(&quot;https://schema.org/Person&quot;, &quot;http://xmlns.com/foaf/0.1/Person&quot;)
+    .AllOf(Lws.Types.DataResource);
+ContainerPage first = await client.SearchTypesAsync(search, query);        // HTTP QUERY
+Console.WriteLine($&quot;{first.TotalItems} {first.Next}&quot;);
+
+await foreach (ContainedResource hit in client.SearchAllAsync(search, new TypeQuery().AllOf(&quot;https://schema.org/Event&quot;)))
+    Console.WriteLine($&quot;{hit.Id} {string.Join(&quot;, &quot;, hit.Types)}&quot;);
+
+// Indexed descriptive relations use the same grammar.
+TypeQuery shaped = new TypeQuery().Relation(&quot;describedby&quot;).AllOf(&quot;https://example.org/shapes/person&quot;);
+Console.WriteLine((await client.SearchTypesAsync(search, shaped)).Items.Count);
+
+Console.WriteLine(string.Join(&quot;, &quot;, await client.AcceptedQueryFormatsAsync(search)));   // application/lws-query+json, …</code></pre>
 </div>
 <pre data-lang="http" data-title="On the wire"><code class="language-http">QUERY /types/search HTTP/1.1
 Content-Type: application/lws-query+json

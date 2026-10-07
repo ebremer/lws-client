@@ -205,6 +205,23 @@ for r in client.list_access_requests(requests):
 pending = client.get_access_request(request_url)
 print(pending.access[0].actions)
 client.cancel_access_request(request_url)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">var policy = new AccessPolicy(
+    actions: [Lws.Actions.Read, Lws.Actions.Create],
+    assignee: &quot;https://id.example/agent&quot;,
+    target: AccessTarget.StorageResources(container),
+    constraints:
+    [
+        Constraint.Purpose(new Uri(&quot;https://purpose.example/collaboration&quot;)),
+        Constraint.NotAfter(new DateTimeOffset(2026, 12, 31, 23, 59, 59, TimeSpan.Zero)),
+    ]);
+var request = new AccessRequest(storage.Id, [policy], inbox: new Uri(&quot;https://id.example/agent/inbox/&quot;));
+Uri requests = storage.AccessRequestService?.ServiceEndpoint ?? throw new InvalidOperationException(&quot;no access request service&quot;);
+Uri requestUrl = await client.RequestAccessAsync(requests, request);
+
+await foreach (ContainedResource r in client.ListAccessRequestsAsync(requests)) Console.WriteLine(r.Id);
+AccessRequest pending = await client.GetAccessRequestAsync(requestUrl);
+Console.WriteLine(string.Join(&quot;, &quot;, pending.Access[0].Actions));
+await client.CancelAccessRequestAsync(requestUrl);</code></pre>
 </div>
 
 <h2 id="grant">Granting and revoking</h2>
@@ -275,6 +292,13 @@ grant_url = client.grant_access(grants, AccessGrant(storage=pending.storage, acc
 for g in client.list_access_grants(grants):
     print(g.id)
 client.revoke_access_grant(grant_url)   # the server withdraws the underlying permissions</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// A storage controller approves a request by recording a grant with the same policy model.
+AccessRequest pending = await client.GetAccessRequestAsync(requestUrl);
+Uri grants = storage.AccessGrantService?.ServiceEndpoint ?? throw new InvalidOperationException(&quot;no access grant service&quot;);
+Uri grantUrl = await client.GrantAccessAsync(grants, AccessGrant.Approving(pending));
+
+await foreach (ContainedResource g in client.ListAccessGrantsAsync(grants)) Console.WriteLine(g.Id);
+await client.RevokeAccessGrantAsync(grantUrl);   // the server withdraws the underlying permissions</code></pre>
 </div>
 <div class="callout"><p><strong>Notifications</strong> If a request or grant has an <code>inbox</code>, the server should notify it: the controller about new requests, and the requester when a grant is created. These deliveries use the LWS notification format, so you can verify them with the same <a href="notifications.html#verify">webhook verifier</a>.</p></div>
 

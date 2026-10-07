@@ -146,6 +146,17 @@ for s in client.list_subscriptions(service):
 current = client.get_subscription(subscription.subscription)
 print(current.type)
 client.unsubscribe(subscription)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// SubscribeAsync(Service, …) checks that the NotificationService supports webhooks.
+Service service = storage.NotificationService ?? throw new InvalidOperationException(&quot;no notification service&quot;);
+Subscription subscription = await client.SubscribeAsync(service, new WebhookSubscriptionRequest(
+    new Uri(&quot;https://my-app.example/hooks/lws&quot;), [container],          // a container topic is recursive
+    expires: DateTimeOffset.UtcNow.AddDays(1)));
+Console.WriteLine($&quot;{subscription.Url} {subscription.Expires}&quot;);
+
+await foreach (ContainedResource s in client.ListSubscriptionsAsync(service.ServiceEndpoint)) Console.WriteLine(s.Id);
+Subscription current = await client.GetSubscriptionAsync(subscription.Url);
+Console.WriteLine(current.Type);
+await client.UnsubscribeAsync(subscription.Url);</code></pre>
 </div>
 <pre data-lang="http" data-title="On the wire"><code class="language-http">POST /notifications/ HTTP/1.1
 Content-Type: application/lws+json
@@ -189,6 +200,7 @@ body bytes. Most languages also ship a small adapter for their standard server:<
 <tr><td>Rust</td><td><code>verify_request(&amp;inbox, &amp;http::Request)</code> for any <code>http</code>-based framework</td></tr>
 <tr><td>Go</td><td><code>verifier.Handler(inbox, fn)</code> as an <code>http.Handler</code>, or <code>VerifyRequest(r, inbox)</code></td></tr>
 <tr><td>Python</td><td><code>WebhookVerifier.verify(…)</code>; <code>AsyncWebhookVerifier.verify_asgi(scope, receive, inbox)</code> for ASGI</td></tr>
+<tr><td>C#</td><td><code>verifier.VerifyAsync(context.Request, inbox)</code> for <code>System.Net.HttpListener</code>; ASP.NET Core and others pass the method, inbox, <code>HeaderMap.From(…)</code> and body</td></tr>
 </tbody></table></div>
 <div class="code-tabs">
 <pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">import com.ebremer.lws.LwsClient;
@@ -353,6 +365,41 @@ class Inbox(BaseHTTPRequestHandler):
 
 ThreadingHTTPServer((&quot;0.0.0.0&quot;, 8080), Inbox).serve_forever()
 # ASGI apps: await AsyncWebhookVerifier(...).verify_asgi(scope, receive, INBOX)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">using System.Net;
+using Ebremer.Lws;
+using Ebremer.Lws.Notifications;
+
+using var client = new LwsClient();                                      // fetches storage descriptions
+using var verifier = new WebhookVerifier(new WebhookVerifierOptions
+{
+    Client = client,
+    TrustedStorages = [new Uri(&quot;https://storage.example/&quot;)],            // only this storage's keys
+});
+var inbox = new Uri(&quot;https://my-app.example/hooks/lws&quot;);                 // the registered (public) URL
+
+using var listener = new HttpListener();                                 // behind your reverse proxy
+listener.Prefixes.Add(&quot;http://localhost:8080/&quot;);
+listener.Start();
+while (true)
+{
+    HttpListenerContext context = await listener.GetContextAsync();
+    try
+    {
+        VerifiedNotification verified = await verifier.VerifyAsync(context.Request, inbox);
+        foreach (Activity a in verified.Notification.Activities)
+            Console.WriteLine($&quot;{string.Join(&quot;, &quot;, a.Types)} {a.Object.Id} {a.Published}&quot;);
+        context.Response.StatusCode = 204;
+    }
+    catch (SignatureVerificationException)
+    {
+        context.Response.StatusCode = 401;
+    }
+    finally
+    {
+        context.Response.Close();
+    }
+}
+// Other frameworks (ASP.NET Core, …): verifier.VerifyAsync(method, inbox, HeaderMap.From(headers), body)</code></pre>
 </div>
 <div class="callout warn"><p><strong>Use the URL you registered</strong> Verify against the inbox URL you gave the storage, not one rebuilt from the <code>Host</code> header. Behind a reverse proxy, that is your public URL. The signature covers <code>@scheme</code>, <code>@authority</code> and <code>@path</code>, and this is what stops a delivery meant for someone else from being replayed at you.</p></div>
 
@@ -372,7 +419,7 @@ ThreadingHTTPServer((&quot;0.0.0.0&quot;, 8080), Inbox).serve_forever()
   <li>The body is parsed, and its <code>storage</code> must equal the signing key's storage, so one storage cannot
   speak for another.</li>
 </ol>
-<p>All six verifiers pass the same <a href="testing.html#fixtures">13 shared test vectors</a>. They include tampered
+<p>All seven verifiers pass the same <a href="testing.html#fixtures">13 shared test vectors</a>. They include tampered
 bodies, recomputed digests, wrong hosts, replays, missing components, unauthorised keys, storage spoofing and
 algorithm confusion.</p>
 

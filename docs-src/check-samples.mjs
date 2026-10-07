@@ -4,16 +4,20 @@
 // Compiles / type-checks every code sample in docs-src/samples/<lang>.txt against the real
 // clients, so the documentation never shows an API that does not exist.
 //
-//   node docs-src/check-samples.mjs [java] [ts] [cpp] [rust] [go] [python]
+//   node docs-src/check-samples.mjs [java] [ts] [cpp] [rust] [go] [python] [csharp]
 //
 // Each language is skipped (not failed) when its toolchain or build output is missing:
 //   ts      js/dist and js/node_modules (npm install && npm run build in js/)
-//   python  python/.venv with the dev extras (mypy)
+//   python  python/.venv with the dev extras (mypy), or the interpreter of another such venv in
+//           $LWS_DOCS_PYTHON; mypy resolves lws_client from python/src either way
 //   go      go on PATH
 //   java    java/target/classes (mvn compile) and mvn on PATH (for the Jackson classpath)
 //   rust    cargo on PATH
 //   cpp     g++ (or $CXX) plus nlohmann/json headers (cpp/vcpkg_installed/*/include, or system)
 //           and a generated lws/config.hpp (any cpp/build*/**/generated directory)
+//   csharp  dotnet (a .NET 10 SDK) on PATH; the harness projects reference
+//           csharp/src/Ebremer.Lws.Client, and every build output (the library's too) goes to
+//           <tmpdir>/lws-docs-check/csharp-artifacts, so csharp/**/bin and obj are left alone
 //
 // Harness projects are written to <tmpdir>/lws-docs-check/<lang>.
 
@@ -108,8 +112,8 @@ declare const apiKey: string; declare const requestUrl: string; declare const cr
 
 // ---------------------------------------------------------------------------- Python
 function checkPython() {
-  const py = join(REPO, "python/.venv", isWin ? "Scripts/python.exe" : "bin/python");
-  if (!existsSync(py)) return { skipped: "create python/.venv with the dev extras" };
+  const py = process.env.LWS_DOCS_PYTHON || join(REPO, "python/.venv", isWin ? "Scripts/python.exe" : "bin/python");
+  if (!existsSync(py)) return { skipped: "create python/.venv with the dev extras (or set LWS_DOCS_PYTHON)" };
   const dir = fresh("python");
   let frag = `from __future__ import annotations
 from typing import cast
@@ -127,7 +131,8 @@ credentials = cast(SelfSignedCredentials, None)
   }
   writeFileSync(join(dir, "fragments.py"), frag);
   const files = readdirSync(dir).filter((f) => f.endsWith(".py"));
-  return run(py, ["-m", "mypy", "--check-untyped-defs", "--no-incremental", ...files], { cwd: dir, shell: false });
+  const env = { ...process.env, MYPYPATH: join(REPO, "python/src") };   // this checkout, whatever the venv installed
+  return run(py, ["-m", "mypy", "--check-untyped-defs", "--no-incremental", ...files], { cwd: dir, shell: false, env });
 }
 
 // ---------------------------------------------------------------------------- Go
@@ -276,7 +281,92 @@ ${top}${fns}`);
   return { ok: true, out: "" };
 }
 
-const CHECKS = { java: checkJava, ts: checkTs, cpp: checkCpp, rust: checkRust, go: checkGo, python: checkPython };
+// ---------------------------------------------------------------------------- C#
+// C# cannot declare a type inside a method, so a fragment's column-0 type declarations (a one-line
+// `record …;`, or a block that runs to the next column-0 `}`) are lifted to file scope; the rest of
+// the fragment becomes the body of an async method. Readers can paste a fragment into a top-level
+// Program.cs as it is, which is why the declarations come last in the books.
+function liftCsharpTypes(code) {
+  const types = [];
+  const body = [];
+  let inType = false;
+  for (const line of code.split("\n")) {
+    if (!inType && /^(?:(?:public|internal|file|sealed|abstract|static|partial|readonly)\s+)*(?:class|record|struct|interface|enum)\s/.test(line)) {
+      types.push(line);
+      inType = !/;\s*(?:\/\/.*)?$/.test(line);
+    } else if (inType) {
+      types.push(line);
+      if (/^\}/.test(line)) inType = false;
+    } else {
+      body.push(line);
+    }
+  }
+  return { types: types.join("\n"), body: body.join("\n").trim() };
+}
+
+function checkCsharp() {
+  if (!has("dotnet")) return { skipped: "dotnet not on PATH" };
+  const dir = fresh("csharp");
+  const lib = `${REPO}/csharp/src/Ebremer.Lws.Client/Ebremer.Lws.Client.csproj`;
+  // The harness's own settings; the library keeps the ones in csharp/Directory.Build.props.
+  writeFileSync(join(dir, "Directory.Build.props"), `<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Fragments are never called and may leave values unused. -->
+    <NoWarn>$(NoWarn);CS0162;CS0168;CS0169;CS0219;CS0414;CS0649;CS1998;CS8321</NoWarn>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="${lib}" />
+  </ItemGroup>
+</Project>
+`);
+  const projects = [];
+  const project = (name, outputType, file, source) => {
+    mkdirSync(join(dir, name));
+    writeFileSync(join(dir, name, `${name}.csproj`), `<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <OutputType>${outputType}</OutputType>\n  </PropertyGroup>\n</Project>\n`);
+    writeFileSync(join(dir, name, file), source);
+    projects.push(name);
+  };
+  let top = "";
+  let methods = "";
+  for (const [topic, code] of Object.entries(book("csharp"))) {
+    if (SKIP.has(topic)) continue;
+    if (FULL.has(topic)) { project(ident(topic), "Exe", "Program.cs", `${code}\n`); continue; }
+    const { types, body } = liftCsharpTypes(code);
+    if (types) top += `\n${types}\n`;
+    methods += `\n    static async Task snippet_${ident(topic)}()\n    {\n${indent(body, "        ")}\n    }\n`;
+  }
+  project("fragments", "Library", "Fragments.cs", `using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Ebremer.Lws;
+using Ebremer.Lws.Access;
+using Ebremer.Lws.Auth;
+using Ebremer.Lws.Http;
+using Ebremer.Lws.Notifications;
+
+static class Fragments
+{
+    static LwsClient client = null!;
+    static StorageDescription storage = null!;
+    static Uri container = null!, url = null!, requestUrl = null!;
+    static string etag = "", idToken = "", samlAssertionXml = "", accessToken = "", apiKey = "";
+    static SelfSignedCredentials credentials = null!;
+${methods}}
+${top}`);
+  writeFileSync(join(dir, "docs-check.slnx"), `<Solution>\n${projects.map((p) => `  <Project Path="${p}/${p}.csproj" />`).join("\n")}\n</Solution>\n`);
+  const env = { ...process.env, DOTNET_CLI_TELEMETRY_OPTOUT: "1", DOTNET_NOLOGO: "1", DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1" };
+  return run("dotnet", ["build", "docs-check.slnx", "--nologo", "-v:q", "--disable-build-servers", `-p:ArtifactsPath=${join(WORK, "csharp-artifacts")}`],
+    { cwd: dir, env });
+}
+
+const CHECKS = { java: checkJava, ts: checkTs, cpp: checkCpp, rust: checkRust, go: checkGo, python: checkPython, csharp: checkCsharp };
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(CHECKS);
 let failed = 0;
 for (const lang of wanted) {

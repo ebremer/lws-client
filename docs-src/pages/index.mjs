@@ -9,6 +9,7 @@ const LANGS = [
   ["rust", "Rust", "RS", "languages/rust.html", "lws-client (crate)", "Rust 1.85+ · async/tokio, Streams, RustCrypto, request builders"],
   ["go", "Go", "GO", "languages/go.html", "github.com/ebremer/lws-client/go", "Go 1.23+ · zero dependencies, context, iter.Seq2, errors.Is"],
   ["python", "Python", "PY", "languages/python.html", "lws-client (PyPI)", "Python 3.10+ · sync and async clients, typed dataclasses"],
+  ["csharp", "C#", "C#", "languages/csharp.html", "Ebremer.Lws.Client (NuGet)", ".NET 10 · async/await, CancellationToken, IAsyncEnumerable, nullable annotations"],
 ];
 
 const FEATURES = [
@@ -26,18 +27,18 @@ export default {
   path: "index.html",
   title: "Overview",
   wide: true,
-  description: "Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go and Python, sharing one API design, one conformance suite and one interop scenario.",
+  description: "Idiomatic W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python and C#, sharing one API design, one conformance suite and one interop scenario.",
   body: `
 <section class="hero">
   <div class="badges">
     <span class="badge accent">MIT licensed</span>
     <span class="badge">LWS drafts as of ${SITE.specBaseline}</span>
-    <span class="badge">6 languages · 1 API design</span>
+    <span class="badge">7 languages · 1 API design</span>
     <span class="badge">v${SITE.version}</span>
   </div>
-  <h1>Linked Web Storage clients for <span class="accent">six languages</span></h1>
+  <h1>Linked Web Storage clients for <span class="accent">seven languages</span></h1>
   <p class="lead">Read and write data in any W3C Linked Web Storage (LWS) server from Java, JavaScript/TypeScript,
-  C++, Rust, Go or Python. Each client is idiomatic to its language, and all six share the same concepts,
+  C++, Rust, Go, Python or C#. Each client is idiomatic to its language, and all seven share the same concepts,
   wire behaviour and conformance tests.</p>
   <div class="hero-actions">
     <a class="btn primary" href="getting-started.html">Get started →</a>
@@ -58,7 +59,7 @@ export default {
       (controlled identifier documents and <code>did:key</code>) with ES256 and EdDSA.</li>
       <li><strong>Verified webhooks:</strong> RFC 9421 HTTP Message Signatures and RFC 9530
       <code>Content-Digest</code>, checked against the storage's published keys.</li>
-      <li><strong>One contract, six idioms:</strong> the same concept names everywhere, expressed with each
+      <li><strong>One contract, seven idioms:</strong> the same concept names everywhere, expressed with each
       language's async model, iteration and error style.</li>
     </ul>
   </div>
@@ -96,7 +97,7 @@ ${LANGS.map(([key, name, badge, href, pkg, notes]) => `  <a class="card" href="$
 RFC 9421 webhook vectors and the did:key specification vector. They also all pass the same
 <a href="testing.html#interop">end-to-end interop scenario</a> against a bundled mock LWS server.
 Every code sample on this site is type-checked or compiled against the real libraries before it is published.
-The getting-started program is also run against the mock server in all six languages.</p>
+The getting-started program is also run against the mock server in all seven languages.</p>
 <p>The baseline is the W3C LWS Working Group's documents as of ${SITE.specBaseline}, including the switch of
 the baseline <code>PATCH</code> format to JSON Patch. See <a href="spec-coverage.html">spec coverage</a> for
 details and interpretation decisions.</p>

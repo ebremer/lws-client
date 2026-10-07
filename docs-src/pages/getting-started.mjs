@@ -5,7 +5,7 @@ import { S } from "../samples.mjs";
 export default {
   path: "getting-started.html",
   title: "Getting started",
-  description: "Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go or Python and run your first authenticated request against a Linked Web Storage server.",
+  description: "Install an LWS client for Java, JavaScript/TypeScript, C++, Rust, Go, Python or C# and run your first authenticated request against a Linked Web Storage server.",
   body: `
 <h1>Getting started</h1>
 <p class="lead">Install the client for your language, start the bundled mock server, and run a
@@ -21,10 +21,11 @@ five minutes.</p>
   <li><strong>Rust</strong> 1.85+ (edition 2024, tokio)</li>
   <li><strong>Go</strong> 1.23+ (no third-party dependencies)</li>
   <li><strong>Python</strong> 3.10+ (httpx; the <code>crypto</code> extra adds <code>cryptography</code>)</li>
+  <li><strong>C#</strong>: .NET 10 (one dependency: BouncyCastle.Cryptography, for Ed25519)</li>
 </ul>
 
 <h2 id="install">Install</h2>
-${callout("note", "Package registries", " The packages are not on Maven Central, npm, crates.io or PyPI yet. Until they are, install from the GitHub repository as shown. The registry names are already reserved in each manifest, so switching later is a one-line change.")}
+${callout("note", "Package registries", " The packages are not on Maven Central, npm, crates.io, PyPI or NuGet yet. Until they are, install from the GitHub repository as shown. The registry names are already reserved in each manifest, so switching later is a one-line change.")}
 ${tabs(S.install)}
 
 <h2 id="mock-server">Start a server to talk to</h2>
@@ -72,7 +73,7 @@ Hello, LWS!  (etag "y3Np7XKGTBSEU-c181QlqW", parent http://localhost:8787/root/h
   <a class="card" href="resources.html"><h3>Reading &amp; writing</h3><p>Conditional updates, JSON Patch, ranges, deletes.</p></a>
   <a class="card" href="authentication.html"><h3>Authentication</h3><p>OpenID Connect, SAML, self-signed agents and custom authenticators.</p></a>
   <a class="card" href="notifications.html"><h3>Notifications</h3><p>Subscribe to changes and verify signed webhooks.</p></a>
-  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all six languages.</p></a>
+  <a class="card" href="api-reference.html"><h3>API cross-reference</h3><p>The same concept in all seven languages.</p></a>
 </div>
 `,
 };

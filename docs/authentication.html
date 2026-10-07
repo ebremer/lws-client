@@ -136,6 +136,14 @@ print(credentials.agent)                        # did:key:zDn…
 
 client = LwsClient(authenticator=TokenExchangeAuthenticator(credentials))
 client.head(url)   # 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// A did:key agent: the identifier is derived from the public key, nothing to host.
+SigningKey key = SigningKey.GenerateP256();                 // or SigningKey.GenerateEd25519()
+var credentials = SelfSignedCredentials.DidKey(key);
+Console.WriteLine(credentials.Agent);                        // did:key:zDn…
+
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
+await client.HeadAsync(url);   // 401 → AS metadata → token exchange → retried with a Bearer token</code></pre>
 </div>
 
 <h3 id="cid">HTTPS agents with a controlled identifier document</h3>
@@ -218,6 +226,16 @@ print(json.dumps(cid))     # serve this at https://bot.example/agent
 # …and signs credentials with the matching private key.
 credentials = SelfSignedCredentials.for_agent(agent, key, &quot;key-1&quot;)
 client = LwsClient(authenticator=TokenExchangeAuthenticator(credentials))</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// An HTTPS agent publishes a controlled identifier document listing its key…
+SigningKey key = SigningKey.GenerateP256();
+var agent = new Uri(&quot;https://bot.example/agent&quot;);
+JsonObject cid = ControlledIdentifierDocument.Create(agent, key.PublicKey, &quot;key-1&quot;);
+Console.WriteLine(cid.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));   // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key (kid = the verification method id).
+var credentials = SelfSignedCredentials.ForAgent(agent, key, &quot;https://bot.example/agent#key-1&quot;);
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });</code></pre>
 </div>
 <pre data-lang="json" data-title="https://bot.example/agent"><code class="language-json">{
   &quot;@context&quot;: [&quot;https://www.w3.org/ns/cid/v1&quot;],
@@ -315,6 +333,16 @@ did = restored.did_key()                       # did:key:z…
 kid = did_key_kid(did)                         # did:key:z…#z…
 public_jwk = did_key_to_jwk(did)
 print(credentials.agent == did, kid, public_jwk[&quot;crv&quot;])</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">SigningKey key = SigningKey.GenerateP256();
+JsonObject privateJwk = key.ToJwk();                       // includes &quot;d&quot;: store securely
+SigningKey restored = SigningKey.FromJwk(privateJwk);
+var credentials = SelfSignedCredentials.DidKey(restored);
+
+// did:key &lt;-&gt; public key
+string did = DidKey.FromPublicKey(key.PublicKey);          // did:key:zDn…
+string kid = DidKey.KeyId(did);                            // did:key:zDn…#zDn…
+VerificationKey fromDid = DidKey.ToPublicKey(did);
+Console.WriteLine($&quot;{credentials.Agent} {kid} {fromDid.Algorithm}&quot;);</code></pre>
 </div>
 <div class="callout warn"><p><strong>Protect private keys</strong> A private JWK or PEM is a long-lived credential. Keep it in a secret store, never in a repository. JavaScript keys are non-extractable unless you ask otherwise.</p></div>
 
@@ -387,6 +415,15 @@ client = LwsClient(
         authorization_server_filter=lambda as_uri, realm: as_uri == &quot;https://auth.example&quot;,
     )
 )</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// The ID token from your OpenID Connect login (any OIDC library). The callback overload,
+// new OpenIdCredentials((context, ct) =&gt; …), supplies a fresh token whenever one is needed.
+var credentials = new OpenIdCredentials(idToken);
+using var authenticator = new TokenExchangeAuthenticator(credentials, new TokenExchangeOptions
+{
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    AuthorizationServerFilter = (asUri, realm) =&gt; asUri == new Uri(&quot;https://auth.example&quot;),
+});
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });</code></pre>
 </div>
 
 <h2 id="saml">SAML 2.0</h2>
@@ -418,6 +455,10 @@ return err</code></pre>
 <pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># A signed SAML 2.0 assertion from your identity provider (raw XML is base64url-encoded for you).
 credentials = SamlCredentials(saml_assertion_xml)
 client = LwsClient(authenticator=TokenExchangeAuthenticator(credentials))</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+var credentials = SamlCredentials.FromXml(samlAssertionXml);
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });</code></pre>
 </div>
 
 <h2 id="bearer">Existing access tokens</h2>
@@ -450,6 +491,11 @@ return err</code></pre>
 client = LwsClient(
     authenticator=BearerTokenAuthenticator(access_token, realm=&quot;https://storage.example/&quot;)
 )</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// An access token you obtained yourself; it is only sent to URLs inside the realm.
+using var client = new LwsClient(new LwsClientOptions
+{
+    Authenticator = new BearerTokenAuthenticator(accessToken, new Uri(&quot;https://storage.example/&quot;)),
+});</code></pre>
 </div>
 
 <h2 id="options">Options</h2>
@@ -501,6 +547,17 @@ authenticator = TokenExchangeAuthenticator(
     refresh_skew=30.0,                          # refresh 30 s before expiry (default)
 )
 client = LwsClient(authenticator=authenticator)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">HashSet&lt;Uri&gt; trusted = [new Uri(&quot;https://auth.example&quot;)];
+using var authenticator = new TokenExchangeAuthenticator(
+    credentials.WithLifetime(TimeSpan.FromMinutes(5)),       // self-signed JWT lifetime (default 300 s)
+    new TokenExchangeOptions
+    {
+        AllowInsecureHttp = false,                           // plain-http AS only on loopback (default)
+        AuthorizationServerFilter = (asUri, realm) =&gt; trusted.Contains(asUri),
+        RefreshMargin = TimeSpan.FromSeconds(30),            // refresh 30 s before expiry (default)
+        Timeout = TimeSpan.FromSeconds(10),                  // metadata and token requests
+    });
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });</code></pre>
 </div>
 <div class="table-wrap"><table><thead><tr><th>Option</th><th>Default</th><th>Purpose</th></tr></thead><tbody>
 <tr><td><code>allowInsecureHttp</code></td><td><code>false</code></td><td>Permit <code>http://</code> authorization servers on non-loopback hosts (testing only)</td></tr>
@@ -628,6 +685,21 @@ class ApiKeyAuthenticator(Authenticator):
 
 # handle_challenge() returns False by default, so a 401 surfaces as UnauthorizedError.
 client = LwsClient(authenticator=ApiKeyAuthenticator(api_key))</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// Any scheme (API keys, cookies, DPoP…) plugs in through the IAuthenticator interface.
+using var client = new LwsClient(new LwsClientOptions { Authenticator = new ApiKeyAuthenticator(apiKey) });
+
+sealed class ApiKeyAuthenticator(string key) : IAuthenticator
+{
+    public ValueTask AuthorizeAsync(AuthRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request.Uri.Host == &quot;storage.example&quot;) request.SetHeader(&quot;X-Api-Key&quot;, key);
+        return ValueTask.CompletedTask;
+    }
+
+    // Nothing to refresh: the 401 surfaces as UnauthorizedException.
+    public ValueTask&lt;bool&gt; HandleChallengeAsync(AuthRequest request, AuthResponse response,
+        CancellationToken cancellationToken = default) =&gt; ValueTask.FromResult(false);
+}</code></pre>
 </div>
 
 <h2 id="security">Security considerations</h2>

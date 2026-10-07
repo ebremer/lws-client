@@ -60,6 +60,7 @@ ${table(
     ["Rust", "<code>LwsStream&lt;ContainedResource&gt;</code>, a <code>futures::Stream</code> (<code>try_next</code>, <code>try_collect</code>)"],
     ["Go", "<code>iter.Seq2[ContainedResource, error]</code> (<code>for item, err := range …</code>)"],
     ["Python", "<code>Iterator[ContainedResource]</code>; <code>AsyncIterator</code> on <code>AsyncLwsClient</code>"],
+    ["C#", "<code>IAsyncEnumerable&lt;ContainedResource&gt;</code> (<code>await foreach</code>, <code>System.Linq.AsyncEnumerable</code> operators)"],
   ],
 )}
 ${tabs(S["list-container"])}

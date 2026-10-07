@@ -1,0 +1,436 @@
+@@@ install bash
+# From NuGet (once published)
+dotnet add package Ebremer.Lws.Client --version 0.1.0
+
+# Until then: clone the repository and reference the project from yours
+git clone https://github.com/ebremer/lws-client.git
+dotnet add reference lws-client/csharp/src/Ebremer.Lws.Client/Ebremer.Lws.Client.csproj
+
+# Targets .NET 10 (net10.0). One dependency: BouncyCastle.Cryptography, for Ed25519.
+@@@ first-program
+using Ebremer.Lws;
+using Ebremer.Lws.Auth;
+
+var credentials = SelfSignedCredentials.DidKey(SigningKey.GenerateP256());
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
+Console.WriteLine($"agent:   {credentials.Agent}");
+
+StorageDescription storage = await client.DiscoverStorageAsync(new Uri("http://localhost:8787/root/"));
+Console.WriteLine($"storage: {storage.Id}  root: {storage.GetStorageRoot()}");
+
+CreateResult folder = await client.CreateContainerAsync(storage.GetStorageRoot(), new CreateOptions { Slug = "hello-world" });
+CreateResult file = await client.CreateTextAsync(folder.Location, "Hello, LWS!", options: new CreateOptions { Slug = "hello.txt" });
+Console.WriteLine($"created: {file.Location}");
+
+Resource resource = await client.ReadAsync(file.Location);
+Console.WriteLine($"{resource.GetText()}  (etag {resource.ETag ?? "-"}, parent {resource.Metadata.Parent})");
+@@@ hero
+var credentials = SelfSignedCredentials.DidKey(SigningKey.GenerateP256());
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
+
+StorageDescription storage = await client.DiscoverStorageAsync(new Uri("https://storage.example/root/"));
+CreateResult todo = await client.CreateJsonAsync(storage.GetStorageRoot(), new { task = "write docs", done = false });
+await client.PatchAsync(todo.Location, new JsonPatch().Replace("/done", true));
+
+await foreach (ContainedResource item in client.ListContainerAsync(storage.GetStorageRoot()))
+    Console.WriteLine($"{item.Id} {item.Format ?? "container"}");
+@@@ client-config
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions
+{
+    Authenticator = authenticator,
+    UserAgent = "my-app/1.0",                                       // default "lws-client-csharp/0.1.0"
+    DefaultHeaders = new Dictionary<string, string> { ["Accept-Language"] = "en" },   // added to every request
+    Timeout = TimeSpan.FromSeconds(20),                             // per request (each redirect hop)
+    MaxRedirects = 5,                                               // followed by the client itself (default 10)
+    // HttpClient = myHttpClient,                                   // bring your own (with AllowAutoRedirect = false)
+});
+
+// Per-call headers and timeouts; every operation also takes a CancellationToken.
+using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+ContainerPage page = await client.ReadContainerAsync(container, new RequestOptions
+{
+    Headers = new Dictionary<string, string> { ["X-Trace"] = "1" },
+    Timeout = TimeSpan.FromSeconds(5),
+}, cts.Token);
+Console.WriteLine(page.TotalItems);
+
+// Another identity over the same connections:
+using LwsClient anonymous = client.WithAuthenticator(null);
+@@@ discover
+// Any URL inside the storage is a valid starting point.
+StorageDescription storage = await client.DiscoverStorageAsync(new Uri("https://storage.example/root/notes/"));
+Uri root = storage.GetStorageRoot();                 // the required StorageRoot service
+Console.WriteLine($"{storage.Id} [{string.Join(", ", storage.Types)}] {root}");
+
+if (storage.NotificationService is { } notifications)
+    Console.WriteLine($"{notifications.ServiceEndpoint} {string.Join(", ", notifications.SubscriptionTypes)}");
+foreach (Service service in storage.Services)
+    Console.WriteLine($"{string.Join(", ", service.Types)} → {service.ServiceEndpoint}");
+if (storage.GetCapability("https://feature.example/PatchSupport")?.GetProperty("format") is { } format)
+    Console.WriteLine(format);
+
+// When you already know the storage URL:
+StorageDescription same = await client.GetStorageDescriptionAsync(storage.Id);
+@@@ create
+// A container (POST with Link: <https://www.w3.org/ns/lws#Container>; rel="type")
+Uri notes = (await client.CreateContainerAsync(container, new CreateOptions { Slug = "notes" })).Location;
+
+// Text, JSON or any bytes. The slug is only a hint: the server picks the final URL.
+CreateResult list = await client.CreateTextAsync(notes, "milk\neggs\n", options: new CreateOptions { Slug = "shopping.txt" });
+CreateResult todo = await client.CreateJsonAsync(notes, new { task = "write docs" }, new CreateOptions
+{
+    Slug = "todo.json",
+    Types = ["https://schema.org/Action"],                                // extra rel="type"
+    Links = [new Link("https://example.org/shapes/todo", "describedby")],  // user metadata
+});
+CreateResult photo = await client.CreateAsync(notes, await File.ReadAllBytesAsync("photo.png"), "image/png",
+    new CreateOptions { Slug = "photo.png" });
+
+Console.WriteLine($"{list.Location} {todo.Linkset} {photo.Metadata.Parent}");
+@@@ read
+Resource resource = await client.ReadAsync(url);
+ResourceMetadata meta = resource.Metadata;
+Console.WriteLine($"{resource.Status} {resource.ContentType} {resource.ETag} {meta.LastModified}");
+Console.WriteLine($"{string.Join(", ", meta.Types)} {meta.IsDataResource} {meta.Parent} {meta.Linkset}");
+
+string text = resource.GetText();                    // decoded using the Content-Type charset
+ReadOnlyMemory<byte> bytes = resource.Body;
+JsonElement json = (await client.ReadAsync(url, new ReadOptions { Accept = "application/json" })).GetJson();
+Person? person = (await client.ReadAsync(url)).GetJson<Person>(JsonSerializerOptions.Web);   // System.Text.Json binding
+
+// Headers and links only
+ResourceMetadata head = await client.HeadAsync(url);
+Console.WriteLine($"{head.ContentLength} {string.Join(", ", head.Allow)} {string.Join(", ", head.AcceptPatch)}");
+foreach (Link shape in head.GetLinks("describedby")) Console.WriteLine(shape.Href);
+
+record Person(string Name, int Age);
+@@@ stream
+await using (ResourceStream stream = await client.ReadStreamAsync(url))      // nothing is buffered
+await using (FileStream copy = File.Create("copy.bin"))
+{
+    await stream.Content.CopyToAsync(copy);
+    Console.WriteLine($"received {copy.Length} bytes");
+}
+
+// A Stream body is sent once: the client obtains a token first (HEAD), because it cannot replay it after a 401.
+await using FileStream upload = File.OpenRead("big.bin");
+await client.CreateAsync(container, upload, "application/octet-stream", new CreateOptions { Slug = "big.bin" });
+@@@ conditional
+Resource first = await client.ReadAsync(url);
+string etag = first.ETag ?? throw new InvalidOperationException("the server sent no ETag");
+
+// Revalidate: 304 Not Modified is a normal result, not an exception.
+Resource again = await client.ReadAsync(url, new ReadOptions { IfNoneMatch = etag });
+if (again.NotModified) Console.WriteLine("cached copy is still fresh");
+
+// Optimistic concurrency: only overwrite the version you read.
+try
+{
+    await client.UpdateAsync(url, "new content"u8.ToArray(), "text/plain", new UpdateOptions { IfMatch = etag });
+}
+catch (PreconditionFailedException)
+{
+    // Someone else changed it (412): re-read, merge, retry.
+}
+@@@ range
+Resource start = await client.ReadAsync(url, new ReadOptions { Range = new RangeHeaderValue(0, 1023) });   // first KiB
+Console.WriteLine($"{start.Status} {start.ContentRange}");                                                  // 206 bytes 0-1023/52311
+
+Resource rest = await client.ReadAsync(url, new ReadOptions { Range = new RangeHeaderValue(1024, null) });  // to the end
+Resource tail = await client.ReadAsync(url, new ReadOptions { Range = new RangeHeaderValue(null, 512) });   // last 512 bytes
+Console.WriteLine($"{rest.Body.Length} {tail.Body.Length}");
+@@@ update
+// PUT replaces the whole representation.
+byte[] alice = JsonSerializer.SerializeToUtf8Bytes(new { name = "Alice", age = 31 });
+await client.UpdateAsync(url, alice, "application/json", new UpdateOptions { IfMatch = etag });
+
+// Replace content and user-managed links atomically (Prefer: set-linkset).
+await client.UpdateAsync(url, "v2"u8.ToArray(), "text/plain", new UpdateOptions
+{
+    SetLinkset = true,
+    Links = [new Link("https://creativecommons.org/licenses/by/4.0/", "license")],
+});
+@@@ patch
+// JSON Patch (RFC 6902) is the baseline format every LWS server accepts. JsonPatch is immutable.
+JsonPatch patch = new JsonPatch()
+    .Test("/version", 3)
+    .Replace("/status", "done")
+    .Add("/tags/-", "urgent")
+    .Remove("/draft");
+await client.PatchAsync(url, patch, new UpdateOptions { IfMatch = etag });
+
+// Other formats only when the server advertises them in Accept-Patch.
+if ((await client.HeadAsync(url)).AcceptPatch.Contains("application/sparql-update"))
+{
+    await client.PatchAsync(url, """INSERT DATA { <#me> <http://xmlns.com/foaf/0.1/name> "Alice" }"""u8.ToArray(),
+        "application/sparql-update");
+}
+@@@ delete
+await client.DeleteAsync(url, new DeleteOptions { IfMatch = etag });
+
+try
+{
+    await client.DeleteAsync(container);                                          // 409 Conflict when not empty
+}
+catch (ConflictException)
+{
+    await client.DeleteAsync(container, new DeleteOptions { Recursive = true });  // Depth: infinity
+}
+@@@ read-container
+ContainerPage page = await client.ReadContainerAsync(container);
+Console.WriteLine($"{page.Id} {page.TotalItems} {page.ETag}");
+foreach (ContainedResource item in page.Items)
+{
+    Console.WriteLine($"{item.Id} {(item.IsContainer ? "container" : item.Format)} {item.Size} {item.Modified}");
+}
+if (page.Next is { } next)                           // opaque, server-issued URL
+    Console.WriteLine((await client.ReadContainerAsync(next)).Items.Count);
+@@@ list-container
+// A lazy IAsyncEnumerable: pages are fetched only as the enumeration advances.
+await foreach (ContainedResource item in client.ListContainerAsync(container))
+{
+    if (item.HasType("https://schema.org/Person")) Console.WriteLine(item.Id);
+}
+
+// .NET 10's System.Linq.AsyncEnumerable operators work on every listing.
+List<Uri> ids = await client.ListContainerAsync(container).Select(item => item.Id).ToListAsync();
+@@@ read-linkset
+LinksetDocument doc = await client.ReadLinksetAsync(url);      // HEAD for rel="linkset", then GET
+Console.WriteLine($"{doc.Url} {doc.ETag} {string.Join(", ", doc.Allow)} {string.Join(", ", doc.AcceptPatch)}");
+
+foreach (Link link in doc.Linkset.GetLinks()) Console.WriteLine($"{link.Rel} → {link.Href}");
+List<string> shapes = doc.Linkset.GetTargets("describedby").Select(target => target.Href).ToList();
+@@@ patch-linkset
+LinksetDocument doc = await client.ReadLinksetAsync(url);
+string rel = "https://example.org/rel/reviewer";             // extension relation types are URIs
+var reviewer = new JsonObject { ["href"] = "https://id.example/bob" };
+
+// JsonPointer escapes "/" in the relation URI as "~1".
+// "add" on an existing member replaces it, so append with "/-" when the relation exists.
+JsonPatch patch = doc.Linkset.GetTargets(rel).Count == 0
+    ? new JsonPatch().Add(JsonPointer.Of("linkset", "0", rel), new JsonArray(reviewer))
+    : new JsonPatch().Add(JsonPointer.Of("linkset", "0", rel, "-"), reviewer);
+await client.PatchLinksetAsync(doc.Url, patch, new UpdateOptions { IfMatch = doc.ETag });
+@@@ put-linkset
+LinksetDocument doc = await client.ReadLinksetAsync(url);
+if (doc.SupportsPut)                                   // Allow lists PUT
+{
+    Linkset updated = doc.Linkset                      // Linkset is immutable: Add returns a copy
+        .Add(url.AbsoluteUri, "license", "https://creativecommons.org/licenses/by/4.0/");
+    await client.UpdateLinksetAsync(doc.Url, updated, new UpdateOptions { IfMatch = doc.ETag });
+}
+@@@ auth-didkey
+// A did:key agent: the identifier is derived from the public key, nothing to host.
+SigningKey key = SigningKey.GenerateP256();                 // or SigningKey.GenerateEd25519()
+var credentials = SelfSignedCredentials.DidKey(key);
+Console.WriteLine(credentials.Agent);                        // did:key:zDn…
+
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
+await client.HeadAsync(url);   // 401 → AS metadata → token exchange → retried with a Bearer token
+@@@ auth-cid
+// An HTTPS agent publishes a controlled identifier document listing its key…
+SigningKey key = SigningKey.GenerateP256();
+var agent = new Uri("https://bot.example/agent");
+JsonObject cid = ControlledIdentifierDocument.Create(agent, key.PublicKey, "key-1");
+Console.WriteLine(cid.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));   // serve this at https://bot.example/agent
+
+// …and signs credentials with the matching private key (kid = the verification method id).
+var credentials = SelfSignedCredentials.ForAgent(agent, key, "https://bot.example/agent#key-1");
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
+@@@ keys
+SigningKey key = SigningKey.GenerateP256();
+JsonObject privateJwk = key.ToJwk();                       // includes "d": store securely
+SigningKey restored = SigningKey.FromJwk(privateJwk);
+var credentials = SelfSignedCredentials.DidKey(restored);
+
+// did:key <-> public key
+string did = DidKey.FromPublicKey(key.PublicKey);          // did:key:zDn…
+string kid = DidKey.KeyId(did);                            // did:key:zDn…#zDn…
+VerificationKey fromDid = DidKey.ToPublicKey(did);
+Console.WriteLine($"{credentials.Agent} {kid} {fromDid.Algorithm}");
+@@@ auth-openid
+// The ID token from your OpenID Connect login (any OIDC library). The callback overload,
+// new OpenIdCredentials((context, ct) => …), supplies a fresh token whenever one is needed.
+var credentials = new OpenIdCredentials(idToken);
+using var authenticator = new TokenExchangeAuthenticator(credentials, new TokenExchangeOptions
+{
+    // ID tokens are not always audience-restricted: only send them to servers you trust.
+    AuthorizationServerFilter = (asUri, realm) => asUri == new Uri("https://auth.example"),
+});
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
+@@@ auth-saml
+// A signed SAML 2.0 assertion from your identity provider, base64url-encoded for you.
+var credentials = SamlCredentials.FromXml(samlAssertionXml);
+using var authenticator = new TokenExchangeAuthenticator(credentials);
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
+@@@ auth-bearer
+// An access token you obtained yourself; it is only sent to URLs inside the realm.
+using var client = new LwsClient(new LwsClientOptions
+{
+    Authenticator = new BearerTokenAuthenticator(accessToken, new Uri("https://storage.example/")),
+});
+@@@ auth-options
+HashSet<Uri> trusted = [new Uri("https://auth.example")];
+using var authenticator = new TokenExchangeAuthenticator(
+    credentials.WithLifetime(TimeSpan.FromMinutes(5)),       // self-signed JWT lifetime (default 300 s)
+    new TokenExchangeOptions
+    {
+        AllowInsecureHttp = false,                           // plain-http AS only on loopback (default)
+        AuthorizationServerFilter = (asUri, realm) => trusted.Contains(asUri),
+        RefreshMargin = TimeSpan.FromSeconds(30),            // refresh 30 s before expiry (default)
+        Timeout = TimeSpan.FromSeconds(10),                  // metadata and token requests
+    });
+using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
+@@@ custom-authenticator
+// Any scheme (API keys, cookies, DPoP…) plugs in through the IAuthenticator interface.
+using var client = new LwsClient(new LwsClientOptions { Authenticator = new ApiKeyAuthenticator(apiKey) });
+
+sealed class ApiKeyAuthenticator(string key) : IAuthenticator
+{
+    public ValueTask AuthorizeAsync(AuthRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request.Uri.Host == "storage.example") request.SetHeader("X-Api-Key", key);
+        return ValueTask.CompletedTask;
+    }
+
+    // Nothing to refresh: the 401 surfaces as UnauthorizedException.
+    public ValueTask<bool> HandleChallengeAsync(AuthRequest request, AuthResponse response,
+        CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
+}
+@@@ subscribe
+// SubscribeAsync(Service, …) checks that the NotificationService supports webhooks.
+Service service = storage.NotificationService ?? throw new InvalidOperationException("no notification service");
+Subscription subscription = await client.SubscribeAsync(service, new WebhookSubscriptionRequest(
+    new Uri("https://my-app.example/hooks/lws"), [container],          // a container topic is recursive
+    expires: DateTimeOffset.UtcNow.AddDays(1)));
+Console.WriteLine($"{subscription.Url} {subscription.Expires}");
+
+await foreach (ContainedResource s in client.ListSubscriptionsAsync(service.ServiceEndpoint)) Console.WriteLine(s.Id);
+Subscription current = await client.GetSubscriptionAsync(subscription.Url);
+Console.WriteLine(current.Type);
+await client.UnsubscribeAsync(subscription.Url);
+@@@ webhook
+using System.Net;
+using Ebremer.Lws;
+using Ebremer.Lws.Notifications;
+
+using var client = new LwsClient();                                      // fetches storage descriptions
+using var verifier = new WebhookVerifier(new WebhookVerifierOptions
+{
+    Client = client,
+    TrustedStorages = [new Uri("https://storage.example/")],            // only this storage's keys
+});
+var inbox = new Uri("https://my-app.example/hooks/lws");                 // the registered (public) URL
+
+using var listener = new HttpListener();                                 // behind your reverse proxy
+listener.Prefixes.Add("http://localhost:8080/");
+listener.Start();
+while (true)
+{
+    HttpListenerContext context = await listener.GetContextAsync();
+    try
+    {
+        VerifiedNotification verified = await verifier.VerifyAsync(context.Request, inbox);
+        foreach (Activity a in verified.Notification.Activities)
+            Console.WriteLine($"{string.Join(", ", a.Types)} {a.Object.Id} {a.Published}");
+        context.Response.StatusCode = 204;
+    }
+    catch (SignatureVerificationException)
+    {
+        context.Response.StatusCode = 401;
+    }
+    finally
+    {
+        context.Response.Close();
+    }
+}
+// Other frameworks (ASP.NET Core, …): verifier.VerifyAsync(method, inbox, HeaderMap.From(headers), body)
+@@@ access-request
+var policy = new AccessPolicy(
+    actions: [Lws.Actions.Read, Lws.Actions.Create],
+    assignee: "https://id.example/agent",
+    target: AccessTarget.StorageResources(container),
+    constraints:
+    [
+        Constraint.Purpose(new Uri("https://purpose.example/collaboration")),
+        Constraint.NotAfter(new DateTimeOffset(2026, 12, 31, 23, 59, 59, TimeSpan.Zero)),
+    ]);
+var request = new AccessRequest(storage.Id, [policy], inbox: new Uri("https://id.example/agent/inbox/"));
+Uri requests = storage.AccessRequestService?.ServiceEndpoint ?? throw new InvalidOperationException("no access request service");
+Uri requestUrl = await client.RequestAccessAsync(requests, request);
+
+await foreach (ContainedResource r in client.ListAccessRequestsAsync(requests)) Console.WriteLine(r.Id);
+AccessRequest pending = await client.GetAccessRequestAsync(requestUrl);
+Console.WriteLine(string.Join(", ", pending.Access[0].Actions));
+await client.CancelAccessRequestAsync(requestUrl);
+@@@ access-grant
+// A storage controller approves a request by recording a grant with the same policy model.
+AccessRequest pending = await client.GetAccessRequestAsync(requestUrl);
+Uri grants = storage.AccessGrantService?.ServiceEndpoint ?? throw new InvalidOperationException("no access grant service");
+Uri grantUrl = await client.GrantAccessAsync(grants, AccessGrant.Approving(pending));
+
+await foreach (ContainedResource g in client.ListAccessGrantsAsync(grants)) Console.WriteLine(g.Id);
+await client.RevokeAccessGrantAsync(grantUrl);   // the server withdraws the underlying permissions
+@@@ list-types
+if (storage.TypeIndexService is { } index)
+{
+    await foreach (string type in client.ListTypesAsync(index.ServiceEndpoint))
+        Console.WriteLine(type);                                             // e.g. https://schema.org/Person
+}
+@@@ search
+Uri search = storage.TypeSearchService?.ServiceEndpoint ?? throw new InvalidOperationException("no type search service");
+
+// (schema:Person OR foaf:Person) AND lws:DataResource
+TypeQuery query = new TypeQuery()
+    .AnyOf("https://schema.org/Person", "http://xmlns.com/foaf/0.1/Person")
+    .AllOf(Lws.Types.DataResource);
+ContainerPage first = await client.SearchTypesAsync(search, query);        // HTTP QUERY
+Console.WriteLine($"{first.TotalItems} {first.Next}");
+
+await foreach (ContainedResource hit in client.SearchAllAsync(search, new TypeQuery().AllOf("https://schema.org/Event")))
+    Console.WriteLine($"{hit.Id} {string.Join(", ", hit.Types)}");
+
+// Indexed descriptive relations use the same grammar.
+TypeQuery shaped = new TypeQuery().Relation("describedby").AllOf("https://example.org/shapes/person");
+Console.WriteLine((await client.SearchTypesAsync(search, shaped)).Items.Count);
+
+Console.WriteLine(string.Join(", ", await client.AcceptedQueryFormatsAsync(search)));   // application/lws-query+json, …
+@@@ errors
+try
+{
+    await client.ReadAsync(url);
+}
+catch (NotFoundException)
+{
+    Console.WriteLine("no such resource");
+}
+catch (UnauthorizedException e)
+{
+    Console.WriteLine($"not authenticated {string.Join(", ", e.Challenges)}");
+}
+catch (HttpException e)
+{
+    Console.WriteLine($"{e.Status} {e.Problem?.Title ?? e.Message}");
+}
+catch (AuthenticationException e)
+{
+    Console.WriteLine($"token exchange failed: {e.Error ?? "?"} {e.ErrorDescription}");
+}
+catch (LwsTransportException e) when (e.InnerException is TimeoutException)
+{
+    Console.WriteLine("timed out");
+}
+@@@ problem
+try
+{
+    await client.DeleteAsync(container);
+}
+catch (ConflictException e) when (e.Problem is { } p)
+{
+    Console.WriteLine($"{p.Type} {p.Title} {p.Detail} {p.Instance} {p.Extensions.GetValueOrDefault("itemCount")}");
+}
