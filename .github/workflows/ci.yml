@@ -209,6 +209,25 @@ jobs:
         if: matrix.config == 'full'
         run: node driver/adapters/check.mjs -- build-adapter/lws-driver-adapter-cpp
 
+  csharp:
+    name: C# (.NET 10)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      - name: Start mock LWS server
+        run: bash .github/scripts/start-mock-server.sh
+      - run: dotnet test csharp
+      - name: Build the C# driver adapter
+        run: dotnet publish driver/adapters/csharp -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o driver/adapters/csharp/bin
+      - name: Check the C# driver adapter
+        run: node driver/adapters/check.mjs -- driver/adapters/csharp/bin/lws-driver-adapter-csharp
+
   docs:
     name: Docs are up to date
     runs-on: ubuntu-latest

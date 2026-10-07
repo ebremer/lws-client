@@ -1,6 +1,6 @@
 # LWS Client — Cross-Language API Contract
 
-Status: v0.1.0 design contract for all six clients (Java, JavaScript/TypeScript, C++, Rust, Go, Python).
+Status: v0.1.0 design contract for all seven clients (Java, JavaScript/TypeScript, C++, Rust, Go, Python, C#).
 
 Every client in this repository implements the **same capabilities** described here, using the
 **same conceptual names**, while expressing them in the idioms of its language (naming case,
@@ -31,7 +31,8 @@ Where the spec is silent or ambiguous, this contract records the decision (look 
 
 Every client exposes these values as named constants (grouped idiomatically: Java `final class`
 constants, TS `const` objects, Python module constants/`StrEnum`, Rust `pub const` in modules,
-Go `const` blocks, C++ `inline constexpr std::string_view` in namespaces).
+Go `const` blocks, C++ `inline constexpr std::string_view` in namespaces, C# `const` members of nested
+static classes).
 
 ```
 # Namespaces / contexts
@@ -174,7 +175,7 @@ Configuration (builder / options object / functional options, idiomatically):
 Names below are the canonical concept names. Languages apply their own case
 (`readContainer` / `read_container` / `ReadContainer`). Every operation accepts an
 optional per-call options value with at least `headers` (extra request headers) and, where
-the language has a cancellation idiom (Go `context.Context`, JS `AbortSignal`, Rust future
+the language has a cancellation idiom (Go `context.Context`, C# `CancellationToken`, JS `AbortSignal`, Rust future
 drop, Python asyncio cancellation), support for it.
 
 URLs supplied by the caller may be relative only where the language's URL type allows it;
@@ -209,7 +210,7 @@ headers and relative `Link` targets.
 | `head(url)` | `HEAD` | `ResourceMetadata` |
 | `read(url, opts)` | `GET` (opts: `accept`, `range` (`bytes=` start/end), `ifNoneMatch`, `ifModifiedSince`, `prefer`) | `Resource` |
 | `readContainer(url, opts)` | `GET` with `Accept: application/lws+json` | `ContainerPage` |
-| `listContainer(url)` | follows `rel="next"` from `readContainer` lazily | lazy sequence of `ContainedResource` (Java `Stream`/`Iterable`, JS `AsyncIterable`, Python generator / async generator, Rust `Stream`, Go `iter.Seq2`, C++ input range) |
+| `listContainer(url)` | follows `rel="next"` from `readContainer` lazily | lazy sequence of `ContainedResource` (Java `Stream`/`Iterable`, JS `AsyncIterable`, Python generator / async generator, Rust `Stream`, Go `iter.Seq2`, C++ input range, C# `IAsyncEnumerable`) |
 
 `ResourceMetadata` (parsed response headers):
 `url` (final URL), `status`, `etag` (raw, including quotes / `W/` — echo it verbatim in
@@ -367,7 +368,8 @@ CredentialProvider
   * claims: `sub = iss = client_id = <agent URI>`, `aud = [<AS issuer>]`, `iat = now`,
     `exp = now + lifetime` (default 300 s), `jti = random UUID`.
   * Algorithms: **ES256 (P-256) required**, **EdDSA (Ed25519) required where the platform
-    provides it** (all six do, via the chosen crypto stacks). ECDSA signatures are JOSE raw
+    provides it** (all seven do, via the chosen crypto stacks; C# takes Ed25519 from BouncyCastle, as
+    .NET 10 has none). ECDSA signatures are JOSE raw
     `r‖s` (64 bytes), never DER.
   * Factories: `forAgent(agentUri, privateKey, kid)` (HTTPS/DID agent whose CID document lists
     the key) and `didKey(privateKey)` (derives the `did:key` identifier and
@@ -518,7 +520,9 @@ language's natural mechanism (wrapped in `LwsError` where that is idiomatic).
 Language mapping: Java unchecked exceptions; TypeScript `Error` subclasses with `status`;
 Python exception classes; Rust `enum Error` + `status()` + `is_not_found()`-style helpers;
 Go `*HTTPError` + sentinels usable with `errors.Is` (`ErrNotFound`, `ErrConflict`, …) and
-`errors.As`; C++ exception classes deriving from `lws::Error : std::runtime_error`.
+`errors.As`; C++ exception classes deriving from `lws::Error : std::runtime_error`; C# exceptions
+deriving from `Ebremer.Lws.LwsException` (the 501 one is `HttpNotImplementedException`, so as not to clash
+with `System.NotImplementedException`).
 
 ## 11. Testing requirements (all languages)
 
@@ -543,6 +547,7 @@ Go `*HTTPError` + sentinels usable with `errors.Is` (`ErrNotFound`, `ErrConflict
 | Rust | crate `lws-client` | `lws_client` | Rust 1.85 (edition 2024) |
 | Go | `github.com/ebremer/lws-client/go` | package `lws` | Go 1.23 |
 | Python | `lws-client` (PyPI) | `import lws_client` | Python 3.10 |
+| C# | `Ebremer.Lws.Client` (NuGet) | `namespace Ebremer.Lws` | .NET 10 |
 
 All code is MIT licensed; every package manifest declares `MIT` and every source tree points to
 the repository root `LICENSE`.

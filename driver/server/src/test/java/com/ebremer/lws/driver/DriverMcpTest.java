@@ -163,7 +163,7 @@ class DriverMcpTest {
         assertThat(fake.get("available").asBoolean()).isTrue();
         assertThat(fake.get("library").asString()).isEqualTo("lws-client-fake/0.0.1");
         assertThat(fake.get("unsupported")).extracting(JsonNode::asString).contains("patch").doesNotContain("read");
-        assertThat(languages).extracting(l -> l.get("language").asString()).contains("java", "js", "python", "go", "rust", "cpp");
+        assertThat(languages).extracting(l -> l.get("language").asString()).contains("java", "js", "python", "go", "rust", "cpp", "csharp");
     }
 
     private static HttpResponse<String> post(HttpClient http, String url, String body) throws Exception {

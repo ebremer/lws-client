@@ -1,6 +1,6 @@
 # lws-client
 
-**W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go and Python.**
+**W3C Linked Web Storage (LWS) clients for Java, JavaScript/TypeScript, C++, Rust, Go, Python and C#.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0b7a6d.svg)](LICENSE)
 ![Spec baseline](https://img.shields.io/badge/LWS%20spec-2026--10--05-0a6c94.svg)
@@ -8,7 +8,7 @@
 
 [Linked Web Storage](https://w3c.github.io/lws-protocol/lws10-core/) is the W3C Working Group's protocol
 for giving applications secure, permissioned access to data that users keep in a storage of their
-choosing. It is the standards-track successor of the Solid Protocol. This repository contains six
+choosing. It is the standards-track successor of the Solid Protocol. This repository contains seven
 independent, idiomatic client libraries that share one API design, one set of conformance fixtures
 and one interop test suite.
 
@@ -44,6 +44,7 @@ Every client implements the full client side of the LWS drafts as of **2026-10-0
 | Rust | [`rust/`](rust) | `lws-client` (crate) | Rust 1.85+ | async/tokio, `Stream` pagination, RustCrypto, `thiserror` |
 | Go | [`go/`](go) | `github.com/ebremer/lws-client/go` | Go 1.23+ | Zero dependencies, `context`, `iter.Seq2`, `errors.Is` sentinels |
 | Python | [`python/`](python) | `lws-client` (PyPI) | Python 3.10+ | Sync and async clients over one sans-I/O core, typed dataclasses |
+| C# | [`csharp/`](csharp) | `Ebremer.Lws.Client` (NuGet) | .NET 10 | `async` throughout with `CancellationToken`, `IAsyncEnumerable` listings, records; Ed25519 from BouncyCastle |
 
 The APIs use the same concept names everywhere (`discoverStorage`, `readContainer`, `listContainer`,
 `create`, `update`, `patch`, `readLinkset`, `subscribe`, `searchTypes`, …). Casing and error handling
@@ -160,6 +161,22 @@ let items: Vec<_> = client.list_container(&root).try_collect().await?;
 ```
 </details>
 
+<details>
+<summary><b>C#</b></summary>
+
+```csharp
+SelfSignedCredentials me = SelfSignedCredentials.DidKey(SigningKey.GenerateP256());
+using var client = new LwsClient(new LwsClientOptions { Authenticator = new TokenExchangeAuthenticator(me) });
+
+StorageDescription storage = await client.DiscoverStorageAsync(new Uri("https://storage.example/root/"));
+Uri todo = (await client.CreateJsonAsync(storage.GetStorageRoot(), new JsonObject { ["task"] = "write docs", ["done"] = false },
+    new CreateOptions { Slug = "todo.json" })).Location;
+await client.PatchAsync(todo, new JsonPatch().Replace("/done", true));
+
+await foreach (ContainedResource item in client.ListContainerAsync(storage.GetStorageRoot())) Console.WriteLine(item.Id);
+```
+</details>
+
 ## Try it locally
 
 The repository ships a zero-dependency [mock LWS server](testing/mock-server) (Node.js 22+) that
@@ -174,7 +191,7 @@ Each language directory has a `README.md` with build, test and example commands.
 
 ## Driving the clients
 
-[`driver/`](driver) is an MCP server (Spring AI) that controls all six clients through a small adapter per
+[`driver/`](driver) is an MCP server (Spring AI) that controls all seven clients through a small adapter per
 language, so that a test service such as [Touchstone](https://github.com/ebremer/touchstone) can make any
 of them perform LWS operations and judge what it sends. See [`driver/README.md`](driver/README.md).
 
@@ -184,7 +201,7 @@ of them perform LWS operations and judge what it sends. See [`driver/README.md`]
 design/            Cross-language API contract (client-api.md)
 conformance/       Shared fixtures (JSON test vectors) and the interop scenario
 testing/           Mock LWS server used for interop tests
-java/ js/ cpp/ rust/ go/ python/   The six clients
+java/ js/ cpp/ rust/ go/ python/ csharp/   The seven clients
 driver/            MCP server that drives every client, and one adapter per language
 docs/              GitHub Pages site (generated from docs-src/ with `node docs-src/build.mjs`)
 ```
@@ -203,4 +220,4 @@ This is an independent implementation, not a W3C publication.
 
 ## License
 
-[MIT](LICENSE). This covers all six clients, the mock server, the fixtures and the documentation.
+[MIT](LICENSE). This covers all seven clients, the mock server, the fixtures and the documentation.

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. This repository holds six clients that must stay behaviourally identical, so
+Thanks for helping. This repository holds seven clients that must stay behaviourally identical, so
 changes follow a fixed order:
 
 1. **Contract first.** If a change affects behaviour (wire format, a new operation, an
@@ -10,11 +10,11 @@ changes follow a fixed order:
    `node conformance/tools/generate-fixtures.mjs`.
 3. **Mock server.** Teach [`testing/mock-server`](testing/mock-server) the server side if needed
    (`npm test` there).
-4. **All six clients.** Implement the change idiomatically in each language and run its tests,
+4. **All seven clients.** Implement the change idiomatically in each language and run its tests,
    including the interop scenario
    (`LWS_TEST_SERVER=http://localhost:8787` with the mock server running).
 5. **Driver adapters.** If the change adds or alters an operation, update
-   [`driver/PROTOCOL.md`](driver/PROTOCOL.md), the tool catalog and all six adapters in
+   [`driver/PROTOCOL.md`](driver/PROTOCOL.md), the tool catalog and all seven adapters in
    [`driver/adapters`](driver/adapters), and check each with `node driver/adapters/check.mjs -- <adapter>`.
 6. **Docs.** Update `docs-src/` and regenerate the site with `node docs-src/build.mjs`.
    Commit the generated `docs/`; CI checks that it is up to date.
@@ -27,6 +27,7 @@ changes follow a fixed order:
 | Rust | `cd rust && cargo test && cargo clippy --all-targets -- -D warnings` |
 | Go | `cd go && go vet ./... && go test ./...` |
 | Python | `cd python && python -m venv .venv && .venv/bin/pip install -e ".[dev]" && .venv/bin/pytest` |
+| C# | `dotnet test csharp` (.NET 10 SDK) |
 
 Every source file starts with `SPDX-License-Identifier: MIT`. By contributing you agree that your
 contribution is licensed under the [MIT License](LICENSE).
