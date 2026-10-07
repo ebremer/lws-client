@@ -45,5 +45,10 @@ cpp/out/
 cpp/vcpkg_installed/
 CMakeUserPresets.json
 
+# Swift (Package.swift at the root builds swift/ and driver/adapters/swift)
+/.build/
+/.swiftpm/
+/Package.resolved
+
 # Docs
 docs/_site/
