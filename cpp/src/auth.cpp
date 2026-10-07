@@ -195,6 +195,14 @@ bool TokenExchangeAuthenticator::handle_challenge(const HttpRequest& request, co
     const std::string as_uri = *challenge->as_uri();
     const std::string realm = *challenge->realm();
 
+    // The challenge is acted on only once it checks out: one whose realm does not contain the URL (a decoy)
+    // must not cost the client its token.
+    if (!url_within_realm(request.url, realm))
+        throw AuthenticationError("request URL " + request.url + " is not within the challenge realm " + realm);
+    require_secure(as_uri, options_.allow_insecure_http, "authorization server");
+    if (options_.authorization_server_filter && !options_.authorization_server_filter(as_uri, realm))
+        throw AuthenticationError("authorization server rejected by policy: " + as_uri);
+
     // A token we sent was rejected: drop it.
     std::optional<std::string> rejected;
     if (auto auth = request.headers.get("authorization"); auth && auth->starts_with("Bearer ")) {
@@ -202,12 +210,6 @@ bool TokenExchangeAuthenticator::handle_challenge(const HttpRequest& request, co
         std::lock_guard lock(mutex_);
         std::erase_if(tokens_, [&](const AccessToken& t) { return t.value == *rejected; });
     }
-
-    if (!url_within_realm(request.url, realm))
-        throw AuthenticationError("request URL " + request.url + " is not within the challenge realm " + realm);
-    require_secure(as_uri, options_.allow_insecure_http, "authorization server");
-    if (options_.authorization_server_filter && !options_.authorization_server_filter(as_uri, realm))
-        throw AuthenticationError("authorization server rejected by policy: " + as_uri);
 
     std::lock_guard exchange(exchange_mutex_);
     // Another thread may have obtained a fresh token for this realm meanwhile.

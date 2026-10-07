@@ -109,6 +109,16 @@ func (s *memServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/" && r.Method == http.MethodGet:
 		s.description(w)
 		return
+	case p == "/root/decoy":
+		// Touchstone's decoy: a 401 whatever is sent, naming a realm that does
+		// not contain it.
+		c := fmt.Sprintf(`Bearer as_uri="%s", realm="%s/vault/"`, s.srv.URL, s.srv.URL)
+		if r.Header.Get("Authorization") != "" {
+			c += `, error="invalid_token"`
+		}
+		w.Header().Set("WWW-Authenticate", c)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
 	}
 	if s.requireAuth {
 		auth := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")

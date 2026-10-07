@@ -486,6 +486,66 @@ func TestTokenExchangeRejections(t *testing.T) {
 	}
 }
 
+// A challenge whose realm does not contain the URL is refused, and costs the
+// client nothing: its token for the storage stays cached and in use.
+func TestDecoyChallengeKeepsToken(t *testing.T) {
+	s := newMemServer(t)
+	s.requireAuth = true
+	auth, _ := didKeyAuth(t)
+	c := NewClient(WithAuthenticator(auth))
+	root := s.URL("/root/")
+	if _, err := c.ReadContainer(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	var ae *AuthenticationError
+	if _, err := c.Head(ctx, s.URL("/root/decoy")); !errors.As(err, &ae) {
+		t.Fatalf("decoy: want AuthenticationError, got %v", err)
+	}
+	if _, err := c.ReadContainer(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	if s.challenges != 1 || s.tokenRequests != 1 {
+		t.Errorf("after the decoy: challenges %d token requests %d, want 1 and 1", s.challenges, s.tokenRequests)
+	}
+}
+
+// The authorization server's metadata and token requests never follow a
+// redirect: a 307 or 308 would carry the subject token on to its target.
+func TestAuthorizationServerRedirectNotFollowed(t *testing.T) {
+	for _, redirected := range []string{"/.well-known/lws-configuration", "/token"} {
+		t.Run(redirected, func(t *testing.T) {
+			var stolen atomic.Int32
+			thief := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				stolen.Add(1)
+			}))
+			defer thief.Close()
+			var srv *httptest.Server
+			srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == redirected:
+					w.Header().Set("Location", thief.URL+r.URL.Path)
+					w.WriteHeader(http.StatusTemporaryRedirect)
+				case r.URL.Path == "/.well-known/lws-configuration":
+					writeJSON(w, 200, MediaJSON, map[string]any{"issuer": srv.URL, "token_endpoint": srv.URL + "/token"})
+				default:
+					w.Header().Set("WWW-Authenticate", `Bearer as_uri="`+srv.URL+`", realm="`+srv.URL+`/"`)
+					w.WriteHeader(http.StatusUnauthorized)
+				}
+			}))
+			defer srv.Close()
+			auth, _ := didKeyAuth(t)
+			c := NewClient(WithAuthenticator(auth))
+			var ae *AuthenticationError
+			if _, err := c.Head(ctx, srv.URL+"/r"); !errors.As(err, &ae) {
+				t.Fatalf("want AuthenticationError, got %v", err)
+			}
+			if n := stolen.Load(); n != 0 {
+				t.Errorf("the redirect target received %d requests", n)
+			}
+		})
+	}
+}
+
 func TestRedirectDropsToken(t *testing.T) {
 	var leaked atomic.Bool
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

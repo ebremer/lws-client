@@ -182,7 +182,9 @@ type AccessToken struct {
 // TokenExchangeOptions configures a TokenExchangeAuthenticator.
 type TokenExchangeOptions struct {
 	// HTTPClient is used for metadata and token requests (default: a client
-	// with a 30 s timeout).
+	// with a 30 s timeout). The authenticator uses a copy that never follows a
+	// redirect: a 307 or 308 from the authorization server would carry the
+	// subject token, a credential, on to wherever it points.
 	HTTPClient *http.Client
 	// AllowInsecureHTTP permits plain-http authorization servers on
 	// non-loopback hosts. Loopback hosts are always allowed.
@@ -232,10 +234,14 @@ func NewTokenExchangeAuthenticator(provider CredentialProvider, opts *TokenExcha
 	if opts != nil {
 		a.opts = *opts
 	}
-	a.hc = a.opts.HTTPClient
-	if a.hc == nil {
-		a.hc = &http.Client{Timeout: 30 * time.Second}
+	hc := a.opts.HTTPClient
+	if hc == nil {
+		hc = &http.Client{Timeout: 30 * time.Second}
 	}
+	// A copy, so that the caller's client keeps its own redirect policy.
+	noRedirects := *hc
+	noRedirects.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	a.hc = &noRedirects
 	if a.opts.Clock == nil {
 		a.opts.Clock = time.Now
 	}
@@ -289,6 +295,11 @@ func (a *TokenExchangeAuthenticator) HandleChallenge(ctx context.Context, req *h
 	if ch == nil {
 		return false, nil
 	}
+	// A challenge is acted on only once it checks out: one whose realm does not
+	// contain the URL (a decoy) must not cost the client its token.
+	if err := a.checkChallenge(ch.AsURI(), ch.Realm(), req.URL.String()); err != nil {
+		return false, err
+	}
 	// A rejected token is dropped from the cache.
 	if sent := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer "); sent != "" && sent != req.Header.Get("Authorization") {
 		a.mu.Lock()
@@ -309,18 +320,8 @@ func (a *TokenExchangeAuthenticator) HandleChallenge(ctx context.Context, req *h
 // server asURI for realm. target is the URL being accessed; it must be inside
 // the realm (pass "" to skip that check).
 func (a *TokenExchangeAuthenticator) Exchange(ctx context.Context, asURI, realm, target string) (*AccessToken, error) {
-	if target != "" && !RealmContains(realm, target) {
-		return nil, authErr("request URL %s is not within realm %s", target, realm)
-	}
-	as, err := url.Parse(asURI)
-	if err != nil || as.Scheme == "" || as.Host == "" {
-		return nil, authErr("invalid authorization server URI %q", asURI)
-	}
-	if !strings.EqualFold(as.Scheme, "https") && !a.opts.AllowInsecureHTTP && !isLoopbackHost(as.Hostname()) {
-		return nil, authErr("refusing insecure authorization server %s", asURI)
-	}
-	if f := a.opts.AuthorizationServerFilter; f != nil && !f(asURI, realm) {
-		return nil, authErr("authorization server %s rejected by policy", asURI)
+	if err := a.checkChallenge(asURI, realm, target); err != nil {
+		return nil, err
 	}
 	key := tokenKey{asURI, realm}
 	a.mu.Lock()
@@ -351,6 +352,27 @@ func (a *TokenExchangeAuthenticator) Exchange(ctx context.Context, asURI, realm,
 	a.mu.Unlock()
 	close(f.done)
 	return f.token, f.err
+}
+
+// checkChallenge applies the checks a challenge must pass before the client
+// acts on it: target (when given) is inside realm, the authorization server is
+// https (or loopback, or allowed by AllowInsecureHTTP), and the policy filter
+// accepts it.
+func (a *TokenExchangeAuthenticator) checkChallenge(asURI, realm, target string) error {
+	if target != "" && !RealmContains(realm, target) {
+		return authErr("request URL %s is not within realm %s", target, realm)
+	}
+	as, err := url.Parse(asURI)
+	if err != nil || as.Scheme == "" || as.Host == "" {
+		return authErr("invalid authorization server URI %q", asURI)
+	}
+	if !strings.EqualFold(as.Scheme, "https") && !a.opts.AllowInsecureHTTP && !isLoopbackHost(as.Hostname()) {
+		return authErr("refusing insecure authorization server %s", asURI)
+	}
+	if f := a.opts.AuthorizationServerFilter; f != nil && !f(asURI, realm) {
+		return authErr("authorization server %s rejected by policy", asURI)
+	}
+	return nil
 }
 
 // Metadata returns the (cached) authorization server metadata of issuer.

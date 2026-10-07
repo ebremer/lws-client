@@ -148,6 +148,27 @@ TEST(TokenExchange, RealmMustContainRequestUrl) {
     EXPECT_EQ(transport->count("GET", "https://as.example"), 0u);
 }
 
+TEST(TokenExchange, DecoyChallengeKeepsCachedToken) {
+    // Touchstone's decoy: inside the storage, it answers 401 naming a realm that does not contain it.
+    FakeLws fake;
+    auto auth = std::make_shared<TokenExchangeAuthenticator>(std::make_shared<OpenIdCredentials>("id"));
+    auto [client, transport] = test::mock_client(
+        [&](const HttpRequest& r) {
+            if (r.url == "https://storage.example/decoy")
+                return make_response(401, {{"WWW-Authenticate", "Bearer as_uri=\"https://as.example\", "
+                                                                "realm=\"https://storage.example/vault/\", error=\"invalid_token\""}});
+            return fake.handle(r);
+        },
+        auth);
+    EXPECT_EQ(client.read("https://storage.example/a").body, "secret data");
+    EXPECT_THROW(client.read("https://storage.example/decoy"), AuthenticationError);
+    transport->clear();
+    EXPECT_EQ(client.read("https://storage.example/a").body, "secret data");
+    ASSERT_EQ(transport->requests().size(), 1u);
+    EXPECT_EQ(transport->requests()[0].headers.get("authorization"), "Bearer tok-1");
+    EXPECT_EQ(fake.exchanges, 1);
+}
+
 TEST(TokenExchange, InsecureAuthorizationServerRejected) {
     FakeLws fake;
     fake.as_uri = "http://as.example";
