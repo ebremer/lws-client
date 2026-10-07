@@ -1031,6 +1031,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
+ "wasip2",
  "wiremock",
 ]
 
@@ -2040,6 +2041,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
+name = "wasip2"
+version = "2.0.1+wasi-0.2.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89aafd4b69fb41a64cfd5d7f214cde92ab422ec4d9bcd55fcc816d3f5f49bbf3"
+dependencies = [
+ "wit-bindgen",
+]
+
+[[package]]
 name = "wasm-bindgen"
 version = "0.2.129"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2271,6 +2281,15 @@ dependencies = [
  "serde_json",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "wit-bindgen"
+version = "0.62.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53cb4b5556c3a791e86838ea287782bdafa704d55b0e68b5b81a3a16b9ea5f4b"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]

@@ -18,6 +18,7 @@ use crate::constants::{WELL_KNOWN_LWS_CONFIGURATION, media_type, oauth};
 use crate::datetime::from_unix_seconds;
 use crate::error::{Error, Result};
 use crate::headers::parse_www_authenticate;
+use crate::transport::{self, HttpClient};
 
 /// Authorization server metadata from `/.well-known/lws-configuration` (RFC 8414).
 #[derive(Debug, Clone, PartialEq)]
@@ -208,13 +209,12 @@ fn is_loopback(url: &Url) -> bool {
 /// The client for metadata and token requests when none is given: it never follows a redirect
 /// (a `307` or `308` would carry the subject token on to its target, past the https check), gives
 /// up after 30 s, and names the library in `User-Agent`.
-fn authorization_server_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(30))
-        .user_agent(crate::constants::USER_AGENT)
-        .build()
-        .expect("the HTTP client for the authorization server")
+fn authorization_server_client() -> HttpClient {
+    transport::client(
+        Some(Duration::from_secs(30)),
+        Some(crate::constants::USER_AGENT),
+    )
+    .expect("the HTTP client for the authorization server")
 }
 
 fn same_issuer(a: &str, b: &str) -> bool {
@@ -225,7 +225,7 @@ type AsFilter = Arc<dyn Fn(&Url, &Url) -> bool + Send + Sync>;
 
 struct Inner {
     provider: Arc<dyn CredentialProvider>,
-    http: reqwest::Client,
+    http: HttpClient,
     allow_insecure_http: bool,
     filter: Option<AsFilter>,
     refresh_margin: Duration,
@@ -265,7 +265,7 @@ impl fmt::Debug for TokenExchangeAuthenticator {
 /// Builder for [`TokenExchangeAuthenticator`].
 pub struct TokenExchangeAuthenticatorBuilder {
     provider: Arc<dyn CredentialProvider>,
-    http: Option<reqwest::Client>,
+    http: Option<HttpClient>,
     allow_insecure_http: bool,
     filter: Option<AsFilter>,
     refresh_margin: Duration,
@@ -276,6 +276,9 @@ impl TokenExchangeAuthenticatorBuilder {
     /// applies: build it with `reqwest::redirect::Policy::none()`, as the default client is, or
     /// a `307`/`308` from the authorization server carries the subject token, a credential, on
     /// to wherever it points.
+    ///
+    /// Not on WASI, where the host's `wasi:http` sends the requests.
+    #[cfg(not(target_os = "wasi"))]
     #[must_use]
     pub fn http_client(mut self, client: reqwest::Client) -> Self {
         self.http = Some(client);

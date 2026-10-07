@@ -32,6 +32,7 @@ use crate::model::{
 };
 use crate::notification::{Subscription, WebhookSubscriptionRequest};
 use crate::patch::JsonPatch;
+use crate::transport::{self, HttpClient, Response};
 
 /// A boxed stream of results, as returned by the lazy listing operations
 /// ([`Client::list_container`], [`Client::list_types`], [`Client::search_all`], …).
@@ -79,11 +80,12 @@ impl IntoUrl for &String {
 }
 
 /// A request body. Byte and string bodies are replayable (needed for the authentication
-/// retry); [`Body::from_reqwest`] wraps a streaming body.
+/// retry); [`Body::from_reqwest`] wraps a streaming body (not on WASI, where every body is bytes).
 pub struct Body(BodyKind);
 
 enum BodyKind {
     Bytes(Bytes),
+    #[cfg(not(target_os = "wasi"))]
     Stream(reqwest::Body),
 }
 
@@ -93,6 +95,7 @@ impl Body {
         Body(BodyKind::Bytes(Bytes::new()))
     }
     /// Wraps a (possibly streaming, non-replayable) `reqwest` body.
+    #[cfg(not(target_os = "wasi"))]
     pub fn from_reqwest(body: reqwest::Body) -> Self {
         match body.as_bytes() {
             Some(b) => Body(BodyKind::Bytes(Bytes::copy_from_slice(b))),
@@ -102,12 +105,16 @@ impl Body {
     fn replayable(&self) -> bool {
         matches!(self.0, BodyKind::Bytes(_))
     }
+    fn is_empty_bytes(&self) -> bool {
+        matches!(&self.0, BodyKind::Bytes(b) if b.is_empty())
+    }
 }
 
 impl fmt::Debug for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {
             BodyKind::Bytes(b) => write!(f, "Body({} bytes)", b.len()),
+            #[cfg(not(target_os = "wasi"))]
             BodyKind::Stream(_) => f.write_str("Body(stream)"),
         }
     }
@@ -140,7 +147,7 @@ impl From<&[u8]> for Body {
 }
 
 struct Inner {
-    http: reqwest::Client,
+    http: HttpClient,
     authenticator: Option<Arc<dyn Authenticator>>,
     default_headers: HeaderMap,
     timeout: Option<Duration>,
@@ -188,7 +195,7 @@ impl Default for Client {
 /// Builder for [`Client`].
 #[derive(Default)]
 pub struct ClientBuilder {
-    http: Option<reqwest::Client>,
+    http: Option<HttpClient>,
     authenticator: Option<Arc<dyn Authenticator>>,
     user_agent: Option<String>,
     default_headers: HeaderMap,
@@ -205,6 +212,9 @@ impl ClientBuilder {
     /// instead (note that `reqwest`'s default policy strips `Authorization` only when the host
     /// or port changes); build it with `reqwest::redirect::Policy::none()` to disable
     /// redirects entirely.
+    ///
+    /// Not on WASI, where the host's `wasi:http` sends the requests.
+    #[cfg(not(target_os = "wasi"))]
     #[must_use]
     pub fn http_client(mut self, client: reqwest::Client) -> Self {
         self.http = Some(client);
@@ -267,9 +277,7 @@ impl ClientBuilder {
         let (http, timeout) = match self.http {
             Some(h) => (h, self.timeout),
             None => (
-                reqwest::Client::builder()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()?,
+                transport::client(None, None)?,
                 Some(self.timeout.unwrap_or(Duration::from_secs(30))),
             ),
         };
@@ -493,10 +501,8 @@ impl CreateRequest<'_> {
         for l in &self.links {
             req = req.header(LINK, &l.to_header_value())?;
         }
-        if let BodyKind::Bytes(b) = &self.body.0 {
-            if b.is_empty() {
-                req = req.header(CONTENT_LENGTH, "0")?;
-            }
+        if self.body.is_empty_bytes() {
+            req = req.header(CONTENT_LENGTH, "0")?;
         }
         req.body = Some(self.body);
         let resp = self.client.execute(req).await?;
@@ -611,11 +617,11 @@ impl DeleteRequest<'_> {
     }
 }
 
-fn metadata_of(resp: &reqwest::Response) -> ResourceMetadata {
+fn metadata_of(resp: &Response) -> ResourceMetadata {
     ResourceMetadata::from_parts(resp.url().clone(), resp.status(), resp.headers().clone())
 }
 
-async fn json_body(resp: reqwest::Response) -> Result<(ResourceMetadata, Value)> {
+async fn json_body(resp: Response) -> Result<(ResourceMetadata, Value)> {
     let metadata = metadata_of(&resp);
     let bytes = resp.bytes().await?;
     let value = if bytes.is_empty() {
@@ -644,8 +650,8 @@ impl Client {
     async fn dispatch(
         &self,
         parts: &RequestParts,
-        body: Option<reqwest::Body>,
-    ) -> Result<reqwest::Response> {
+        body: Option<transport::Body>,
+    ) -> Result<Response> {
         let mut rb = self
             .inner
             .http
@@ -666,9 +672,9 @@ impl Client {
         &self,
         parts: &mut RequestParts,
         bytes: Option<Bytes>,
-        stream: Option<reqwest::Body>,
+        stream: Option<transport::Body>,
         user_auth: bool,
-    ) -> Result<reqwest::Response> {
+    ) -> Result<Response> {
         let auth = self.inner.authenticator.clone();
         if let Some(auth) = &auth {
             auth.authorize(parts).await?;
@@ -676,7 +682,7 @@ impl Client {
         let replayable = stream.is_none();
         let body = match stream {
             Some(s) => Some(s),
-            None => bytes.clone().map(reqwest::Body::from),
+            None => bytes.clone().map(transport::body),
         };
         let resp = self.dispatch(parts, body).await?;
         if resp.status() == StatusCode::UNAUTHORIZED && replayable {
@@ -691,7 +697,7 @@ impl Client {
                         parts.headers.remove(AUTHORIZATION);
                     }
                     auth.authorize(parts).await?;
-                    return self.dispatch(parts, bytes.map(reqwest::Body::from)).await;
+                    return self.dispatch(parts, bytes.map(transport::body)).await;
                 }
             }
         }
@@ -701,7 +707,7 @@ impl Client {
     /// Sends a request through the authenticator (with the single 401 retry), follows
     /// redirects hop by hop (re-authorizing for every new URL, so tokens never leave their
     /// realm) and maps error statuses to [`Error`].
-    async fn execute(&self, req: Prepared) -> Result<reqwest::Response> {
+    async fn execute(&self, req: Prepared) -> Result<Response> {
         let mut headers = self.inner.default_headers.clone();
         for (name, value) in req.headers.iter() {
             headers.append(name.clone(), value.clone());
@@ -715,6 +721,7 @@ impl Client {
         let replayable = req.body.as_ref().is_none_or(Body::replayable);
         let (mut bytes, mut stream) = match req.body.map(|b| b.0) {
             Some(BodyKind::Bytes(b)) => (Some(b), None),
+            #[cfg(not(target_os = "wasi"))]
             Some(BodyKind::Stream(s)) => (None, Some(s)),
             None => (None, None),
         };
@@ -1259,7 +1266,7 @@ impl Client {
 }
 
 /// Maps non-success responses (other than 304) to errors.
-async fn check(method: &Method, resp: reqwest::Response) -> Result<reqwest::Response> {
+async fn check(method: &Method, resp: Response) -> Result<Response> {
     let status = resp.status();
     if status.is_success() || status == StatusCode::NOT_MODIFIED {
         return Ok(resp);

@@ -11,6 +11,7 @@ use url::Url;
 use crate::constants::{rel, types as lws_types};
 use crate::error::{Error, Result};
 use crate::headers::{Link, essence, parse_link_headers, parse_list, rel_eq};
+use crate::transport::Response;
 use crate::types::type_matches;
 
 /// Metadata parsed from response headers (`ETag`, `Link`, `Content-Type`, `Allow`, …).
@@ -182,18 +183,19 @@ impl Resource {
 pub struct StreamingResource {
     /// Header metadata.
     pub metadata: ResourceMetadata,
-    response: reqwest::Response,
+    response: Response,
 }
 
 impl StreamingResource {
-    pub(crate) fn new(metadata: ResourceMetadata, response: reqwest::Response) -> Self {
+    pub(crate) fn new(metadata: ResourceMetadata, response: Response) -> Self {
         Self { metadata, response }
     }
     /// The next body chunk, or `None` at the end.
     pub async fn chunk(&mut self) -> Result<Option<Bytes>> {
         Ok(self.response.chunk().await?)
     }
-    /// The underlying `reqwest` response.
+    /// The underlying `reqwest` response (not on WASI, which has no `reqwest`).
+    #[cfg(not(target_os = "wasi"))]
     pub fn into_response(self) -> reqwest::Response {
         self.response
     }

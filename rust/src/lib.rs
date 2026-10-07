@@ -69,6 +69,13 @@
 //!
 //! * `rustls` (default) / `native-tls` — TLS backend.
 //! * `crypto` (default) — self-signed credentials, did:key/JWK helpers and the webhook verifier.
+//!
+//! ## WebAssembly
+//!
+//! For `wasm32-wasip2` (WASI 0.2) the crate sends its requests through the host's `wasi:http`
+//! instead of `reqwest`: the host does TLS, the TLS features have no effect, request bodies are
+//! bytes, and [`Error::Transport`] carries a `TransportError`. The `wasm` directory of the
+//! repository builds the client into a WebAssembly component.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -87,6 +94,7 @@ pub mod index;
 pub mod model;
 pub mod notification;
 mod patch;
+mod transport;
 pub mod types;
 #[cfg(feature = "crypto")]
 pub mod webhook;
@@ -102,6 +110,8 @@ pub use client::{
     Body, Client, ClientBuilder, CreateRequest, DeleteRequest, HeadRequest, IntoUrl, LwsStream,
     PatchRequest, ReadRequest, UpdateRequest,
 };
+#[cfg(target_os = "wasi")]
+pub use error::TransportError;
 pub use error::{Error, HttpError, Result};
 pub use headers::Link;
 pub use index::{SearchPage, TypeIndexPage, TypeQuery};

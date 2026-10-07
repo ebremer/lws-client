@@ -33,6 +33,12 @@ MSRV: Rust 1.85 (edition 2024).
 | `native-tls` | | TLS via the platform library |
 | `crypto` | ✓ | `SelfSignedCredentials`, `crypto` (keys, JWK, did:key, JWT), `WebhookVerifier` |
 
+**WebAssembly.** The crate also builds for `wasm32-wasip2` (WASI 0.2, Rust 1.87+), where it sends its
+requests through the host's `wasi:http` instead of reqwest: the host does TLS, request bodies are bytes,
+the reqwest-specific API (`ClientBuilder::http_client`, `Body::from_reqwest`,
+`StreamingResource::into_response`) is absent and `Error::Transport` carries a `TransportError`.
+[`../wasm`](../wasm) builds it into a WebAssembly component with a WIT interface.
+
 ## Quick start
 
 ```rust
@@ -242,6 +248,7 @@ cargo run --example webhook_receiver -- http://localhost:8787/root/
 cargo test                                   # unit, conformance fixtures, HTTP tests, doctests
 cargo test --no-default-features --features rustls
 cargo clippy --all-targets -- -D warnings
+cargo clippy --target wasm32-wasip2 -- -D warnings   # the WASI transport (rustup target add wasm32-wasip2)
 cargo doc --no-deps --open
 
 # End-to-end interop scenario (conformance/scenario.md) against the mock server:

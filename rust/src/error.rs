@@ -149,8 +149,37 @@ pub enum Error {
     #[error("crypto error: {0}")]
     Crypto(String),
     /// Network / transport failure.
+    #[cfg(not(target_os = "wasi"))]
     #[error("transport error: {0}")]
     Transport(#[from] reqwest::Error),
+    /// Network / transport failure: the host's `wasi:http` could not send the request or
+    /// deliver the whole response.
+    #[cfg(target_os = "wasi")]
+    #[error("transport error: {0}")]
+    Transport(#[from] TransportError),
+}
+
+/// Why the host's `wasi:http` could not send a request or deliver its whole response (WASI
+/// builds; elsewhere [`Error::Transport`] carries a `reqwest::Error`).
+#[cfg(target_os = "wasi")]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
+pub struct TransportError {
+    message: String,
+}
+
+#[cfg(target_os = "wasi")]
+impl TransportError {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    /// What went wrong.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 impl Error {
@@ -207,6 +236,7 @@ impl Error {
     /// The HTTP status, for HTTP status variants (and transport errors that carry one).
     pub fn status(&self) -> Option<StatusCode> {
         match self {
+            #[cfg(not(target_os = "wasi"))]
             Error::Transport(e) => e.status(),
             _ => self.http_error().map(|e| e.status),
         }
