@@ -334,7 +334,8 @@ final class WebhookVerifier
         $keyAlgorithm = match ($key->curve) {
             'P-256' => 'ecdsa-p256-sha256',
             'P-384' => 'ecdsa-p384-sha384',
-            default => 'ed25519',
+            'Ed25519' => 'ed25519',
+            default => throw self::fail("Verification method $keyid is a {$key->curve} key, which webhook signatures do not use"),
         };
         if ($alg !== null && $alg !== $keyAlgorithm) {
             throw self::fail("alg $alg does not match the key type ($keyAlgorithm)");

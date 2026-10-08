@@ -105,6 +105,9 @@ final class SigningKey implements \Stringable
             throw new \InvalidArgumentException("The JWK has no private key member 'd'");
         }
         $public = VerificationKey::fromJwk($j);
+        if ($public->curve === 'RSA') {
+            throw new \InvalidArgumentException('RSA keys only verify here; they cannot sign');
+        }
         if ($public->curve === 'Ed25519') {
             $seed = VerificationKey::member($j, 'd', SODIUM_CRYPTO_SIGN_SEEDBYTES);
             if ($seed === '') {

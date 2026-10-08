@@ -29,7 +29,7 @@ final class Jwt
         return $input . '.' . Base64Url::encode($key->sign($input));
     }
 
-    /** Whether a JWT is signed by `key` (its header's `alg` must be the key's algorithm). */
+    /** Whether a JWT is signed by `key` (its header's `alg` must be one the key supports). */
     public static function verify(string $jwt, VerificationKey $key): bool
     {
         $parts = explode('.', $jwt);
@@ -42,10 +42,11 @@ final class Jwt
             return false;
         }
         $signature = Base64Url::decode($parts[2]);
-        if (($header['alg'] ?? null) !== $key->algorithm() || $signature === null) {
+        $alg = $header['alg'] ?? null;
+        if (!is_string($alg) || !$key->supports($alg) || $signature === null) {
             return false;
         }
-        return $key->verify($signature, $parts[0] . '.' . $parts[1]);
+        return $key->verify($signature, $parts[0] . '.' . $parts[1], $alg);
     }
 
     /**

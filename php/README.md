@@ -12,7 +12,8 @@ grants, and the type index / type search services.
   hierarchy under `LwsException`
 * ext-curl underneath, behind a pluggable `HttpTransport`; `Psr18Transport` runs it on any PSR-18 client (Guzzle,
   Symfony HttpClient, …)
-* ES256 (P-256) through ext-openssl, EdDSA (Ed25519) through ext-sodium
+* ES256 (P-256) through ext-openssl, EdDSA (Ed25519) through ext-sodium; RSA verification only (RS256/384/512, and
+  PS256/384/512 with EMSA-PSS in PHP), for ID Tokens of OpenID Providers that sign with RSA
 * Composer package `ebremer/lws-client`, namespace `Ebremer\Lws`
 * MIT licensed (see [`../LICENSE`](../LICENSE))
 
