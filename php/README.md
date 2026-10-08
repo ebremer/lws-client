@@ -3,7 +3,7 @@
 A client for the [W3C Linked Web Storage (LWS) Protocol 1.0](https://www.w3.org/TR/lws10-core/) and its companion
 specifications, as published by the LWS Working Group on 2026-10-05: discovery, resources and containers, linkset
 metadata, OAuth 2.0 token exchange with the OpenID Connect / SAML 2.0 / self-signed (controlled identifier,
-`did:key`) authentication suites, webhook notifications with RFC 9421 signature verification, access requests and
+`did:key`) authentication suites, webhook notifications with RFC 9421 signature verification (and signing, for servers), access requests and
 grants, and the type index / type search services.
 
 * PHP 8.2 or later, with the bundled extensions ext-curl, ext-openssl and ext-sodium; no Composer dependencies
@@ -89,7 +89,7 @@ notifications).
 | Creating | `create`, `createText`, `createJson`, `createContainer` (`slug:`, `types:`, `links:`) |
 | Updating | `update` (`ifMatch:`, `ifNoneMatch:`, `links:`, `setLinkset:`), `patch` (a `JsonPatch`, or bytes and a content type), `delete` (`ifMatch:`, `recursive:`) |
 | Linksets | `linksetUrl`, `readLinkset`, `readLinksetResource`, `updateLinkset`, `patchLinkset` |
-| Notifications | `subscribe`, `listSubscriptions`, `getSubscription`, `unsubscribe`; `WebhookVerifier` |
+| Notifications | `subscribe`, `listSubscriptions`, `getSubscription`, `unsubscribe`; `WebhookVerifier`, and `WebhookSigner` for servers |
 | Access | `requestAccess`, `listAccessRequests`, `getAccessRequest`, `cancelAccessRequest`, `grantAccess`, `listAccessGrants`, `getAccessGrant`, `revokeAccessGrant` |
 | Type index and search | `readTypeIndex`, `listTypes`, `searchTypes` (HTTP `QUERY`), `searchAll`, `acceptedQueryFormats` |
 | Anything else | `request($method, $url, body:, contentType:)` through the same authentication and redirect pipeline |
@@ -183,6 +183,18 @@ $headers, $body)` takes the parts. Pass the inbox URL as it was registered, not 
 verifier checks the RFC 9530 digest, the RFC 9421 signature and its age, that the key is one the storage lists
 under `authentication`, and that the notification comes from that storage; storage descriptions are cached, and
 fetched again once when a signature fails, in case the storage rotated its keys.
+
+A storage that delivers notifications signs them with `WebhookSigner`, the other side of the verifier:
+
+```php
+// $key: a P-256, P-384 or Ed25519 SigningKey; its public JWK is a verification method of the storage
+// description, with the ID https://storage.example/#{$kid}, referenced from `authentication`.
+$signer = new WebhookSigner($key, 'https://storage.example/#' . $kid);
+$headers = $signer->sign($inboxUrl, $body);   // content-type, content-digest, signature-input, signature
+```
+
+The signature covers `@method`, `@scheme`, `@authority`, `@path`, `content-type` and `content-digest`, with
+`created`, `keyid` and `alg`. Send the body bytes you signed, to the inbox URL you signed for, with those headers.
 
 ## Transports
 
