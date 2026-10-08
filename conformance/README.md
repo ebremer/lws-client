@@ -10,6 +10,7 @@ exactly the same things. Each client's test suite loads these files directly fro
 | `fixtures/www-authenticate.json` | `WWW-Authenticate` challenge parsing (LWS `as_uri` / `realm`) |
 | `fixtures/structured-fields.json` | RFC 8941/9651 dictionaries (Signature-Input, Signature, Content-Digest) |
 | `fixtures/json-patch.json` | JSON Pointer escaping and JSON Patch serialisation |
+| `fixtures/json-patch-apply.json` | Applying JSON Patch documents: RFC 6902 Appendix A and edge cases (optional for clients; servers need it) |
 | `fixtures/type-queries.json` | `application/lws-query+json` builder and validation |
 | `fixtures/did-key.json` | did:key derivation (includes the did:key spec P-256 vector) |
 | `fixtures/jwt.json` | self-signed JWT credentials (ES256, EdDSA) that must verify |

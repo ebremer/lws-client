@@ -108,6 +108,10 @@ are `"0"`, `"1"`, … in order, which stay `\stdClass`: so the documents the mod
 requests) encode back to the same JSON. Values you send (`createJson`, JSON Patch values) are anything
 `json_encode()` takes; write `new \stdClass()` for `{}`, since `[]` is an empty array.
 
+`JsonPatch::apply($document)` applies a patch to a decoded document (RFC 6902), atomically: it returns the patched
+copy, or throws `JsonPatchException` (a failed `test`, a missing location) and changes nothing. Servers use it to
+honour `PATCH`; `conformance/fixtures/json-patch-apply.json` holds its cases.
+
 ## Errors
 
 ```

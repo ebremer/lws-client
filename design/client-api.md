@@ -149,6 +149,9 @@ into `ProblemDetails` (with extension members preserved) and attach it to the er
 ### 3.5 JSON Patch (RFC 6902) and JSON Pointer (RFC 6901)
 * `JsonPatch` builder: `add(path, value)`, `remove(path)`, `replace(path, value)`,
   `move(from, path)`, `copy(from, path)`, `test(path, value)`; serialises to a JSON array.
+* Optional: `apply(document)` applies the patch atomically (RFC 6902 §4, §5), returning the patched
+  copy or failing as a whole. The PHP client has it, for servers; the cases are
+  `conformance/fixtures/json-patch-apply.json`.
 * `JsonPointer.escape(segment)` (`~` → `~0`, `/` → `~1`) and a builder from segments —
   necessary for linkset relation keys that are URIs, e.g.
   `/linkset/0/https:~1~1example.org~1rel/-`.

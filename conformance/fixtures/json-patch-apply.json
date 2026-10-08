@@ -1,0 +1,929 @@
+{
+  "description": "Applying JSON Patch documents (RFC 6902 \u00a74, \u00a75): the examples of RFC 6902 Appendix A (A.13 is about duplicate members, which a JSON parser decides) and edge cases. A case has either an expected result, or \"error\": true when the patch must fail as a whole. Results compare as JSON values: object member order is not significant, and {} is not [].",
+  "cases": [
+    {
+      "name": "A.1 adding an object member",
+      "doc": {
+        "foo": "bar"
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/baz",
+          "value": "qux"
+        }
+      ],
+      "expected": {
+        "baz": "qux",
+        "foo": "bar"
+      }
+    },
+    {
+      "name": "A.2 adding an array element",
+      "doc": {
+        "foo": [
+          "bar",
+          "baz"
+        ]
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/foo/1",
+          "value": "qux"
+        }
+      ],
+      "expected": {
+        "foo": [
+          "bar",
+          "qux",
+          "baz"
+        ]
+      }
+    },
+    {
+      "name": "A.3 removing an object member",
+      "doc": {
+        "baz": "qux",
+        "foo": "bar"
+      },
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/baz"
+        }
+      ],
+      "expected": {
+        "foo": "bar"
+      }
+    },
+    {
+      "name": "A.4 removing an array element",
+      "doc": {
+        "foo": [
+          "bar",
+          "qux",
+          "baz"
+        ]
+      },
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/foo/1"
+        }
+      ],
+      "expected": {
+        "foo": [
+          "bar",
+          "baz"
+        ]
+      }
+    },
+    {
+      "name": "A.5 replacing a value",
+      "doc": {
+        "baz": "qux",
+        "foo": "bar"
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/baz",
+          "value": "boo"
+        }
+      ],
+      "expected": {
+        "baz": "boo",
+        "foo": "bar"
+      }
+    },
+    {
+      "name": "A.6 moving a value",
+      "doc": {
+        "foo": {
+          "bar": "baz",
+          "waldo": "fred"
+        },
+        "qux": {
+          "corge": "grault"
+        }
+      },
+      "patch": [
+        {
+          "op": "move",
+          "from": "/foo/waldo",
+          "path": "/qux/thud"
+        }
+      ],
+      "expected": {
+        "foo": {
+          "bar": "baz"
+        },
+        "qux": {
+          "corge": "grault",
+          "thud": "fred"
+        }
+      }
+    },
+    {
+      "name": "A.7 moving an array element",
+      "doc": {
+        "foo": [
+          "all",
+          "grass",
+          "cows",
+          "eat"
+        ]
+      },
+      "patch": [
+        {
+          "op": "move",
+          "from": "/foo/1",
+          "path": "/foo/3"
+        }
+      ],
+      "expected": {
+        "foo": [
+          "all",
+          "cows",
+          "eat",
+          "grass"
+        ]
+      }
+    },
+    {
+      "name": "A.8 testing a value: success",
+      "doc": {
+        "baz": "qux",
+        "foo": [
+          "a",
+          2,
+          "c"
+        ]
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "/baz",
+          "value": "qux"
+        },
+        {
+          "op": "test",
+          "path": "/foo/1",
+          "value": 2
+        }
+      ],
+      "expected": {
+        "baz": "qux",
+        "foo": [
+          "a",
+          2,
+          "c"
+        ]
+      }
+    },
+    {
+      "name": "A.9 testing a value: error",
+      "doc": {
+        "baz": "qux"
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "/baz",
+          "value": "bar"
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "A.10 adding a nested member object",
+      "doc": {
+        "foo": "bar"
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/child",
+          "value": {
+            "grandchild": {}
+          }
+        }
+      ],
+      "expected": {
+        "foo": "bar",
+        "child": {
+          "grandchild": {}
+        }
+      }
+    },
+    {
+      "name": "A.11 ignoring unrecognized elements",
+      "doc": {
+        "foo": "bar"
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/baz",
+          "value": "qux",
+          "xyz": 123
+        }
+      ],
+      "expected": {
+        "foo": "bar",
+        "baz": "qux"
+      }
+    },
+    {
+      "name": "A.12 adding to a nonexistent target",
+      "doc": {
+        "foo": "bar"
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/baz/bat",
+          "value": "qux"
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "A.14 ~ escape ordering",
+      "doc": {
+        "/": 9,
+        "~1": 10
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "/~01",
+          "value": 10
+        }
+      ],
+      "expected": {
+        "/": 9,
+        "~1": 10
+      }
+    },
+    {
+      "name": "A.15 comparing strings and numbers",
+      "doc": {
+        "/": 9,
+        "~1": 10
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "/~01",
+          "value": "10"
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "A.16 adding an array value",
+      "doc": {
+        "foo": [
+          "bar"
+        ]
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/foo/-",
+          "value": [
+            "abc",
+            "def"
+          ]
+        }
+      ],
+      "expected": {
+        "foo": [
+          "bar",
+          [
+            "abc",
+            "def"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "add replaces an existing member",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/a",
+          "value": 2
+        }
+      ],
+      "expected": {
+        "a": 2
+      }
+    },
+    {
+      "name": "add at the index just past the end appends",
+      "doc": {
+        "a": [
+          1,
+          2
+        ]
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/a/2",
+          "value": 3
+        }
+      ],
+      "expected": {
+        "a": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "name": "add beyond the end of an array",
+      "doc": {
+        "a": [
+          1,
+          2
+        ]
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/a/3",
+          "value": 3
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "add at an index with a leading zero",
+      "doc": {
+        "a": [
+          1,
+          2
+        ]
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/a/01",
+          "value": 3
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "add at a negative index",
+      "doc": {
+        "a": [
+          1,
+          2
+        ]
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/a/-1",
+          "value": 3
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "add the whole document",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "",
+          "value": [
+            1,
+            2
+          ]
+        }
+      ],
+      "expected": [
+        1,
+        2
+      ]
+    },
+    {
+      "name": "add inside a scalar",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/a/b",
+          "value": 2
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "add below the end marker",
+      "doc": {
+        "a": [
+          1
+        ]
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/a/-/b",
+          "value": 2
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "add to an object with numeric keys keeps it an object",
+      "doc": {
+        "0": "zero",
+        "1": "one"
+      },
+      "patch": [
+        {
+          "op": "add",
+          "path": "/2",
+          "value": "two"
+        }
+      ],
+      "expected": {
+        "0": "zero",
+        "1": "one",
+        "2": "two"
+      }
+    },
+    {
+      "name": "add a member with an empty name",
+      "doc": {},
+      "patch": [
+        {
+          "op": "add",
+          "path": "/",
+          "value": 1
+        }
+      ],
+      "expected": {
+        "": 1
+      }
+    },
+    {
+      "name": "remove the last member leaves an empty object",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/a"
+        }
+      ],
+      "expected": {}
+    },
+    {
+      "name": "remove the last element leaves an empty array",
+      "doc": {
+        "a": [
+          1
+        ]
+      },
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/a/0"
+        }
+      ],
+      "expected": {
+        "a": []
+      }
+    },
+    {
+      "name": "remove a missing member",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/b"
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "remove the end marker",
+      "doc": {
+        "a": [
+          1
+        ]
+      },
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/a/-"
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "remove the whole document",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "remove",
+          "path": ""
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "replace the whole document",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "",
+          "value": {
+            "b": 2
+          }
+        }
+      ],
+      "expected": {
+        "b": 2
+      }
+    },
+    {
+      "name": "replace a missing member",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/b",
+          "value": 2
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "replace past the end of an array",
+      "doc": {
+        "a": [
+          1
+        ]
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/a/1",
+          "value": 2
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "replace a member whose name needs escaping",
+      "doc": {
+        "a~b": 1,
+        "c/d": 2
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/a~0b",
+          "value": 3
+        },
+        {
+          "op": "replace",
+          "path": "/c~1d",
+          "value": 4
+        }
+      ],
+      "expected": {
+        "a~b": 3,
+        "c/d": 4
+      }
+    },
+    {
+      "name": "replace in an object keyed like an array",
+      "doc": {
+        "a": {
+          "0": "x"
+        }
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/a/0",
+          "value": "y"
+        }
+      ],
+      "expected": {
+        "a": {
+          "0": "y"
+        }
+      }
+    },
+    {
+      "name": "move into its own child",
+      "doc": {
+        "a": {
+          "b": 1
+        }
+      },
+      "patch": [
+        {
+          "op": "move",
+          "from": "/a",
+          "path": "/a/c"
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "move to the same location",
+      "doc": {
+        "a": {
+          "b": 1
+        }
+      },
+      "patch": [
+        {
+          "op": "move",
+          "from": "/a",
+          "path": "/a"
+        }
+      ],
+      "expected": {
+        "a": {
+          "b": 1
+        }
+      }
+    },
+    {
+      "name": "move from a missing location",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "move",
+          "from": "/b",
+          "path": "/c"
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "move an element to the end of another array",
+      "doc": {
+        "a": [
+          1,
+          2
+        ],
+        "b": []
+      },
+      "patch": [
+        {
+          "op": "move",
+          "from": "/a/0",
+          "path": "/b/-"
+        }
+      ],
+      "expected": {
+        "a": [
+          2
+        ],
+        "b": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "copy an object",
+      "doc": {
+        "a": {
+          "b": 1
+        }
+      },
+      "patch": [
+        {
+          "op": "copy",
+          "from": "/a",
+          "path": "/c"
+        }
+      ],
+      "expected": {
+        "a": {
+          "b": 1
+        },
+        "c": {
+          "b": 1
+        }
+      }
+    },
+    {
+      "name": "copy from a missing location",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "copy",
+          "from": "/b",
+          "path": "/c"
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "test numbers by value",
+      "doc": {
+        "n": 1
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "/n",
+          "value": 1.0
+        }
+      ],
+      "expected": {
+        "n": 1
+      }
+    },
+    {
+      "name": "test objects regardless of member order",
+      "doc": {
+        "o": {
+          "a": 1,
+          "b": 2
+        }
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "/o",
+          "value": {
+            "b": 2,
+            "a": 1
+          }
+        }
+      ],
+      "expected": {
+        "o": {
+          "a": 1,
+          "b": 2
+        }
+      }
+    },
+    {
+      "name": "test arrays in order",
+      "doc": {
+        "l": [
+          1,
+          2
+        ]
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "/l",
+          "value": [
+            2,
+            1
+          ]
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "test an empty object against an empty array",
+      "doc": {
+        "x": {}
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "/x",
+          "value": []
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "test null",
+      "doc": {
+        "x": null
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "/x",
+          "value": null
+        }
+      ],
+      "expected": {
+        "x": null
+      }
+    },
+    {
+      "name": "test a missing member against null",
+      "doc": {},
+      "patch": [
+        {
+          "op": "test",
+          "path": "/x",
+          "value": null
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "test the whole document",
+      "doc": {
+        "a": [
+          1,
+          {
+            "b": true
+          }
+        ]
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "",
+          "value": {
+            "a": [
+              1,
+              {
+                "b": true
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "a": [
+          1,
+          {
+            "b": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "test true against 1",
+      "doc": {
+        "t": true
+      },
+      "patch": [
+        {
+          "op": "test",
+          "path": "/t",
+          "value": 1
+        }
+      ],
+      "error": true
+    },
+    {
+      "name": "a failing operation undoes the earlier ones",
+      "doc": {
+        "a": 1
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/a",
+          "value": 2
+        },
+        {
+          "op": "test",
+          "path": "/a",
+          "value": 3
+        }
+      ],
+      "error": true
+    }
+  ]
+}
