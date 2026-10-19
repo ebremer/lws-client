@@ -61,11 +61,19 @@ public sealed class ParserFixtureTests
     [Fact]
     public void ChallengeAccessors()
     {
-        AuthChallenge c = WwwAuthenticate.Parse("Bearer as_uri=\"https://as.example\", realm=\"https://s.example/\", error=\"invalid_token\", error_description=\"expired\"").Single();
-        Assert.Equal("https://as.example", c.AsUri);
-        Assert.Equal("https://s.example/", c.Realm);
+        AuthChallenge c = WwwAuthenticate.Parse(
+            "Bearer resource_metadata=\"https://s.example/.well-known/oauth-protected-resource/a\", error=\"invalid_token\", error_description=\"expired\"").Single();
+        Assert.Equal("https://s.example/.well-known/oauth-protected-resource/a", c.ResourceMetadata);
+        Assert.Null(c.AsUri);
+        Assert.Null(c.Realm);
         Assert.Equal("invalid_token", c.Error);
         Assert.Equal("expired", c.ErrorDescription);
+
+        // The challenge of the drafts before 19 October 2026.
+        AuthChallenge legacy = WwwAuthenticate.Parse("Bearer as_uri=\"https://as.example\", realm=\"https://s.example/\"").Single();
+        Assert.Equal("https://as.example", legacy.AsUri);
+        Assert.Equal("https://s.example/", legacy.Realm);
+        Assert.Null(legacy.ResourceMetadata);
         Assert.Empty(WwwAuthenticate.Parse((string?)null));
         Assert.Empty(WwwAuthenticate.Parse(""));
     }

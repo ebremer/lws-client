@@ -197,9 +197,11 @@ public class InsufficientStorageException(string method, Uri uri, HeaderMap? hea
     : HttpException(method, uri, 507, headers, problem, body);
 
 /// <summary>
-/// Obtaining an access token failed: the challenge realm did not contain the request URL, the authorization
-/// server was insecure or rejected by the filter, its metadata was invalid, or the token exchange was refused
-/// (then <see cref="Error"/> carries the OAuth <c>error</c> code and <see cref="Status"/> the HTTP status).
+/// Obtaining an access token failed: a discovery check failed (the protected resource metadata was on another origin,
+/// unreadable or for another resource; the storage's root was on another origin), the realm of a challenge of the
+/// drafts before 19 October 2026 did not contain the request URL, the authorization server was insecure or rejected by
+/// the filter, its metadata was invalid, or the token exchange was refused (then <see cref="Error"/> carries the OAuth
+/// <c>error</c> code and <see cref="Status"/> the HTTP status).
 /// </summary>
 public class AuthenticationException : LwsException
 {

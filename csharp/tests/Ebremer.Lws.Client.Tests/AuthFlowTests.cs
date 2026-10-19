@@ -6,13 +6,15 @@ using Ebremer.Lws.Tests.Support;
 namespace Ebremer.Lws.Tests;
 
 /// <summary>
-/// The LWS authorization flow (<c>401 → metadata → token exchange → retry</c>) and its security checks, against a
-/// fake storage protected by a fake authorization server.
+/// The LWS authorization flow (<c>401 → protected resource metadata → storage description → AS metadata → token
+/// exchange → retry</c>) and its security checks, against a fake storage protected by a fake authorization server.
 /// </summary>
 public sealed class AuthFlowTests : IDisposable
 {
     private const string Base = "https://storage.example";
-    private const string Realm = Base + "/";
+    private const string Storage = Base + "/";
+    private const string Root = Base + "/root/";
+    private const string Prm = Base + "/.well-known/oauth-protected-resource";
     private const string As = "https://as.example";
     private const string Metadata = As + "/.well-known/lws-configuration";
     private const string TokenEndpoint = As + "/token";
@@ -33,6 +35,7 @@ public sealed class AuthFlowTests : IDisposable
             lock (_validTokens) _validTokens.Add(token);
             return Respond.Json(200, $"{{\"access_token\":\"{token}\",\"token_type\":\"Bearer\",\"expires_in\":{_expiresIn}}}");
         });
+        Describe(Storage, Root);
         Protect("GET", Base + "/root/a", () => Respond.Text(200, "a"));
         Protect("GET", Base + "/root/b", () => Respond.Text(200, "b"));
         Protect("POST", Base + "/root/", () => Respond.Status(201, ("Location", "/root/new")));
@@ -47,8 +50,34 @@ public sealed class AuthFlowTests : IDisposable
         $"{{\"issuer\":\"{issuer}\",\"token_endpoint\":\"{tokenEndpoint}\",\"grant_types_supported\":[\"{Lws.GrantTypeTokenExchange}\"],"
         + $"\"subject_token_types_supported\":[\"{Lws.TokenType.Jwt}\",\"{Lws.TokenType.IdToken}\"]}}";
 
-    private static HttpResponseMessage Challenge(string asUri = As, string realm = Realm, string error = "invalid_token") =>
-        Respond.Status(401, ("WWW-Authenticate", $"Bearer as_uri=\"{asUri}\", realm=\"{realm}\", error=\"{error}\""));
+    /// <summary>Serves a storage description for <paramref name="storage"/> with its root.</summary>
+    private void Describe(string storage, string root) =>
+        _server.On("GET", storage, () => Respond.Json(200,
+            $"{{\"@context\":[\"{Lws.CidContext}\",\"{Lws.Context}\"],\"id\":\"{storage}\",\"type\":\"Storage\","
+            + $"\"service\":[{{\"type\":\"StorageRoot\",\"serviceEndpoint\":\"{root}\"}}]}}", "application/lws+cid"));
+
+    /// <summary>The protected resource metadata URL of a resource, on its origin.</summary>
+    private static string MetadataUrl(string url)
+    {
+        var resource = new Uri(url);
+        return resource.GetLeftPart(UriPartial.Authority) + Lws.WellKnownOAuthProtectedResource + resource.PathAndQuery;
+    }
+
+    /// <summary>Serves the protected resource metadata of <paramref name="url"/>, naming the given authorization servers.</summary>
+    private void DescribeResource(string url, params string[] authorizationServers)
+    {
+        string servers = string.Join(",", (authorizationServers.Length == 0 ? [As] : authorizationServers).Select(s => $"\"{s}\""));
+        _server.On("GET", MetadataUrl(url), () => Respond.Json(200, $"{{\"resource\":\"{url}\",\"authorization_servers\":[{servers}]}}"));
+    }
+
+    /// <summary>The 401 of the storage: the resource's protected resource metadata, and a link to the storage.</summary>
+    private static HttpResponseMessage Challenge(string url, string storage = Storage) =>
+        Respond.Status(401, ("WWW-Authenticate", $"Bearer resource_metadata=\"{MetadataUrl(url)}\", error=\"invalid_token\""),
+            ("Link", $"<{storage}>; rel=\"{Lws.Rel.Storage}\""));
+
+    /// <summary>The 401 of the drafts before 19 October 2026.</summary>
+    private static HttpResponseMessage LegacyChallenge(string asUri = As, string realm = Storage) =>
+        Respond.Status(401, ("WWW-Authenticate", $"Bearer as_uri=\"{asUri}\", realm=\"{realm}\", error=\"invalid_token\""));
 
     private bool Authorized(Recorded r)
     {
@@ -56,8 +85,11 @@ public sealed class AuthFlowTests : IDisposable
         lock (_validTokens) return _validTokens.Contains(a[7..]);
     }
 
-    private void Protect(string method, string url, Func<HttpResponseMessage> ok) =>
-        _server.On(method, url, r => Authorized(r) ? ok() : Challenge());
+    private void Protect(string method, string url, Func<HttpResponseMessage> ok, string storage = Storage)
+    {
+        _server.On(method, url, r => Authorized(r) ? ok() : Challenge(url, storage));
+        DescribeResource(url);
+    }
 
     private TokenExchangeAuthenticator Authenticator(ICredentialProvider? credentials = null, TokenExchangeOptions? options = null) =>
         new(credentials ?? new OpenIdCredentials("id-token"), (options ?? new TokenExchangeOptions()) with { HttpMessageHandler = _server, TimeProvider = _clock });
@@ -65,6 +97,10 @@ public sealed class AuthFlowTests : IDisposable
     private LwsClient Client(IAuthenticator authenticator) => new(new LwsClientOptions { HttpMessageHandler = _server, Authenticator = authenticator });
 
     private IEnumerable<string> Trace() => _server.Requests.Select(r => $"{r.Method} {r.Url}");
+
+    private static Dictionary<string, string> Form(Recorded post) =>
+        post.Text.Split('&').Select(p => p.Split('=', 2))
+            .ToDictionary(p => Uri.UnescapeDataString(p[0]), p => Uri.UnescapeDataString(p[1].Replace('+', ' ')));
 
     private static Uri U(string url) => new(url);
 
@@ -81,14 +117,20 @@ public sealed class AuthFlowTests : IDisposable
         Resource r = await client.ReadAsync(U(Base + "/root/a"), cancellationToken: Ct);
         Assert.Equal("a", r.GetText());
         Assert.Equal(
-            [$"GET {Base}/root/a", $"GET {Metadata}", $"POST {TokenEndpoint}", $"GET {Base}/root/a"],
+            [$"GET {Base}/root/a", $"GET {Prm}/root/a", $"GET {Storage}", $"GET {Metadata}", $"POST {TokenEndpoint}", $"GET {Base}/root/a"],
             Trace());
+        Recorded prm = _server.RequestsTo("GET", Prm + "/root/a").Single();
+        Assert.Equal("application/json", prm.Header("Accept"));
+        Assert.Null(prm.Header("Authorization"));
+        Assert.Equal(LwsClient.DefaultUserAgent, prm.Header("User-Agent"));
+        Recorded description = _server.RequestsTo("GET", Storage).Single();
+        Assert.Equal("application/lws+cid, application/ld+json;q=0.9, application/json;q=0.8", description.Header("Accept"));
+        Assert.Null(description.Header("Authorization"));
         Recorded exchange = _server.RequestsTo("POST", TokenEndpoint).Single();
         Assert.Equal("application/x-www-form-urlencoded", exchange.Header("Content-Type"));
-        Dictionary<string, string> form = exchange.Text.Split('&').Select(p => p.Split('=', 2))
-            .ToDictionary(p => Uri.UnescapeDataString(p[0]), p => Uri.UnescapeDataString(p[1].Replace('+', ' ')));
+        Dictionary<string, string> form = Form(exchange);
         Assert.Equal(Lws.GrantTypeTokenExchange, form["grant_type"]);
-        Assert.Equal(Realm, form["resource"]);
+        Assert.Equal(Storage, form["resource"]);
         Assert.Equal(Lws.TokenType.Jwt, form["subject_token_type"]);
         string jwt = form["subject_token"];
         Assert.True(Jwt.Verify(jwt, key.PublicKey));
@@ -110,7 +152,7 @@ public sealed class AuthFlowTests : IDisposable
     }
 
     [Fact]
-    public async Task ProactiveReuseInsideTheRealmOnly()
+    public async Task ProactiveReuseInsideTheScopeOnly()
     {
         using TokenExchangeAuthenticator auth = Authenticator();
         using LwsClient client = Client(auth);
@@ -125,7 +167,56 @@ public sealed class AuthFlowTests : IDisposable
         await client.ReadAsync(U("http://storage.example/root/a"), new ReadOptions(), Ct).ContinueWith(_ => { }, Ct);
         Assert.Null(_server.Requests[^1].Header("Authorization"));
         Assert.Equal(1, _exchanges);
-        Assert.Equal("at-1", (await auth.GetAccessTokenAsync(As, Realm, Ct)).Value);
+        Assert.Equal("at-1", (await auth.GetAccessTokenAsync(As, Storage, Ct)).Value);
+    }
+
+    [Fact]
+    public async Task TheScopeIsTheStorageAndItsRootAndTheLongestScopeWins()
+    {
+        // A storage described at /s1 whose root is /data/s1/, and another whose storage and root are /data/.
+        Describe(Base + "/s1", Base + "/data/s1/");
+        Describe(Base + "/data/", Base + "/data/");
+        Protect("GET", Base + "/data/s1/x", () => Respond.Text(200, "x"), storage: Base + "/s1");
+        Protect("GET", Base + "/data/other", () => Respond.Text(200, "other"), storage: Base + "/data/");
+        foreach (string url in new[] { Base + "/s1/meta", Base + "/data/s1/y", Base + "/data/more", Base + "/elsewhere" })
+        {
+            _server.On("GET", url, () => Respond.Text(200, "ok"));
+        }
+        using TokenExchangeAuthenticator auth = Authenticator();
+        using LwsClient client = Client(auth);
+
+        await client.ReadAsync(U(Base + "/data/s1/x"), cancellationToken: Ct);
+        Assert.Equal(Base + "/s1", Form(_server.RequestsTo("POST", TokenEndpoint).Single())["resource"]);
+        await client.ReadAsync(U(Base + "/data/other"), cancellationToken: Ct);
+        Assert.Equal(Base + "/data/", Form(_server.RequestsTo("POST", TokenEndpoint).Last())["resource"]);
+
+        async Task<string?> SentTo(string url)
+        {
+            await client.ReadAsync(U(url), cancellationToken: Ct);
+            return _server.Requests[^1].Header("Authorization");
+        }
+        Assert.Equal("Bearer at-1", await SentTo(Base + "/s1/meta"));    // inside the storage
+        Assert.Equal("Bearer at-1", await SentTo(Base + "/data/s1/y"));  // inside both roots: /data/s1/ is longer than /data/
+        Assert.Equal("Bearer at-2", await SentTo(Base + "/data/more"));
+        Assert.Null(await SentTo(Base + "/elsewhere"));
+        Assert.Equal(2, _exchanges);
+    }
+
+    [Fact]
+    public async Task TheRetryCarriesTheTokenOutsideItsScope()
+    {
+        // A service endpoint outside the storage (/s1) and its root (/data/s1/) passes the checks: its retry carries
+        // the token, and another one's 401 reuses it without a second exchange; neither gets it ahead of a 401.
+        Describe(Base + "/s1", Base + "/data/s1/");
+        Protect("GET", Base + "/services/inbox", () => Respond.Text(200, "inbox"), storage: Base + "/s1");
+        Protect("GET", Base + "/services/other", () => Respond.Text(200, "other"), storage: Base + "/s1");
+        using TokenExchangeAuthenticator auth = Authenticator();
+        using LwsClient client = Client(auth);
+        Assert.Equal("inbox", (await client.ReadAsync(U(Base + "/services/inbox"), cancellationToken: Ct)).GetText());
+        Assert.Equal([null, "Bearer at-1"], _server.RequestsTo("GET", Base + "/services/inbox").Select(r => r.Header("Authorization")));
+        Assert.Equal("other", (await client.ReadAsync(U(Base + "/services/other"), cancellationToken: Ct)).GetText());
+        Assert.Equal([null, "Bearer at-1"], _server.RequestsTo("GET", Base + "/services/other").Select(r => r.Header("Authorization")));
+        Assert.Equal(1, _exchanges);
     }
 
     [Fact]
@@ -134,7 +225,8 @@ public sealed class AuthFlowTests : IDisposable
         using (TokenExchangeAuthenticator oidc = Authenticator(new OpenIdCredentials((ctx, _) =>
                {
                    Assert.Equal(As, ctx.Metadata.Issuer);
-                   Assert.Equal(Realm, ctx.Realm.AbsoluteUri);
+                   Assert.Equal(As + "/", ctx.Issuer.AbsoluteUri);
+                   Assert.Equal(Storage, ctx.Storage.AbsoluteUri);
                    return ValueTask.FromResult("my-id-token");
                })))
         using (LwsClient client = Client(oidc))
@@ -165,6 +257,26 @@ public sealed class AuthFlowTests : IDisposable
         await client.ReadAsync(U(Base + "/root/b"), cancellationToken: Ct);
         Assert.Equal(2, _exchanges);
         Assert.Equal(["Bearer at-1", "Bearer at-2"], _server.RequestsTo("GET", Base + "/root/b").Select(r => r.Header("Authorization")));
+    }
+
+    [Fact]
+    public async Task ATokenIsDroppedOnlyWhenItsOwnStorageRefusesIt()
+    {
+        // /root/other refuses at-1 with a 401 that links to another storage (its root on this origin, below /root/): the
+        // client gets a token for that storage and keeps at-1 for its own.
+        const string other = Base + "/root/other";
+        Describe(Base + "/other-storage", other + "/");
+        DescribeResource(other);
+        _server.On("GET", other, r => r.Header("Authorization") == "Bearer at-2" ? Respond.Text(200, "other") : Challenge(other, Base + "/other-storage"));
+        using TokenExchangeAuthenticator auth = Authenticator();
+        using LwsClient client = Client(auth);
+        await client.ReadAsync(U(Base + "/root/a"), cancellationToken: Ct);
+        Assert.Equal("other", (await client.ReadAsync(U(other), cancellationToken: Ct)).GetText());
+        Assert.Equal(["Bearer at-1", "Bearer at-2"], _server.RequestsTo("GET", other).Select(r => r.Header("Authorization")));
+        Assert.Equal(Base + "/other-storage", Form(_server.RequestsTo("POST", TokenEndpoint).Last())["resource"]);
+        await client.ReadAsync(U(Base + "/root/b"), cancellationToken: Ct);
+        Assert.Equal("Bearer at-1", _server.Requests[^1].Header("Authorization"));
+        Assert.Equal(2, _exchanges);
     }
 
     [Fact]
@@ -203,6 +315,25 @@ public sealed class AuthFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task StorageDescriptionsAreCachedUntilCleared()
+    {
+        using TokenExchangeAuthenticator auth = Authenticator();
+        using LwsClient client = Client(auth);
+        await client.ReadAsync(U(Base + "/root/a"), cancellationToken: Ct);
+        lock (_validTokens) _validTokens.Clear();
+        await client.ReadAsync(U(Base + "/root/b"), cancellationToken: Ct);
+        Assert.Equal(2, _exchanges);
+        Assert.Equal(2, _server.RequestsTo("GET", Prm + "/root/a").Count() + _server.RequestsTo("GET", Prm + "/root/b").Count());
+        Assert.Single(_server.RequestsTo("GET", Storage));
+        Assert.Single(_server.RequestsTo("GET", Metadata));
+        auth.Clear();
+        await client.ReadAsync(U(Base + "/root/a"), cancellationToken: Ct);
+        Assert.Equal(2, _server.RequestsTo("GET", Storage).Count());
+        Assert.Equal(2, _server.RequestsTo("GET", Metadata).Count());
+        Assert.Equal(3, _exchanges);
+    }
+
+    [Fact]
     public async Task PostIsRetriedOnceAfterA401Only()
     {
         using TokenExchangeAuthenticator auth = Authenticator();
@@ -213,7 +344,8 @@ public sealed class AuthFlowTests : IDisposable
         Assert.All(_server.RequestsTo("POST", Base + "/root/"), r => Assert.Equal("hello", r.Text));
 
         // A server that keeps refusing: exactly one retry, then UnauthorizedException.
-        _server.On("POST", Base + "/root/stubborn/", _ => Challenge());
+        _server.On("POST", Base + "/root/stubborn/", _ => Challenge(Base + "/root/stubborn/"));
+        DescribeResource(Base + "/root/stubborn/");
         await Assert.ThrowsAsync<UnauthorizedException>(() => client.CreateTextAsync(U(Base + "/root/stubborn/"), "x", cancellationToken: Ct));
         Assert.Equal(2, _server.RequestsTo("POST", Base + "/root/stubborn/").Count());
     }
@@ -225,7 +357,7 @@ public sealed class AuthFlowTests : IDisposable
         using LwsClient client = Client(auth);
         await client.CreateAsync(U(Base + "/root/"), new MemoryStream("streamed"u8.ToArray()), "text/plain", cancellationToken: Ct);
         Assert.Equal(
-            [$"HEAD {Base}/root/", $"GET {Metadata}", $"POST {TokenEndpoint}", $"HEAD {Base}/root/", $"POST {Base}/root/"],
+            [$"HEAD {Base}/root/", $"GET {Prm}/root/", $"GET {Storage}", $"GET {Metadata}", $"POST {TokenEndpoint}", $"HEAD {Base}/root/", $"POST {Base}/root/"],
             Trace());
         Recorded post = _server.RequestsTo("POST", Base + "/root/").Single();
         Assert.Equal("Bearer at-1", post.Header("Authorization"));
@@ -236,48 +368,115 @@ public sealed class AuthFlowTests : IDisposable
     public async Task AChallengeWithoutAnAuthorizationServerIsUnauthorized()
     {
         _server.On("GET", Base + "/basic", () => Respond.Status(401, ("WWW-Authenticate", "Basic realm=\"x\"")));
+        _server.On("GET", Base + "/bearer", () => Respond.Status(401, ("WWW-Authenticate", "Bearer realm=\"x\""), ("Link", $"<{Storage}>; rel=\"{Lws.Rel.Storage}\"")));
         using TokenExchangeAuthenticator auth = Authenticator();
         using LwsClient client = Client(auth);
         UnauthorizedException e = await Assert.ThrowsAsync<UnauthorizedException>(() => client.ReadAsync(U(Base + "/basic"), cancellationToken: Ct));
         Assert.True(e.Challenges.Single().IsScheme("basic"));
+        await Assert.ThrowsAsync<UnauthorizedException>(() => client.ReadAsync(U(Base + "/bearer"), cancellationToken: Ct));
         Assert.Equal(0, _exchanges);
+        Assert.Equal([$"GET {Base}/basic", $"GET {Base}/bearer"], Trace());
     }
 
     // ------------------------------------------------------------------------------------------------ the checks
 
     [Fact]
-    public async Task TheRealmMustContainTheRequestUrl()
+    public async Task TheDiscoveryChecksComeBeforeAnyToken()
     {
-        _server.On("GET", Base + "/root/other", _ => Challenge(realm: Base + "/other/"));
-        _server.On("GET", Base + "/storage_10/x", _ => Challenge(realm: Base + "/storage_1"));
+        const string decoy = Base + "/root/decoy";
         using TokenExchangeAuthenticator auth = Authenticator();
         using LwsClient client = Client(auth);
-        await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(Base + "/root/other"), cancellationToken: Ct));
-        await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(Base + "/storage_10/x"), cancellationToken: Ct));
+        async Task<AuthenticationException> RefusedAsync(Func<HttpResponseMessage> challenge)
+        {
+            _server.On("GET", decoy, challenge);
+            return await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(decoy), cancellationToken: Ct));
+        }
+
+        // Metadata on another origin, or a 401 without a storage link: nothing is fetched.
+        AuthenticationException e = await RefusedAsync(() => Respond.Status(401,
+            ("WWW-Authenticate", "Bearer resource_metadata=\"https://evil.example/.well-known/oauth-protected-resource/root/decoy\""),
+            ("Link", $"<{Storage}>; rel=\"{Lws.Rel.Storage}\"")));
+        Assert.Contains("origin", e.Message, StringComparison.Ordinal);
+        await RefusedAsync(() => Respond.Status(401, ("WWW-Authenticate", $"Bearer resource_metadata=\"{MetadataUrl(decoy)}\"")));
+        Assert.All(_server.Requests, r => Assert.Equal(decoy, r.Url));
+
+        // Metadata that cannot be read, is not JSON, is invalid, or describes another resource.
+        await RefusedAsync(() => Challenge(decoy));
+        _server.On("GET", MetadataUrl(decoy), () => Respond.Text(200, "{}", "text/html"));
+        await RefusedAsync(() => Challenge(decoy));
+        _server.On("GET", MetadataUrl(decoy), () => Respond.Json(200, $"{{\"resource\":\"{decoy}\",\"authorization_servers\":[]}}"));
+        await RefusedAsync(() => Challenge(decoy));
+        _server.On("GET", MetadataUrl(decoy), () => Respond.Json(200, $"{{\"resource\":\"{decoy}/\",\"authorization_servers\":[\"{As}\"]}}"));
+        e = await RefusedAsync(() => Challenge(decoy));
+        Assert.Contains("describes", e.Message, StringComparison.Ordinal);
+
+        // A storage whose root is on another origin, one without a root, one that cannot be read.
+        DescribeResource(decoy);
+        Describe(Base + "/vault/", "https://evil.example/vault/");
+        e = await RefusedAsync(() => Challenge(decoy, Base + "/vault/"));
+        Assert.Contains("root", e.Message, StringComparison.Ordinal);
+        _server.On("GET", Base + "/bare", () => Respond.Json(200, $"{{\"id\":\"{Base}/bare\",\"type\":\"Storage\"}}", "application/lws+cid"));
+        await RefusedAsync(() => Challenge(decoy, Base + "/bare"));
+        await RefusedAsync(() => Challenge(decoy, Base + "/missing"));
+
         Assert.Empty(_server.RequestsTo("GET", Metadata));
         Assert.Equal(0, _exchanges);
+        Assert.DoesNotContain(_server.Requests, r => r.Uri.Host == "evil.example");
+    }
+
+    [Fact]
+    public async Task TheFirstSecureAndAcceptedAuthorizationServerIsTheIssuer()
+    {
+        const string url = Base + "/root/c";
+        Protect("GET", url, () => Respond.Text(200, "c"));
+        DescribeResource(url, "not a url", "http://insecure.example", "https://filtered.example", As, "https://unused.example");
+        Uri? storageSeen = null;
+        using TokenExchangeAuthenticator auth = Authenticator(options: new TokenExchangeOptions
+        {
+            AuthorizationServerFilter = (issuer, storage) =>
+            {
+                storageSeen = storage;
+                return issuer.Host != "filtered.example";
+            },
+        });
+        using LwsClient client = Client(auth);
+        Assert.Equal("c", (await client.ReadAsync(U(url), cancellationToken: Ct)).GetText());
+        Assert.Equal(Storage, storageSeen?.AbsoluteUri);
+        Assert.Single(_server.RequestsTo("POST", TokenEndpoint));
+        Assert.DoesNotContain(_server.Requests, r => r.Uri.Host is "insecure.example" or "filtered.example" or "unused.example");
     }
 
     [Fact]
     public async Task ADecoyChallengeLeavesTheCachedTokenInUse()
     {
+        const string decoy = Base + "/root/decoy";
         using TokenExchangeAuthenticator auth = Authenticator();
         using LwsClient client = Client(auth);
         await client.ReadAsync(U(Base + "/root/a"), cancellationToken: Ct);
         Assert.Equal(1, _exchanges);
 
-        // The storage answers a request that carried the cached token with challenges that must all be refused: a
-        // realm that does not contain the URL, an insecure authorization server, one the filter rejects.
-        string[] decoys =
+        // The storage answers a request that carried the cached token with challenges that must all be refused:
+        // metadata on another origin, or for another resource; a storage whose root is elsewhere; an insecure
+        // authorization server; a realm (drafts before 19 October 2026) that does not contain the URL, or an insecure
+        // as_uri.
+        Describe(Base + "/vault/", "https://evil.example/vault/");
+        static string PrmJson(string resource, string server = As) => $"{{\"resource\":\"{resource}\",\"authorization_servers\":[\"{server}\"]}}";
+        (Func<HttpResponseMessage> Challenge, string Metadata)[] decoys =
         [
-            $"Bearer as_uri=\"{As}\", realm=\"https://evil.example/\"",
-            $"Bearer as_uri=\"http://as.evil.example\", realm=\"{Realm}\"",
+            (() => Respond.Status(401, ("WWW-Authenticate", "Bearer resource_metadata=\"https://evil.example/.well-known/oauth-protected-resource/root/decoy\""),
+                ("Link", $"<{Storage}>; rel=\"{Lws.Rel.Storage}\"")), PrmJson(decoy)),
+            (() => Challenge(decoy), PrmJson(Base + "/root/a")),
+            (() => Challenge(decoy, Base + "/vault/"), PrmJson(decoy)),
+            (() => Challenge(decoy), PrmJson(decoy, "http://as.evil.example")),
+            (() => LegacyChallenge(realm: "https://evil.example/"), "{}"),
+            (() => LegacyChallenge(asUri: "http://as.evil.example"), "{}"),
         ];
-        foreach (string decoy in decoys)
+        foreach ((Func<HttpResponseMessage> challenge, string metadata) in decoys)
         {
-            _server.On("GET", Base + "/root/decoy", () => Respond.Status(401, ("WWW-Authenticate", decoy)));
-            await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(Base + "/root/decoy"), cancellationToken: Ct));
-            Assert.Equal("Bearer at-1", _server.RequestsTo("GET", Base + "/root/decoy").Last().Header("Authorization"));
+            _server.On("GET", decoy, challenge);
+            _server.On("GET", MetadataUrl(decoy), () => Respond.Json(200, metadata));
+            await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(decoy), cancellationToken: Ct));
+            Assert.Equal("Bearer at-1", _server.RequestsTo("GET", decoy).Last().Header("Authorization"));
             int before = _server.Requests.Count;
             await client.ReadAsync(U(Base + "/root/b"), cancellationToken: Ct);
             Assert.Equal("Bearer at-1", _server.Requests[before].Header("Authorization"));
@@ -286,12 +485,15 @@ public sealed class AuthFlowTests : IDisposable
 
         using TokenExchangeAuthenticator filtered = Authenticator(options: new TokenExchangeOptions
         {
-            AuthorizationServerFilter = (asUri, _) => asUri.Host == "as.example",
+            AuthorizationServerFilter = (issuer, _) => issuer.Host == "as.example",
         });
         using LwsClient filteredClient = Client(filtered);
         await filteredClient.ReadAsync(U(Base + "/root/a"), cancellationToken: Ct);
-        _server.On("GET", Base + "/root/decoy", () => Challenge(asUri: "https://as.attacker.example"));
-        await Assert.ThrowsAsync<AuthenticationException>(() => filteredClient.ReadAsync(U(Base + "/root/decoy"), cancellationToken: Ct));
+        _server.On("GET", decoy, () => Challenge(decoy));
+        DescribeResource(decoy, "https://as.attacker.example");
+        await Assert.ThrowsAsync<AuthenticationException>(() => filteredClient.ReadAsync(U(decoy), cancellationToken: Ct));
+        _server.On("GET", decoy, () => LegacyChallenge(asUri: "https://as.attacker.example"));
+        await Assert.ThrowsAsync<AuthenticationException>(() => filteredClient.ReadAsync(U(decoy), cancellationToken: Ct));
         await filteredClient.ReadAsync(U(Base + "/root/b"), cancellationToken: Ct);
         Assert.Equal("Bearer at-2", _server.Requests[^1].Header("Authorization"));
         Assert.DoesNotContain(_server.Requests, r => r.Uri.Host.Contains("attacker", StringComparison.Ordinal) || r.Uri.Host.Contains("evil", StringComparison.Ordinal));
@@ -302,7 +504,8 @@ public sealed class AuthFlowTests : IDisposable
     public async Task InsecureAuthorizationServersAreRefusedUnlessAllowed()
     {
         const string insecure = "http://as.example";
-        _server.On("GET", Base + "/root/c", r => Authorized(r) ? Respond.Text(200, "c") : Challenge(asUri: insecure));
+        Protect("GET", Base + "/root/c", () => Respond.Text(200, "c"));
+        DescribeResource(Base + "/root/c", insecure);
         _server.On("GET", insecure + "/.well-known/lws-configuration", () => Respond.Json(200, MetadataJson(insecure, insecure + "/token")));
         _server.On("POST", insecure + "/token", () => Respond.Json(200, "{\"access_token\":\"at-1\",\"token_type\":\"bearer\"}"));
         lock (_validTokens) _validTokens.Add("at-1");
@@ -312,6 +515,7 @@ public sealed class AuthFlowTests : IDisposable
             AuthenticationException e = await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(Base + "/root/c"), cancellationToken: Ct));
             Assert.Contains("HTTPS", e.Message, StringComparison.Ordinal);
             Assert.Null(e.Status);
+            Assert.DoesNotContain(_server.Requests, r => r.Uri.Scheme == "http");
         }
         using (TokenExchangeAuthenticator lax = Authenticator(options: new TokenExchangeOptions { AllowInsecureHttp = true }))
         using (LwsClient client = Client(lax))
@@ -329,21 +533,60 @@ public sealed class AuthFlowTests : IDisposable
     public async Task LoopbackAuthorizationServersMayUseHttp()
     {
         const string local = "http://localhost:8787";
-        _server.On("GET", "http://localhost:8787/root/x", r => Authorized(r) ? Respond.Text(200, "x") : Challenge(local, local + "/"));
+        Describe(local + "/", local + "/root/");
+        _server.On("GET", local + "/root/x", r => Authorized(r) ? Respond.Text(200, "x") : Challenge(local + "/root/x", local + "/"));
+        DescribeResource(local + "/root/x", local);
         _server.On("GET", local + "/.well-known/lws-configuration", () => Respond.Json(200, MetadataJson(local, local + "/oauth/token")));
         _server.On("POST", local + "/oauth/token", () => Respond.Json(200, "{\"access_token\":\"at-local\",\"token_type\":\"Bearer\"}"));
         lock (_validTokens) _validTokens.Add("at-local");
         using TokenExchangeAuthenticator auth = Authenticator();
         using LwsClient client = Client(auth);
-        Assert.Equal("x", (await client.ReadAsync(U("http://localhost:8787/root/x"), cancellationToken: Ct)).GetText());
+        Assert.Equal("x", (await client.ReadAsync(U(local + "/root/x"), cancellationToken: Ct)).GetText());
         Assert.Contains("resource=" + Uri.EscapeDataString(local + "/"), _server.RequestsTo("POST", local + "/oauth/token").Single().Text, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task MetadataAndTokenRequestsNeverFollowRedirects()
+    public async Task TheChallengeOfTheDraftsBefore19OctoberIsFollowed()
+    {
+        _server.On("GET", Base + "/root/legacy", r => Authorized(r) ? Respond.Text(200, "legacy") : LegacyChallenge(realm: Root));
+        _server.On("GET", Base + "/public", () => Respond.Text(200, "p"));
+        using TokenExchangeAuthenticator auth = Authenticator();
+        using LwsClient client = Client(auth);
+        Assert.Equal("legacy", (await client.ReadAsync(U(Base + "/root/legacy"), cancellationToken: Ct)).GetText());
+        Assert.Equal([$"GET {Base}/root/legacy", $"GET {Metadata}", $"POST {TokenEndpoint}", $"GET {Base}/root/legacy"], Trace());
+        Assert.Equal(Root, Form(_server.RequestsTo("POST", TokenEndpoint).Single())["resource"]);
+        // The realm alone is the token's scope.
+        await client.ReadAsync(U(Base + "/root/b"), cancellationToken: Ct);
+        Assert.Equal("Bearer at-1", _server.Requests[^1].Header("Authorization"));
+        await client.ReadAsync(U(Base + "/public"), cancellationToken: Ct);
+        Assert.Null(_server.Requests[^1].Header("Authorization"));
+    }
+
+    [Fact]
+    public async Task TheRealmOfTheDraftsBefore19OctoberMustContainTheRequestUrl()
+    {
+        _server.On("GET", Base + "/root/other", _ => LegacyChallenge(realm: Base + "/other/"));
+        _server.On("GET", Base + "/storage_10/x", _ => LegacyChallenge(realm: Base + "/storage_1"));
+        using TokenExchangeAuthenticator auth = Authenticator();
+        using LwsClient client = Client(auth);
+        await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(Base + "/root/other"), cancellationToken: Ct));
+        await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(Base + "/storage_10/x"), cancellationToken: Ct));
+        Assert.Empty(_server.RequestsTo("GET", Metadata));
+        Assert.Equal(0, _exchanges);
+    }
+
+    [Fact]
+    public async Task DiscoveryMetadataAndTokenRequestsNeverFollowRedirects()
     {
         using TokenExchangeAuthenticator auth = Authenticator();
         using LwsClient client = Client(auth);
+
+        _server.On("GET", Prm + "/root/a", () => Respond.Status(307, ("Location", "https://attacker.example/prm")));
+        Assert.Equal(307, (await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(Base + "/root/a"), cancellationToken: Ct))).Status);
+        DescribeResource(Base + "/root/a");
+        _server.On("GET", Storage, () => Respond.Status(302, ("Location", "https://attacker.example/storage")));
+        Assert.Equal(302, (await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(Base + "/root/a"), cancellationToken: Ct))).Status);
+        Describe(Storage, Root);
 
         _server.On("GET", Metadata, () => Respond.Status(307, ("Location", "https://attacker.example/.well-known/lws-configuration")));
         AuthenticationException md = await Assert.ThrowsAsync<AuthenticationException>(() => client.ReadAsync(U(Base + "/root/a"), cancellationToken: Ct));
@@ -401,11 +644,11 @@ public sealed class AuthFlowTests : IDisposable
     }
 
     [Fact]
-    public async Task TokensNeverLeaveTheirRealmOnRedirects()
+    public async Task TokensNeverLeaveTheirScopeOnRedirects()
     {
-        _server.On("GET", Base + "/root/moved", r => Authorized(r) ? Respond.Status(302, ("Location", "https://cdn.example/blob")) : Challenge());
+        Protect("GET", Base + "/root/moved", () => Respond.Status(302, ("Location", "https://cdn.example/blob")));
         _server.On("GET", "https://cdn.example/blob", () => Respond.Text(200, "blob"));
-        _server.On("GET", Base + "/root/renamed", r => Authorized(r) ? Respond.Status(308, ("Location", "/root/a")) : Challenge());
+        Protect("GET", Base + "/root/renamed", () => Respond.Status(308, ("Location", "/root/a")));
         using TokenExchangeAuthenticator auth = Authenticator();
         using LwsClient client = Client(auth);
         Assert.Equal("blob", (await client.ReadAsync(U(Base + "/root/moved"), cancellationToken: Ct)).GetText());
@@ -454,7 +697,7 @@ public sealed class AuthFlowTests : IDisposable
         Assert.Equal(DidKey.KeyId(ed.Agent), ed.KeyId);
         var md = AuthorizationServerMetadata.Parse(JsonDocument.Parse(MetadataJson(As)).RootElement, U(Metadata));
         var other = AuthorizationServerMetadata.Parse(JsonDocument.Parse(MetadataJson("https://as2.example", "https://as2.example/t")).RootElement, U(Metadata));
-        var context = new CredentialContext(U(As), U(Realm), md);
+        var context = new CredentialContext(U(As), U(Storage), md);
         string t1 = await ed.GetSubjectTokenAsync(context, Ct);
         Assert.Equal(t1, await ed.GetSubjectTokenAsync(context, Ct));
         string t2 = await ed.GetSubjectTokenAsync(context with { Metadata = other }, Ct);

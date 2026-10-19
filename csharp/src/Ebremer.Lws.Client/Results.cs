@@ -61,3 +61,44 @@ public sealed class UpdateResult
     /// <inheritdoc/>
     public override string ToString() => $"Updated {Uris.ToText(Metadata.Url)} ({Status})";
 }
+
+/// <summary>
+/// The outcome of a move (<see cref="LwsClient.MoveAsync"/>): where the resource and its linkset are now. A storage
+/// that keeps identifiers answers <c>204</c> (or <c>200</c> with the linkset); one that does not answers <c>200</c>
+/// with the updated linkset, whose anchor is the resource's new URL, and <c>Content-Location</c>, the linkset's.
+/// </summary>
+public sealed class MoveResult
+{
+    internal MoveResult(Uri location, Uri linkset, bool identifierPreserved, ResourceMetadata metadata, Linkset? document)
+    {
+        Location = location;
+        Linkset = linkset;
+        IdentifierPreserved = identifierPreserved;
+        Metadata = metadata;
+        Document = document;
+    }
+
+    /// <summary>The status: <c>200</c> or <c>204</c> (or another 2xx).</summary>
+    public int Status => Metadata.Status;
+
+    /// <summary>The absolute URL of the resource after the move.</summary>
+    public Uri Location { get; }
+
+    /// <summary>The absolute URL of the resource's linkset after the move.</summary>
+    public Uri Linkset { get; }
+
+    /// <summary>Whether the resource kept its URL (<see cref="Location"/> is the URL it was moved from).</summary>
+    public bool IdentifierPreserved { get; }
+
+    /// <summary>The linkset's new entity tag, when the server returned one.</summary>
+    public string? ETag => Metadata.ETag;
+
+    /// <summary>The response metadata of the linkset patch.</summary>
+    public ResourceMetadata Metadata { get; }
+
+    /// <summary>The updated linkset of a <c>200</c>'s body, or null.</summary>
+    public Linkset? Document { get; }
+
+    /// <inheritdoc/>
+    public override string ToString() => $"Moved to {Uris.ToText(Location)} ({Status})";
+}

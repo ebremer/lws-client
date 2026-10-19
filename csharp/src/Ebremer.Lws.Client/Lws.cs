@@ -16,6 +16,9 @@ public static class Lws
     /// <summary>The LWS JSON-LD context.</summary>
     public const string Context = "https://www.w3.org/ns/lws/v1";
 
+    /// <summary>The LWS profile: the <c>profile</c> parameter of an RDF media type whose representation is the LWS one.</summary>
+    public const string Profile = "https://www.w3.org/ns/lws/v1";
+
     /// <summary>The W3C Controlled Identifiers JSON-LD context.</summary>
     public const string CidContext = "https://www.w3.org/ns/cid/v1";
 
@@ -27,6 +30,9 @@ public static class Lws
 
     /// <summary>The well-known path of LWS authorization server metadata.</summary>
     public const string WellKnownLwsConfiguration = "/.well-known/lws-configuration";
+
+    /// <summary>The well-known path of protected resource metadata (RFC 9728).</summary>
+    public const string WellKnownOAuthProtectedResource = "/.well-known/oauth-protected-resource";
 
     /// <summary>The service type of an OpenID provider in a controlled identifier document.</summary>
     public const string OpenIdProviderService = Namespace + "OpenIdProvider";
@@ -152,6 +158,13 @@ public static class Lws
         public const string TypeSearch = "TypeSearchService";
     }
 
+    /// <summary>Storage description capability types (<c>capability[].type</c>).</summary>
+    public static class CapabilityType
+    {
+        /// <summary>The storage moves resources between containers when their <c>up</c> link changes.</summary>
+        public const string MoveResource = "MoveResource";
+    }
+
     /// <summary>Notification subscription types.</summary>
     public static class SubscriptionType
     {
@@ -247,6 +260,9 @@ public static class Lws
 
         /// <summary>A resource was deleted.</summary>
         public const string Delete = "Delete";
+
+        /// <summary>A resource was moved to another container.</summary>
+        public const string Move = "Move";
     }
 
     /// <summary>

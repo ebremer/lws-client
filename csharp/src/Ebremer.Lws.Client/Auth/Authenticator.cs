@@ -8,7 +8,8 @@ namespace Ebremer.Lws.Auth;
 /// Pluggable request authentication for <see cref="LwsClient"/>. The client calls <see cref="AuthorizeAsync"/>
 /// before every request attempt (every redirect hop included, each for its own URL). When an attempt is answered
 /// <c>401 Unauthorized</c> it calls <see cref="HandleChallengeAsync"/>; returning true makes it send the request once
-/// more (authorizing it again first).
+/// more (authorizing it again first, then with the <c>Authorization</c> the handler set on the refused attempt, if it
+/// set one).
 /// </summary>
 /// <remarks>
 /// Provided implementations: <see cref="TokenExchangeAuthenticator"/> (the LWS OAuth 2.0 token exchange flow) and
@@ -23,7 +24,10 @@ public interface IAuthenticator
     ValueTask AuthorizeAsync(AuthRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>Reacts to a <c>401</c> response, e.g. by obtaining a token.</summary>
-    /// <param name="request">The request attempt that was refused, with the headers it carried.</param>
+    /// <param name="request">
+    /// The request attempt that was refused, with the headers it carried. An <c>Authorization</c> set on it here is
+    /// what the retry carries.
+    /// </param>
     /// <param name="response">The <c>401</c> response.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>Whether the request should be sent again.</returns>

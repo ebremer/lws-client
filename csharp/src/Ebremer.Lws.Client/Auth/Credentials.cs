@@ -8,10 +8,10 @@ using Ebremer.Lws.Internal;
 namespace Ebremer.Lws.Auth;
 
 /// <summary>Where a subject token will be presented.</summary>
-/// <param name="Issuer">The authorization server (<c>as_uri</c>).</param>
-/// <param name="Realm">The protection realm the access token is requested for.</param>
+/// <param name="Issuer">The authorization server (an entry of the protected resource metadata's <c>authorization_servers</c>).</param>
+/// <param name="Storage">The storage the access token is requested for (the <c>realm</c> of the challenge of the drafts before 19 October 2026).</param>
 /// <param name="Metadata">The authorization server metadata; its <c>Issuer</c> is the audience of self-signed tokens.</param>
-public sealed record CredentialContext(Uri Issuer, Uri Realm, AuthorizationServerMetadata Metadata);
+public sealed record CredentialContext(Uri Issuer, Uri Storage, AuthorizationServerMetadata Metadata);
 
 /// <summary>
 /// Supplies the subject token (an LWS authentication credential) presented to an authorization server in the OAuth

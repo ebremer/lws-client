@@ -34,10 +34,13 @@ public sealed record AuthChallenge
     /// <summary>The token68 value, when the challenge uses that form.</summary>
     public string? Token68 { get; }
 
-    /// <summary>LWS: the authorization server issuer (<c>as_uri</c>).</summary>
+    /// <summary>LWS (RFC 9728): the URL of the requested resource's protected resource metadata (<c>resource_metadata</c>).</summary>
+    public string? ResourceMetadata => GetParameter("resource_metadata");
+
+    /// <summary>The authorization server issuer (<c>as_uri</c>) of the LWS challenge of the drafts before 19 October 2026.</summary>
     public string? AsUri => GetParameter("as_uri");
 
-    /// <summary>LWS: the protection scope (<c>realm</c>).</summary>
+    /// <summary>The protection scope (<c>realm</c>); in the LWS challenge of the drafts before 19 October 2026, the storage.</summary>
     public string? Realm => GetParameter("realm");
 
     /// <summary>The <c>error</c> parameter (e.g. <c>invalid_token</c>).</summary>

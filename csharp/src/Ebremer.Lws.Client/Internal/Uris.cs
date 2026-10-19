@@ -9,6 +9,9 @@ internal static partial class Uris
     [GeneratedRegex("^[A-Za-z][A-Za-z0-9+.\\-]*:")]
     private static partial Regex SchemePrefix();
 
+    [GeneratedRegex("^([A-Za-z][A-Za-z0-9+.\\-]*)://([^/?#]*)")]
+    private static partial Regex SchemeAndAuthority();
+
     /// <summary>Whether a reference starts with a scheme (an absolute URI, not a path that .NET would read as a file URI).</summary>
     public static bool HasScheme(string reference) => SchemePrefix().IsMatch(reference);
 
@@ -46,6 +49,34 @@ internal static partial class Uris
         && string.Equals(a.Scheme, b.Scheme, StringComparison.OrdinalIgnoreCase)
         && string.Equals(a.IdnHost, b.IdnHost, StringComparison.OrdinalIgnoreCase)
         && a.Port == b.Port;
+
+    /// <summary>
+    /// Whether two URLs name the same resource as lws10-core's discovery checks compare them (RFC 9728 section 3.3):
+    /// identical once scheme and host are lower-cased and a default port is dropped, and nothing else normalised (no
+    /// trailing slash, case or percent-encoding leniency).
+    /// </summary>
+    public static bool SameResource(string a, string b) => IdentityForm(a) is { } x && x == IdentityForm(b);
+
+    private static string? IdentityForm(string url)
+    {
+        Match m = SchemeAndAuthority().Match(url);
+        if (!m.Success) return null;
+        string scheme = m.Groups[1].Value.ToLowerInvariant();
+        string authority = m.Groups[2].Value;
+        int at = authority.LastIndexOf('@');
+        string userInfo = authority[..(at + 1)];
+        string host = authority[(at + 1)..];
+        string port = "";
+        int colon = host.LastIndexOf(':');
+        if (colon > host.LastIndexOf(']'))
+        {
+            port = host[(colon + 1)..];
+            host = host[..colon];
+        }
+        if (port.Length == 0 || (scheme, port) is ("http", "80") or ("https", "443")) port = "";
+        else port = ":" + port;
+        return scheme + "://" + userInfo + host.ToLowerInvariant() + port + url[m.Length..];
+    }
 
     /// <summary>
     /// Whether <paramref name="uri"/> is logically contained in <paramref name="realm"/>: same origin, and the path

@@ -51,6 +51,12 @@ internal sealed class Adapter : IDisposable
                 Uri linksetUrl = Args.RequiredUrl(a, "linksetUrl");
                 return Results.Update(await _client.PatchLinksetAsync(linksetUrl, Args.Patch(Args.Get(a, "patch")), IfMatch(a)));
             },
+            ["move"] = async a =>
+            {
+                Uri url = Args.RequiredUrl(a, "url");
+                Uri destination = Args.RequiredUrl(a, "destination");
+                return Results.Moved(await _client.MoveAsync(url, destination, new MoveOptions { IfMatch = Args.OptionalString(a, "ifMatch") }));
+            },
             ["subscribe"] = SubscribeAsync,
             ["list_subscriptions"] = a => ItemsAsync(_client.ListSubscriptionsAsync(Args.RequiredUrl(a, "serviceUrl")), Args.Limit(a)),
             ["get_subscription"] = async a => Results.Subscription(await _client.GetSubscriptionAsync(Args.RequiredUrl(a, "url"))),

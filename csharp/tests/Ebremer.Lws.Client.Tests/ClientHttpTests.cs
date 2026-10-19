@@ -55,6 +55,7 @@ public sealed class ClientHttpTests : IDisposable
         StorageDescription s = await _client.DiscoverStorageAsync(U(Root), cancellationToken: Ct);
         Assert.Equal(Base + "/", s.Id.AbsoluteUri);
         Assert.Equal(Root, s.GetStorageRoot().AbsoluteUri);
+        Assert.True(s.MoveCapability is { MovesDataResources: true, MovesContainers: true, PreservesIdentifier: true });
         Recorded get = _server.RequestsTo("GET", Base + "/").Single();
         Assert.Equal("application/lws+cid, application/ld+json;q=0.9, application/json;q=0.8", get.Header("Accept"));
         Assert.Equal(LwsClient.DefaultUserAgent, get.Header("User-Agent"));
@@ -64,7 +65,8 @@ public sealed class ClientHttpTests : IDisposable
     public async Task DiscoverStorageFallsBackToGetAndAcceptsAnAnonymous401()
     {
         _server.On("HEAD", Root, () => Respond.Status(405, ("Allow", "GET")));
-        _server.On("GET", Root, () => Respond.Status(401, ("WWW-Authenticate", "Bearer realm=\"x\""), ("Link", "</>; rel=\"https://www.w3.org/ns/lws#storage\"")));
+        _server.On("GET", Root, () => Respond.Status(401, ("WWW-Authenticate", $"Bearer resource_metadata=\"{Base}/.well-known/oauth-protected-resource/root/\""),
+            ("Link", "</>; rel=\"https://www.w3.org/ns/lws#storage\"")));
         _server.On("GET", Base + "/", () => Respond.Json(200, StorageDescriptionJson, "application/ld+json"));
         StorageDescription s = await _client.DiscoverStorageAsync(U(Root), cancellationToken: Ct);
         Assert.Equal(Base + "/", s.Id.AbsoluteUri);
@@ -394,6 +396,59 @@ public sealed class ClientHttpTests : IDisposable
         Assert.Contains("/linkset/0/https:~1~1example.org~1rel~1reviewer/-", patch.Text, StringComparison.Ordinal);
     }
 
+    // ------------------------------------------------------------------------------------------------ moving
+
+    [Fact]
+    public async Task MovePatchesTheUpLinkConditionally()
+    {
+        string url = Root + "notes/a.txt";
+        _server.On("HEAD", url, () => Respond.Status(200, ("Link", "<a.txt.meta>; rel=\"linkset\"")));
+        _server.On("GET", url + ".meta", () => Respond.Json(200,
+            $"{{\"linkset\":[{{\"anchor\":\"{url}\",\"up\":[{{\"href\":\"/root/notes/\"}}]}}]}}", "application/linkset+json", ("ETag", "\"ls-1\"")));
+        _server.On("PATCH", url + ".meta", () => Respond.Json(200,
+            "{\"linkset\":[{\"anchor\":\"/root/archive/a.txt\",\"up\":[{\"href\":\"/root/archive/\"}]}]}", "application/linkset+json",
+            ("Content-Location", "/root/archive/a.txt.meta"), ("ETag", "\"ls-2\"")));
+
+        MoveResult moved = await _client.MoveAsync(U(url), U(Root + "archive/"), cancellationToken: Ct);
+        Assert.Equal(["HEAD", "GET", "PATCH"], _server.Requests.Select(r => r.Method));
+        Recorded patch = _server.RequestsTo("PATCH", url + ".meta").Single();
+        Assert.Equal("application/json-patch+json", patch.Header("Content-Type"));
+        Assert.Equal("\"ls-1\"", patch.Header("If-Match"));
+        Assert.Equal(
+            $"[{{\"op\":\"test\",\"path\":\"/linkset/0/up/0/href\",\"value\":\"/root/notes/\"}},{{\"op\":\"replace\",\"path\":\"/linkset/0/up/0/href\",\"value\":\"{Root}archive/\"}}]",
+            patch.Text);
+        Assert.Equal(200, moved.Status);
+        Assert.Equal(Root + "archive/a.txt", moved.Location.AbsoluteUri);
+        Assert.Equal(Root + "archive/a.txt.meta", moved.Linkset.AbsoluteUri);
+        Assert.False(moved.IdentifierPreserved);
+        Assert.Equal("\"ls-2\"", moved.ETag);
+        Assert.Equal(["/root/archive/"], moved.Document!.GetTargets("up").Select(t => t.Href));
+
+        // IfMatch overrides the linkset's entity tag; a 204 keeps the identifier.
+        _server.On("PATCH", url + ".meta", () => Respond.Status(204, ("ETag", "\"ls-3\"")));
+        moved = await _client.MoveAsync(U(url), U(Root + "archive/"), new MoveOptions { IfMatch = "\"mine\"" }, Ct);
+        Assert.Equal("\"mine\"", _server.RequestsTo("PATCH", url + ".meta").Last().Header("If-Match"));
+        Assert.Equal(url, moved.Location.AbsoluteUri);
+        Assert.Equal(url + ".meta", moved.Linkset.AbsoluteUri);
+        Assert.True(moved.IdentifierPreserved);
+        Assert.Null(moved.Document);
+
+        // The storage refuses: a destination inside the resource, or no moves at all.
+        _server.On("PATCH", url + ".meta", () => Respond.Status(409));
+        await Assert.ThrowsAsync<ConflictException>(() => _client.MoveAsync(U(url), U(Root + "archive/"), cancellationToken: Ct));
+    }
+
+    [Fact]
+    public async Task MoveSendsNothingWithoutAnUpLink()
+    {
+        string url = Root + "orphan";
+        _server.On("HEAD", url, () => Respond.Status(200, ("Link", "<orphan.meta>; rel=\"linkset\"")));
+        _server.On("GET", url + ".meta", () => Respond.Json(200, $"{{\"linkset\":[{{\"anchor\":\"{url}\"}}]}}", "application/linkset+json"));
+        await Assert.ThrowsAsync<ProtocolException>(() => _client.MoveAsync(U(url), U(Root + "archive/"), cancellationToken: Ct));
+        Assert.Empty(_server.RequestsTo("PATCH", url + ".meta"));
+        await Assert.ThrowsAsync<ArgumentException>(() => _client.MoveAsync(U(url), new Uri("/relative", UriKind.Relative), cancellationToken: Ct));
+    }
+
     // ------------------------------------------------------------------------------------------------ notifications
 
     [Fact]
@@ -554,9 +609,9 @@ public sealed class ClientHttpTests : IDisposable
     [Fact]
     public async Task UnauthorizedCarriesTheChallenges()
     {
-        _server.On("GET", Root, () => Respond.Status(401, ("WWW-Authenticate", "Bearer as_uri=\"https://as.example\", realm=\"https://storage.example/\"")));
+        _server.On("GET", Root, () => Respond.Status(401, ("WWW-Authenticate", $"Bearer resource_metadata=\"{Base}/.well-known/oauth-protected-resource/root/\"")));
         UnauthorizedException e = await Assert.ThrowsAsync<UnauthorizedException>(() => _client.ReadAsync(U(Root), cancellationToken: Ct));
-        Assert.Equal("https://as.example", e.Challenges.Single().AsUri);
+        Assert.Equal(Base + "/.well-known/oauth-protected-resource/root/", e.Challenges.Single().ResourceMetadata);
         _server.On("QUERY", Base + "/s", () => Respond.Status(415, ("Accept-Query", "application/lws-query+json")));
         UnsupportedMediaTypeException u = await Assert.ThrowsAsync<UnsupportedMediaTypeException>(() => _client.SearchTypesAsync(U(Base + "/s"), TypeQuery.Empty, cancellationToken: Ct));
         Assert.Equal(["application/lws-query+json"], u.AcceptQuery);

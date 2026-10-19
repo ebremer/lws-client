@@ -105,10 +105,28 @@ internal static partial class Results
         return o;
     }
 
+    /// <summary>Moved: the result of a move.</summary>
+    public static JsonObject Moved(MoveResult m)
+    {
+        var o = new JsonObject
+        {
+            ["status"] = m.Status,
+            ["location"] = Text(m.Location),
+            ["linkset"] = Text(m.Linkset),
+            ["identifierPreserved"] = m.IdentifierPreserved,
+        };
+        Put(o, "etag", m.ETag);
+        o["metadata"] = Metadata(m.Metadata);
+        return o;
+    }
+
     /// <summary>Created: the result of a create.</summary>
     public static JsonObject Created(CreateResult c) => new() { ["location"] = Text(c.Location), ["metadata"] = Metadata(c.Metadata) };
 
-    /// <summary>Storage: a storage description; <c>storageRoot</c> is omitted when the library's <c>GetStorageRoot()</c> fails.</summary>
+    /// <summary>
+    /// Storage: a storage description; <c>storageRoot</c> is omitted when the library's <c>GetStorageRoot()</c> fails, and
+    /// <c>moveCapability</c> when its <c>MoveCapability</c> is null.
+    /// </summary>
     public static JsonObject Storage(StorageDescription s)
     {
         var o = new JsonObject { ["id"] = Text(s.Id), ["types"] = Strings(s.Types) };
@@ -137,6 +155,12 @@ internal static partial class Results
             Put(method, "controller", vm.Controller);
             return (JsonNode)method;
         })]);
+        if (s.MoveCapability is { } move)
+        {
+            var capability = new JsonObject { ["appliesTo"] = Strings(move.AppliesTo) };
+            if (move.PreservesIdentifier is { } preserves) capability["preservesIdentifier"] = preserves;
+            o["moveCapability"] = capability;
+        }
         o["raw"] = Raw(s.Raw);
         return o;
     }

@@ -38,6 +38,10 @@ public sealed class InteropTests
         Assert.NotNull(storage.AccessGrantService);
         Assert.NotNull(storage.TypeIndexService);
         Assert.NotNull(storage.TypeSearchService);
+        MoveCapability move = Assert.IsType<MoveCapability>(storage.MoveCapability);
+        Assert.True(move.MovesDataResources);
+        Assert.True(move.MovesContainers);
+        Assert.False(move.PreservesIdentifier);
 
         // 2. Create a container.
         string slug = $"interop-csharp-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
@@ -126,7 +130,19 @@ public sealed class InteropTests
         await client.CancelAccessRequestAsync(request, cancellationToken: Ct);
         await Assert.ThrowsAsync<NotFoundException>(() => client.GetAccessRequestAsync(request, cancellationToken: Ct));
 
-        // 13. Delete.
+        // 13. Move: a new identifier in the destination; a container into its own descendant is a conflict.
+        Uri d = (await client.CreateContainerAsync(c, new CreateOptions { Slug = "archive" }, Ct)).Location;
+        Uri m = (await client.CreateTextAsync(c, "Move me", options: new CreateOptions { Slug = "move-me.txt" }, cancellationToken: Ct)).Location;
+        MoveResult moved = await client.MoveAsync(m, d, cancellationToken: Ct);
+        Assert.Equal(new Uri(d, "move-me.txt"), moved.Location);
+        Assert.False(moved.IdentifierPreserved);
+        Assert.Equal(new Uri(moved.Location.AbsoluteUri + ".meta"), moved.Linkset);
+        Assert.Equal("Move me", (await client.ReadAsync(moved.Location, cancellationToken: Ct)).GetText());
+        Assert.Contains(moved.Location, await client.ListContainerAsync(d, cancellationToken: Ct).Select(i => i.Id).ToListAsync(Ct));
+        Assert.DoesNotContain(m, await client.ListContainerAsync(c, cancellationToken: Ct).Select(i => i.Id).ToListAsync(Ct));
+        await Assert.ThrowsAsync<ConflictException>(() => client.MoveAsync(c, d, cancellationToken: Ct));
+
+        // 14. Delete.
         await Assert.ThrowsAsync<ConflictException>(() => client.DeleteAsync(c, cancellationToken: Ct));
         await client.DeleteAsync(c, new DeleteOptions { Recursive = true }, Ct);
         await Assert.ThrowsAsync<NotFoundException>(() => client.ReadAsync(h, cancellationToken: Ct));

@@ -59,6 +59,12 @@ public sealed class StorageDescription
     /// <summary>The type search service, if advertised.</summary>
     public Service? TypeSearchService => GetService(Lws.ServiceType.TypeSearch);
 
+    /// <summary>
+    /// The <c>MoveResource</c> capability, or null when the storage describes none: then the <c>up</c> link is not
+    /// modifiable, and resources cannot be moved.
+    /// </summary>
+    public MoveCapability? MoveCapability => GetCapability(Lws.CapabilityType.MoveResource) is { } c ? new MoveCapability(c.Raw) : null;
+
     /// <summary>The storage root container URL.</summary>
     /// <returns>The storage root.</returns>
     /// <exception cref="ProtocolException">The description has no <c>StorageRoot</c> service.</exception>
@@ -256,6 +262,35 @@ public sealed class Capability
     /// <param name="name">The member name.</param>
     /// <returns>The value.</returns>
     public JsonElement? GetProperty(string name) => LwsJson.Get(Raw, name);
+}
+
+/// <summary>
+/// A storage's <c>MoveResource</c> capability (lws10-core "Storage Description Capabilities"): which resources it moves
+/// between containers when their <c>up</c> link changes, and whether they keep their identifiers.
+/// </summary>
+public sealed class MoveCapability
+{
+    internal MoveCapability(JsonElement raw)
+    {
+        Raw = raw;
+        AppliesTo = LwsJson.Get(raw, "appliesTo") is { } appliesTo ? LwsJson.StringOrArray(appliesTo) : ["DataResource"];
+        PreservesIdentifier = LwsJson.Get(raw, "preservesIdentifier") is { ValueKind: JsonValueKind.True or JsonValueKind.False } p ? p.GetBoolean() : null;
+    }
+
+    /// <summary>The <c>appliesTo</c> values as received; <c>["DataResource"]</c> when the capability does not say.</summary>
+    public IReadOnlyList<string> AppliesTo { get; }
+
+    /// <summary>Whether a moved resource keeps its identifier; null when the capability does not say (then do not assume it).</summary>
+    public bool? PreservesIdentifier { get; }
+
+    /// <summary>The JSON object.</summary>
+    public JsonElement Raw { get; }
+
+    /// <summary>Whether data resources can be moved.</summary>
+    public bool MovesDataResources => Lws.HasType(AppliesTo, Lws.Types.DataResource);
+
+    /// <summary>Whether containers (with everything in them) can be moved.</summary>
+    public bool MovesContainers => Lws.HasType(AppliesTo, Lws.Types.Container);
 }
 
 /// <summary>A verification method of a controlled identifier document.</summary>

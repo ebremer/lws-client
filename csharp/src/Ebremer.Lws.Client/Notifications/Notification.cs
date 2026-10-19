@@ -103,7 +103,7 @@ public sealed class Subscription
 
 /// <summary>
 /// An LWS notification envelope: the storage it concerns and one or more Activity Streams activities
-/// (<c>Create</c>, <c>Update</c>, <c>Delete</c>, …). A single <c>activity</c> object is exposed as a one-element list.
+/// (<c>Create</c>, <c>Update</c>, <c>Delete</c>, <c>Move</c>, …). A single <c>activity</c> object is exposed as a one-element list.
 /// </summary>
 public sealed class Notification
 {
@@ -192,10 +192,10 @@ public sealed class Activity
     /// <summary>The agent that performed the change.</summary>
     public Uri? Actor { get; }
 
-    /// <summary>The container a resource was added to (<c>Create</c>).</summary>
+    /// <summary>The container a resource was added to (<c>Create</c>) or moved into (<c>Move</c>).</summary>
     public Uri? Target { get; }
 
-    /// <summary>The container a resource was removed from (<c>Delete</c>).</summary>
+    /// <summary>The container a resource was removed from (<c>Delete</c>) or moved out of (<c>Move</c>).</summary>
     public Uri? Origin { get; }
 
     /// <summary>When the activity occurred, if parseable.</summary>
@@ -215,6 +215,9 @@ public sealed class Activity
 
     /// <summary>Whether this is a <c>Delete</c> activity.</summary>
     public bool IsDelete => HasType(Lws.Activities.Delete);
+
+    /// <summary>Whether this is a <c>Move</c> activity: <see cref="Object"/> is the resource as it is after the move.</summary>
+    public bool IsMove => HasType(Lws.Activities.Move);
 
     /// <summary>Whether the activity has <paramref name="type"/> (<c>T</c>, <c>as:T</c> and the full IRI match).</summary>
     /// <param name="type">An activity type.</param>

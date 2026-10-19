@@ -93,11 +93,42 @@ public sealed class ModelFixtureTests
         Assert.Equal([Lws.AccessProfile], s.AccessGrantService.ConformsTo);
         Assert.NotNull(s.GetCapability("https://feature.example/PatchSupport")?.GetProperty("format"));
         Assert.Single(s.GetServices(Lws.ServiceType.StorageRoot));
+        AssertMoveCapability(e.GetProperty("moveCapability"), s.MoveCapability);
 
         JsonElement invalid = f.GetProperty("invalid");
         Assert.Throws<ProtocolException>(() => StorageDescription.Parse(invalid.GetProperty("notStorage"), new Uri(f.Str("url"))));
         StorageDescription noRoot = StorageDescription.Parse(invalid.GetProperty("noRoot"), new Uri(f.Str("url")));
         Assert.Throws<ProtocolException>(() => noRoot.GetStorageRoot());
+    }
+
+    public static TheoryData<string> MoveCapabilityCases() =>
+        [.. Fixtures.Load("responses/storage-description.json").Arr("moveCapabilities").Select(c => c.Str("name"))];
+
+    [Theory]
+    [MemberData(nameof(MoveCapabilityCases))]
+    public void MoveCapabilities(string name)
+    {
+        JsonElement c = Fixtures.Load("responses/storage-description.json").Arr("moveCapabilities").Single(x => x.Str("name") == name);
+        var document = new JsonObject { ["id"] = "https://storage.example/", ["type"] = "Storage" };
+        if (c.GetProperty("capability").ValueKind != JsonValueKind.Null) document["capability"] = JsonNode.Parse(c.GetProperty("capability").GetRawText());
+        StorageDescription s = StorageDescription.Parse(document.ToElement(), new Uri("https://storage.example/"));
+        AssertMoveCapability(c.GetProperty("expected"), s.MoveCapability);
+    }
+
+    private static void AssertMoveCapability(JsonElement expected, MoveCapability? move)
+    {
+        if (expected.ValueKind == JsonValueKind.Null)
+        {
+            Assert.Null(move);
+            return;
+        }
+        Assert.NotNull(move);
+        Assert.Equal(expected.Strings("appliesTo"), move.AppliesTo);
+        JsonElement preserves = expected.GetProperty("preservesIdentifier");
+        Assert.Equal(preserves.ValueKind == JsonValueKind.Null ? null : preserves.GetBoolean(), move.PreservesIdentifier);
+        Assert.Equal(expected.GetProperty("movesDataResources").GetBoolean(), move.MovesDataResources);
+        Assert.Equal(expected.GetProperty("movesContainers").GetBoolean(), move.MovesContainers);
+        Assert.Equal(JsonValueKind.Object, move.Raw.ValueKind);
     }
 
     [Fact]
@@ -172,6 +203,10 @@ public sealed class ModelFixtureTests
         AssertNotification(f.GetProperty("singleExpected"), single);
         Notification batch = Notification.Parse(Encoding.UTF8.GetBytes(f.GetProperty("batch").GetRawText()));
         AssertNotification(f.GetProperty("batchExpected"), batch);
+        Notification move = Notification.Parse(f.GetProperty("move"));
+        AssertNotification(f.GetProperty("moveExpected"), move);
+        Assert.False(move.Activities[0].IsUpdate);
+        Assert.False(single.Activities[0].IsMove);
         Assert.Throws<ProtocolException>(() => Notification.Parse(f.GetProperty("invalid")));
         Assert.Throws<ProtocolException>(() => Notification.Parse("{\"type\":\"Notification\",\"storage\":\"https://s.example/\"}"));
         Assert.Throws<ProtocolException>(() => Notification.Parse("not json"));
@@ -198,9 +233,10 @@ public sealed class ModelFixtureTests
                 Assert.Equal(published, a.PublishedRaw);
                 Assert.Equal(DateTimeOffset.Parse(published, System.Globalization.CultureInfo.InvariantCulture), a.Published);
             }
-            if (x.TryGetProperty("isCreate", out _)) Assert.True(a.IsCreate);
-            if (x.TryGetProperty("isUpdate", out _)) Assert.True(a.IsUpdate);
-            if (x.TryGetProperty("isDelete", out _)) Assert.True(a.IsDelete);
+            if (x.TryGetProperty("isCreate", out JsonElement isCreate)) Assert.Equal(isCreate.GetBoolean(), a.IsCreate);
+            if (x.TryGetProperty("isUpdate", out JsonElement isUpdate)) Assert.Equal(isUpdate.GetBoolean(), a.IsUpdate);
+            if (x.TryGetProperty("isDelete", out JsonElement isDelete)) Assert.Equal(isDelete.GetBoolean(), a.IsDelete);
+            if (x.TryGetProperty("isMove", out JsonElement isMove)) Assert.Equal(isMove.GetBoolean(), a.IsMove);
             Assert.True(a.Object.IsDataResource);
         }
     }
@@ -355,18 +391,87 @@ public sealed class ModelFixtureTests
     }
 
     [Fact]
+    public void ProtectedResourceMetadataFixture()
+    {
+        JsonElement f = Fixtures.Load("responses/oauth.json");
+        JsonElement valid = f.GetProperty("protectedResourceMetadata");
+        ProtectedResourceMetadata prm = ProtectedResourceMetadata.Parse(valid.GetProperty("body"));
+        JsonElement e = valid.GetProperty("expected");
+        Assert.Equal(e.Str("resource"), prm.Resource);
+        Assert.Equal(e.Strings("authorizationServers"), prm.AuthorizationServers);
+        Assert.Equal("Photos", prm.Raw.Str("resource_name"));
+
+        foreach (JsonProperty invalid in f.GetProperty("protectedResourceMetadataInvalid").EnumerateObject().Where(p => p.Name != "description"))
+        {
+            Assert.Throws<ProtocolException>(() => ProtectedResourceMetadata.Parse(invalid.Value));
+        }
+
+        foreach (JsonElement c in f.Arr("originChecks"))
+        {
+            Assert.True(c.GetProperty("sameOrigin").GetBoolean() == Uris.SameOrigin(new Uri(c.Str("a")), new Uri(c.Str("b"))), $"{c.Str("a")} {c.Str("b")}");
+        }
+        foreach (JsonElement c in f.Arr("resourceChecks"))
+        {
+            Assert.True(c.GetProperty("identical").GetBoolean() == Uris.SameResource(c.Str("requested"), c.Str("resource")),
+                $"{c.Str("requested")} {c.Str("resource")}");
+        }
+    }
+
+    public static TheoryData<string> MovePatchCases() => [.. Fixtures.Load("move.json").Arr("patches").Select(c => c.Str("name"))];
+
+    [Theory]
+    [MemberData(nameof(MovePatchCases))]
+    public void MovePatches(string name)
+    {
+        JsonElement c = Fixtures.Load("move.json").Arr("patches").Single(x => x.Str("name") == name);
+        Uri resource = new(c.Str("resource"));
+        Uri linksetUrl = new(c.Str("linksetUrl"));
+        Linkset linkset = Linkset.Parse(c.GetProperty("linkset"));
+        Uri destination = new(c.Str("destination"));
+        if (c.OptStr("error") is { } error)
+        {
+            Assert.Equal("ProtocolError", error);
+            Assert.Throws<ProtocolException>(() => LwsClient.MovePatch(resource, linksetUrl, linkset, destination));
+            return;
+        }
+        JsonPatch patch = LwsClient.MovePatch(resource, linksetUrl, linkset, destination);
+        Assert.True(Fixtures.JsonEquals(c.GetProperty("expected"), patch.ToJson().ToElement()), patch.ToString());
+    }
+
+    public static TheoryData<string> MoveResponseCases() => [.. Fixtures.Load("move.json").Arr("responses").Select(c => c.Str("name"))];
+
+    [Theory]
+    [MemberData(nameof(MoveResponseCases))]
+    public void MoveResponses(string name)
+    {
+        JsonElement c = Fixtures.Load("move.json").Arr("responses").Single(x => x.Str("name") == name);
+        var metadata = new ResourceMetadata(new Uri(c.Str("linksetUrl")), c.GetProperty("status").GetInt32(), HeadersOf(c.GetProperty("headers")));
+        byte[] body = c.GetProperty("body").ValueKind == JsonValueKind.Null ? [] : Encoding.UTF8.GetBytes(c.GetProperty("body").GetRawText());
+        MoveResult r = LwsClient.ToMoveResult(new Uri(c.Str("resource")), metadata, body);
+        JsonElement e = c.GetProperty("expected");
+        Assert.Equal(e.Str("location"), r.Location.AbsoluteUri);
+        Assert.Equal(e.Str("linkset"), r.Linkset.AbsoluteUri);
+        Assert.Equal(e.GetProperty("identifierPreserved").GetBoolean(), r.IdentifierPreserved);
+        Assert.Equal(e.OptStr("etag"), r.ETag);
+        Assert.Equal(c.GetProperty("status").GetInt32(), r.Status);
+        Assert.Equal(body.Length > 0, r.Document is not null);
+    }
+
+    [Fact]
     public void EveryFixtureFileIsCovered()
     {
         string[] covered =
         [
-            "did-key.json", "json-patch.json", "jwt.json", "link-headers.json", "structured-fields.json", "type-queries.json",
-            "www-authenticate.json", "keys/ed25519.json", "keys/p256.json", "keys/p256-unlisted.json",
+            "did-key.json", "discovery.json", "json-patch.json", "jwt.json", "link-headers.json", "move.json", "structured-fields.json",
+            "type-queries.json", "www-authenticate.json", "keys/ed25519.json", "keys/p256.json", "keys/p256-unlisted.json",
             "responses/access.json", "responses/container-page.json", "responses/linkset.json", "responses/notification.json",
             "responses/oauth.json", "responses/problem-details.json", "responses/storage-description.json", "responses/subscription.json",
             "responses/type-index.json", "webhook/index.json", "webhook/storage-description.json",
             .. Fixtures.Load("webhook/index.json").Strings("vectors").Select(v => "webhook/" + v),
         ];
-        Assert.Equal(covered.Order(StringComparer.Ordinal), Fixtures.All());
+        // Applying JSON Patch is optional for clients (servers need it), and this client does not.
+        string[] optional = ["json-patch-apply.json"];
+        Assert.Equal(covered.Order(StringComparer.Ordinal), Fixtures.All().Except(optional));
         Assert.Equal(13, Fixtures.Load("webhook/index.json").Strings("vectors").Count);
     }
 }

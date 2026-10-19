@@ -14,7 +14,7 @@ namespace Ebremer.Lws;
 
 public sealed partial class LwsClient
 {
-    private const string AcceptDescription = Lws.MediaType.LwsCid + ", " + Lws.MediaType.LdJson + ";q=0.9, " + Lws.MediaType.Json + ";q=0.8";
+    internal const string AcceptDescription = Lws.MediaType.LwsCid + ", " + Lws.MediaType.LdJson + ";q=0.9, " + Lws.MediaType.Json + ";q=0.8";
     private const string AcceptLinkset = Lws.MediaType.LinksetJson + ", " + Lws.MediaType.Json + ";q=0.5";
 
     // ============================================================================================
@@ -374,6 +374,34 @@ public sealed partial class LwsClient
         PatchAsync(linksetUrl, patch, options, cancellationToken);
 
     // ============================================================================================
+    // Moving
+    // ============================================================================================
+
+    /// <summary>
+    /// Moves a resource (a container with everything in it) into another container: reads the resource's linkset, then
+    /// patches its <c>up</c> link to <paramref name="destinationUrl"/> (JSON Patch <c>test</c> and <c>replace</c>),
+    /// conditional on the linkset's entity tag. Whether the storage moves resources is
+    /// <see cref="StorageDescription.MoveCapability"/>; one that does not refuses the patch, as it refuses a destination
+    /// that is not a container or lies inside the resource (<see cref="ConflictException"/>).
+    /// </summary>
+    /// <param name="resourceUrl">The resource.</param>
+    /// <param name="destinationUrl">The container to move it into.</param>
+    /// <param name="options">An <c>IfMatch</c> instead of the linkset's entity tag, and request options.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>Where the resource is now: a storage that does not keep identifiers gives it a new URL.</returns>
+    /// <exception cref="ProtocolException">The linkset shows no <c>up</c> link of the resource (nothing is sent).</exception>
+    public async Task<MoveResult> MoveAsync(Uri resourceUrl, Uri destinationUrl, MoveOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        Uri resource = Target(resourceUrl, nameof(resourceUrl));
+        Uri destination = Target(destinationUrl, nameof(destinationUrl));
+        LinksetDocument linkset = await ReadLinksetAsync(resource, options, cancellationToken).ConfigureAwait(false);
+        JsonPatch patch = MovePatch(resource, linkset.Url, linkset.Linkset, destination);
+        var update = new UpdateOptions { IfMatch = options?.IfMatch ?? linkset.ETag, Headers = options?.Headers, Timeout = options?.Timeout };
+        UpdateResult r = await PatchAsync(linkset.Url, patch, update, cancellationToken).ConfigureAwait(false);
+        return ToMoveResult(resource, r.Metadata, r.Body.Span);
+    }
+
+    // ============================================================================================
     // Notifications
     // ============================================================================================
 
@@ -666,6 +694,67 @@ public sealed partial class LwsClient
             ?? throw new ProtocolException($"The create response (HTTP {r.Status}) from {Uris.ToText(r.Uri)} has no Location header");
         Uri resolved = Uris.Resolve(r.Uri, location) ?? throw new ProtocolException($"Invalid Location header: {location}");
         return new CreateResult(resolved, Metadata(r), r.Body);
+    }
+
+    /// <summary>
+    /// The patch of a move: <c>test</c> that the resource's <c>up</c> link still holds the target as read, and
+    /// <c>replace</c> it with the destination. The resource's link context is the first whose anchor resolves to it, or
+    /// the only one when it has no anchor; its <c>up</c> link is the first <c>up</c> target with a string <c>href</c>.
+    /// </summary>
+    internal static JsonPatch MovePatch(Uri resourceUrl, Uri linksetUrl, Linkset linkset, Uri destinationUrl)
+    {
+        IReadOnlyList<LinkContext> contexts = linkset.Contexts;
+        int i = -1;
+        for (int k = 0; k < contexts.Count && i < 0; k++)
+        {
+            if (contexts[k].Anchor is { } anchor && Uris.Resolve(linksetUrl, anchor) is { } a && a.AbsoluteUri == resourceUrl.AbsoluteUri) i = k;
+        }
+        if (i < 0 && contexts is [{ Anchor: null }]) i = 0;
+        if (i < 0) throw new ProtocolException($"The linkset {Uris.ToText(linksetUrl)} has no link context for {Uris.ToText(resourceUrl)}");
+        (int j, string href) = UpLink(contexts[i])
+            ?? throw new ProtocolException($"The linkset {Uris.ToText(linksetUrl)} has no up link for {Uris.ToText(resourceUrl)}");
+        string path = JsonPointer.Of("linkset", i.ToString(CultureInfo.InvariantCulture), Lws.Rel.Up, j.ToString(CultureInfo.InvariantCulture), "href");
+        return new JsonPatch().Test(path, href).Replace(path, Uris.ToText(destinationUrl));
+    }
+
+    /// <summary>The position and target of a link context's first <c>up</c> target with a string <c>href</c>.</summary>
+    private static (int Index, string Href)? UpLink(LinkContext context)
+    {
+        if (context.GetTargets(Lws.Rel.Up) is [var first, ..]) return (0, first.Href);
+        // A relation with a target that is not a link target object is kept as it was, among the extra members.
+        if (context.Extra.TryGetValue(Lws.Rel.Up, out JsonElement raw) && raw.ValueKind == JsonValueKind.Array)
+        {
+            int j = 0;
+            foreach (JsonElement t in raw.EnumerateArray())
+            {
+                if (LwsJson.GetString(t, "href") is { } href) return (j, href);
+                j++;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// What the answer to a move's patch says: a <c>200</c> with the linkset gives the resource's URL as the anchor of
+    /// its first context with an <c>up</c> link (resolved against <c>Content-Location</c>, else the linkset URL), and
+    /// <c>Content-Location</c> the linkset's; otherwise the resource kept its URL.
+    /// </summary>
+    internal static MoveResult ToMoveResult(Uri resourceUrl, ResourceMetadata metadata, ReadOnlySpan<byte> body)
+    {
+        Uri linksetUrl = metadata.Url;
+        Uri? contentLocation = metadata.GetHeader("content-location") is { } cl ? Uris.Resolve(linksetUrl, cl) : null;
+        Uri location = resourceUrl;
+        Linkset? document = null;
+        if (metadata.Status == 200 && !body.Trim(" \t\r\n"u8).IsEmpty && (metadata.ContentType is null || HeaderLists.IsJson(metadata.ContentType)))
+        {
+            document = Linkset.Parse(LwsJson.Parse(body, "Linkset"));
+            if (document.Contexts.FirstOrDefault(c => UpLink(c) is not null) is { Anchor: { } anchor })
+            {
+                location = Uris.Resolve(contentLocation ?? linksetUrl, anchor)
+                    ?? throw new ProtocolException($"The anchor of the moved resource is not a URL: {anchor}");
+            }
+        }
+        return new MoveResult(location, contentLocation ?? linksetUrl, location.AbsoluteUri == resourceUrl.AbsoluteUri, metadata, document);
     }
 
     private async Task<Uri> PostForLocationAsync(Uri serviceUrl, System.Text.Json.Nodes.JsonObject document, RequestOptions? options,

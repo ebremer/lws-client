@@ -80,6 +80,49 @@ public sealed class AuthorizationServerMetadata
     }
 }
 
+/// <summary>
+/// Protected resource metadata (RFC 9728), named by the <c>resource_metadata</c> parameter of a storage's <c>401</c>:
+/// the resource it describes and the authorization servers that issue tokens for it.
+/// </summary>
+public sealed class ProtectedResourceMetadata
+{
+    private ProtectedResourceMetadata(string resource, IReadOnlyList<string> authorizationServers, JsonElement raw)
+    {
+        Resource = resource;
+        AuthorizationServers = authorizationServers;
+        Raw = raw;
+    }
+
+    /// <summary>The resource identifier, as the server states it.</summary>
+    public string Resource { get; }
+
+    /// <summary>The issuer identifiers of the authorization servers, in the server's order (at least one).</summary>
+    public IReadOnlyList<string> AuthorizationServers { get; }
+
+    /// <summary>The JSON document.</summary>
+    public JsonElement Raw { get; }
+
+    /// <summary>Parses a protected resource metadata document.</summary>
+    /// <param name="json">The document.</param>
+    /// <returns>The metadata.</returns>
+    /// <exception cref="ProtocolException">
+    /// The document is not an object, its <c>resource</c> is not a string (RFC 9728 makes it REQUIRED), or its
+    /// <c>authorization_servers</c> is not a non-empty array of strings (lws10-core makes it REQUIRED).
+    /// </exception>
+    public static ProtectedResourceMetadata Parse(JsonElement json)
+    {
+        LwsJson.RequireObject(json, "Protected resource metadata");
+        string resource = LwsJson.GetString(json, "resource") ?? throw new ProtocolException("Protected resource metadata has no resource string");
+        if (LwsJson.Get(json, "authorization_servers") is not { ValueKind: JsonValueKind.Array } servers
+            || servers.GetArrayLength() == 0
+            || servers.EnumerateArray().Any(s => s.ValueKind != JsonValueKind.String))
+        {
+            throw new ProtocolException("Protected resource metadata has no authorization_servers array of issuer strings");
+        }
+        return new ProtectedResourceMetadata(resource, LwsJson.StringOrArray(servers), json.Clone());
+    }
+}
+
 /// <summary>An access token issued by an authorization server.</summary>
 public sealed class AccessToken
 {

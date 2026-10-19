@@ -103,3 +103,10 @@ public sealed record DeleteOptions : RequestOptions
     /// <summary>Delete a container and everything in it (<c>Depth: infinity</c>).</summary>
     public bool Recursive { get; init; }
 }
+
+/// <summary>Options of <see cref="LwsClient.MoveAsync"/>.</summary>
+public sealed record MoveOptions : RequestOptions
+{
+    /// <summary>The <c>If-Match</c> of the linkset patch, instead of the entity tag of the linkset as read.</summary>
+    public string? IfMatch { get; init; }
+}

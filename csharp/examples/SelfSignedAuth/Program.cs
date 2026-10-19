@@ -28,7 +28,7 @@ Console.WriteLine(ControlledIdentifierDocument.Create(agent, edKey.PublicKey, "k
 using var authenticator = new TokenExchangeAuthenticator(didKey, new TokenExchangeOptions
 {
     // Optional: only send credentials to authorization servers you trust.
-    AuthorizationServerFilter = (authorizationServer, realm) => authorizationServer.Scheme == Uri.UriSchemeHttps || authorizationServer.IsLoopback,
+    AuthorizationServerFilter = (authorizationServer, storage) => authorizationServer.Scheme == Uri.UriSchemeHttps || authorizationServer.IsLoopback,
 });
 using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
 Console.WriteLine($"Client ready: {client.Authenticator is not null}; the did:key agent signs with {didKey.Algorithm}, the HTTPS agent with {https.Algorithm}");

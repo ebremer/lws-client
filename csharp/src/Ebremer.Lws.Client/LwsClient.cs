@@ -23,7 +23,7 @@ namespace Ebremer.Lws;
 /// </summary>
 /// <remarks>
 /// Redirects are followed by the client itself (at most <see cref="LwsClientOptions.MaxRedirects"/>), authorizing
-/// every hop afresh for its own URL, so an access token is never sent outside its realm. <c>POST</c> is never sent
+/// every hop afresh for its own URL, so an access token is never sent outside its scope. <c>POST</c> is never sent
 /// twice, except for the single retry after a <c>401</c> that the authenticator handled (when nothing was created).
 /// </remarks>
 public sealed partial class LwsClient : IDisposable
@@ -169,6 +169,7 @@ public sealed partial class LwsClient : IDisposable
             HttpResponseMessage response = await DispatchAsync(attempt, method, body, TimeoutFor(call), cancellationToken).ConfigureAwait(false);
             if ((int)response.StatusCode == 401 && authenticator is not null && body is not { Replayable: false })
             {
+                string? carried = attempt.GetHeader("Authorization");
                 bool retry;
                 try
                 {
@@ -183,7 +184,11 @@ public sealed partial class LwsClient : IDisposable
                 if (retry)
                 {
                     Release(response);
+                    // The retry carries the Authorization the authenticator set on the refused attempt, even where it would
+                    // not authorize this URL ahead of a 401 (a URL outside the token's scope that has just passed the checks).
+                    string? granted = attempt.GetHeader("Authorization");
                     attempt = await PrepareAsync(method, uri, headers, userAuth, cancellationToken).ConfigureAwait(false);
+                    if (granted is not null && granted != carried) attempt.SetHeader("Authorization", granted);
                     response = await DispatchAsync(attempt, method, body, TimeoutFor(call), cancellationToken).ConfigureAwait(false);
                 }
             }
