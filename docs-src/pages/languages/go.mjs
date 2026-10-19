@@ -48,12 +48,15 @@ ${table(
 <ul>
   <li>Per-call options are one variadic <code>CallOption</code> type shared by all methods. Each method documents which options it honours.</li>
   <li><code>SubscribeWebhook(ctx, storage, req)</code> checks <code>subscriptionType</code> before subscribing. <code>Subscribe</code> takes a raw service URL.</li>
-  <li>Redirects: the client wraps <code>CheckRedirect</code> to drop <code>Authorization</code> and re-authorize per realm. Plain Go
-  would forward the header to the same host on a different port.</li>
+  <li>Redirects: the client wraps <code>CheckRedirect</code> to drop <code>Authorization</code> and let the authenticator decide
+  again for each hop, so a token only reaches URLs inside its scope (the storage and its root). Plain Go would forward the
+  header to the same host on a different port.</li>
+  <li><code>storage.MoveCapability()</code> returns <code>(MoveCapability, bool)</code>, like the other lookups; <code>Move</code>
+  honours <code>IfMatch</code> (instead of the linkset's ETag) and <code>Header</code>.</li>
   <li>Streaming upload bodies trigger a <code>HEAD</code> to obtain a token first. Self-signed credentials refresh 60 s
   before expiry, or at half the lifetime for short lifetimes.</li>
   <li>Extras: <code>ReadStream</code>, <code>PatchRaw</code>, <code>ReadLinksetAt</code>, <code>ListContainerPages</code>, <code>SearchPage</code>,
-  <code>ContentDigest</code>, and JWT/did:key decoding helpers.</li>
+  <code>MovePatch</code>, <code>ParseProtectedResourceMetadata</code>, <code>ContentDigest</code>, and JWT/did:key decoding helpers.</li>
 </ul>
 
 <h2 id="build">Build, test and examples</h2>

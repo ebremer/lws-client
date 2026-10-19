@@ -66,7 +66,7 @@ export LWS_TEST_SERVER=http://localhost:8787`)}
 
 <h2 id="spec-tracking">Tracking the specifications</h2>
 <p>The baseline is pinned to a commit of <a href="https://github.com/w3c/lws-protocol">w3c/lws-protocol</a> (currently
-<code>ef02548</code>, 2026-10-05). To move it, diff the spec repository from the pinned commit, list the normative
+<code>9a08ff6</code>, 2026-10-19). To move it, diff the spec repository from the pinned commit, list the normative
 changes in a pull request, then follow the process above and update the <a href="spec-coverage.html">spec coverage</a> page.</p>
 
 <h2 id="conventions">Conventions</h2>

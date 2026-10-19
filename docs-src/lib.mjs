@@ -6,7 +6,7 @@ export const SITE = {
   version: "0.1.0",
   repo: "https://github.com/ebremer/lws-client",
   url: "https://ebremer.github.io/lws-client/",
-  specBaseline: "2026-10-05",
+  specBaseline: "2026-10-19",
 };
 
 /** Escape text for HTML element content and attribute values. */

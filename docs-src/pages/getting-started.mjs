@@ -59,10 +59,12 @@ Hello, LWS!  (etag "y3Np7XKGTBSEU-c181QlqW", parent http://localhost:8787/root/h
   identifier is derived from a fresh P-256 public key. It signs short-lived JWT credentials
   (<code>sub = iss = client_id</code>) as described in the self-signed authentication suite.</li>
   <li><strong>Challenge.</strong> The first request got <code>401</code> with
-  <code>WWW-Authenticate: Bearer as_uri="…", realm="…"</code>. The authenticator checked that the URL
-  is inside the realm and fetched <code>/.well-known/lws-configuration</code>.</li>
+  <code>WWW-Authenticate: Bearer resource_metadata="…"</code> and a <code>Link</code> to the storage. The
+  authenticator read the protected resource metadata (RFC 9728), which names the authorization server,
+  checked that it and the storage root are on the origin it asked, and fetched
+  <code>/.well-known/lws-configuration</code>.</li>
   <li><strong>Token exchange.</strong> It posted the signed credential to the token endpoint (RFC 8693),
-  received an access token for the realm, cached it, and retried the request. Later requests
+  received an access token for the storage, cached it, and retried the request. Later requests
   send the token immediately.</li>
   <li><strong>Discovery.</strong> The response's <code>Link: rel="https://www.w3.org/ns/lws#storage"</code>
   led to the storage description, whose <code>StorageRoot</code> service is the root container.</li>

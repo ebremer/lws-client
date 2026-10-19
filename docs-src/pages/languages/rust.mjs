@@ -42,7 +42,7 @@ ${s("client-config")}
 ${table(
   ["Aspect", "How the Rust client does it"],
   [
-    ["Calls", "<code>async</code>; operations with options return request builders (<code>ReadRequest</code>, <code>CreateRequest</code>, <code>UpdateRequest</code>, <code>PatchRequest</code>, <code>DeleteRequest</code>) that implement <code>IntoFuture</code>, so call <code>.await</code> directly or <code>.send().await</code>"],
+    ["Calls", "<code>async</code>; operations with options return request builders (<code>ReadRequest</code>, <code>CreateRequest</code>, <code>UpdateRequest</code>, <code>PatchRequest</code>, <code>DeleteRequest</code>, <code>MoveRequest</code>) that implement <code>IntoFuture</code>, so call <code>.await</code> directly or <code>.send().await</code>"],
     ["Pagination", "<code>LwsStream&lt;T&gt;</code>, a <code>futures::Stream</code> of <code>Result&lt;T&gt;</code>: <code>try_next</code>, <code>try_collect</code> (bring <code>futures_util::TryStreamExt</code>)"],
     ["URLs and bodies", "Any <code>impl IntoUrl</code> (<code>Url</code>, <code>&amp;str</code>, <code>String</code>); bodies <code>impl Into&lt;Body&gt;</code> (bytes, strings; <code>Body::from_reqwest</code> for streams)"],
     ["Models", "Plain structs with public fields; datetimes as <code>SystemTime</code> plus the raw string"],
@@ -65,12 +65,12 @@ ${table(
 
 <h2 id="notes">Notes and deviations</h2>
 <ul>
-  <li><code>JsonPatch::move_value</code> (<code>move</code> is a keyword) and <code>Constraint::resource_type</code>.</li>
+  <li><code>Client::move_resource</code> and <code>JsonPatch::move_value</code> (<code>move</code> is a keyword), and <code>Constraint::resource_type</code>.</li>
   <li><code>url::ParseError</code> converts into <code>Error::InvalidInput</code>, so <code>Url::parse(…)?</code> works in functions returning <code>lws_client::Result</code>.</li>
   <li><code>Resource::text()</code> decodes UTF-8 only. <code>title*</code> link parameters are kept raw.</li>
   <li>The webhook verifier supports P-256 and Ed25519.</li>
   <li>The built-in HTTP client follows redirects itself (up to 5 hops) and re-authorizes on every
-  hop, so a token is only sent to URLs inside its realm. If you pass your own
+  hop, so a token is only sent to URLs inside its scope (the storage and its root). If you pass your own
   <code>reqwest::Client</code> through <code>http_client()</code>, its redirect policy applies instead.</li>
   <li>Streaming uploads need reqwest's <code>stream</code> feature in your crate (<code>Body::from_reqwest</code>). The client sends a <code>HEAD</code> first to obtain a token.</li>
 </ul>

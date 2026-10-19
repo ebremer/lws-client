@@ -1027,6 +1027,7 @@ try {
 <tr><td>update</td><td><code>200</code> / <code>204</code></td><td><code>412</code> stale ETag · <code>404</code> (no create-by-PUT) · <code>405</code> on containers</td></tr>
 <tr><td>patch</td><td><code>200</code> / <code>204</code></td><td><code>415</code> unsupported format · <code>409</code>/<code>422</code> patch failed · <code>412</code></td></tr>
 <tr><td>delete</td><td><code>204</code></td><td><code>409</code> non-empty container · <code>412</code> · <code>405</code> storage root</td></tr>
+<tr><td>move</td><td><code>200</code> / <code>204</code></td><td><code>409</code> move refused (no capability, not a container, into itself) · <code>403</code> · <code>412</code></td></tr>
 </tbody></table></div>
 <p>See <a href="errors.html">Errors</a> for how each status maps to a typed error in every language.</p>
 <pre data-lang="http" data-title="On the wire"><code class="language-http">POST /root/notes/ HTTP/1.1
@@ -1043,7 +1044,7 @@ Link: &lt;https://www.w3.org/ns/lws#DataResource&gt;; rel=&quot;type&quot;</code
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
         <footer class="site-footer">
-          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-19; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
         </footer>
       </article>
     </main>

@@ -39,23 +39,27 @@ const resourceModel = `
 
 const authSequence = `
 <figure class="diagram">
-<svg viewBox="0 0 760 392" role="img" aria-labelledby="auth-title">
-  <title id="auth-title">LWS authorization sequence: 401 challenge, authorization server metadata discovery, OAuth 2.0 token exchange, and a retried request with a bearer token.</title>
+<svg viewBox="0 0 760 552" role="img" aria-labelledby="auth-title">
+  <title id="auth-title">LWS authorization sequence: a 401 challenge naming protected resource metadata, the metadata and the storage description read and checked, authorization server metadata discovery, OAuth 2.0 token exchange for the storage, and a retried request with a bearer token.</title>
   <defs><marker id="seq-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0L10 5L0 10z"/></marker></defs>
   <rect class="box-accent" x="40" y="10" width="160" height="38" rx="8"/><text class="label" x="120" y="34" text-anchor="middle">LWS client</text>
   <rect class="box" x="300" y="10" width="160" height="38" rx="8"/><text class="label" x="380" y="34" text-anchor="middle">Storage server</text>
   <rect class="box" x="560" y="10" width="160" height="38" rx="8"/><text class="label" x="640" y="34" text-anchor="middle">Authorization server</text>
-  <path class="edge" d="M120 48V384M380 48V384M640 48V384" stroke-dasharray="3 5"/>
+  <path class="edge" d="M120 48V544M380 48V544M640 48V544" stroke-dasharray="3 5"/>
   <path class="edge" d="M120 84H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="76" text-anchor="middle">GET /root/notes/</text>
-  <path class="edge" d="M380 122H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="114" text-anchor="middle">401 · Bearer as_uri, realm</text>
-  <path class="edge" d="M120 164H638" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="156" text-anchor="middle">GET /.well-known/lws-configuration</text>
-  <path class="edge" d="M640 202H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="194" text-anchor="middle">issuer · token_endpoint</text>
-  <path class="edge" d="M120 244H638" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="236" text-anchor="middle">POST token (token-exchange, subject_token)</text>
-  <path class="edge" d="M640 282H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="274" text-anchor="middle">access_token (aud = realm)</text>
-  <path class="edge" d="M120 324H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="316" text-anchor="middle">GET + Authorization: Bearer</text>
-  <path class="edge" d="M380 362H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="354" text-anchor="middle">200 OK</text>
+  <path class="edge" d="M380 122H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="114" text-anchor="middle">401 · resource_metadata · Link storage</text>
+  <path class="edge" d="M120 164H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="156" text-anchor="middle">GET protected resource metadata</text>
+  <path class="edge" d="M380 202H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="194" text-anchor="middle">resource · authorization_servers</text>
+  <path class="edge" d="M120 244H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="236" text-anchor="middle">GET storage description</text>
+  <path class="edge" d="M380 282H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="274" text-anchor="middle">StorageRoot (same origin?)</text>
+  <path class="edge" d="M120 324H638" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="316" text-anchor="middle">GET /.well-known/lws-configuration</text>
+  <path class="edge" d="M640 362H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="354" text-anchor="middle">issuer · token_endpoint</text>
+  <path class="edge" d="M120 404H638" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="396" text-anchor="middle">POST token (resource = storage, subject_token)</text>
+  <path class="edge" d="M640 442H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="434" text-anchor="middle">access_token (aud includes the storage)</text>
+  <path class="edge" d="M120 484H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="476" text-anchor="middle">GET + Authorization: Bearer</text>
+  <path class="edge" d="M380 522H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="514" text-anchor="middle">200 OK</text>
 </svg>
-<figcaption>Every client runs this flow automatically when configured with a <code>TokenExchangeAuthenticator</code>. Tokens are cached per authorization server and realm and reused proactively.</figcaption>
+<figcaption>Every client runs this flow automatically when configured with a <code>TokenExchangeAuthenticator</code>, and asks for no token unless the metadata URL and the storage root are on the origin it requested and the metadata names the URL it requested. Tokens are cached per authorization server and storage and reused proactively.</figcaption>
 </figure>`;
 
 export default {
@@ -119,6 +123,7 @@ ${table(
     ["Replace", "<code>PUT</code>", "<code>200</code> / <code>204</code>", "<code>If-Match</code> to avoid lost updates (<code>412</code>)"],
     ["Patch", "<code>PATCH</code>", "<code>200</code> / <code>204</code>", "JSON Patch (<code>application/json-patch+json</code>) is the baseline format"],
     ["Delete", "<code>DELETE</code>", "<code>204</code>", "Non-empty container → <code>409</code> unless <code>Depth: infinity</code>"],
+    ["Move", "<code>PATCH</code> the linkset", "<code>204</code> / <code>200</code>", "Replace the <code>up</code> link; only where the storage describes a <code>MoveResource</code> capability"],
   ],
 )}
 ${callout("tip", "Baseline patch format", " The 2026-10-05 editor's draft made JSON Patch (RFC 6902) the mandatory PATCH format for resources and linksets, replacing JSON Merge Patch. Every client ships a <code>JsonPatch</code> builder.")}
@@ -128,7 +133,8 @@ ${table(
   ["Media type", "Used for"],
   [
     ["<code>application/lws+cid</code>", "Storage descriptions"],
-    ["<code>application/lws+json</code>", "Container listings, subscriptions, notifications, access requests/grants, type index and search results (equivalent to <code>application/ld+json</code> and <code>application/json</code> for containers)"],
+    ["<code>application/lws+json</code>", "Container listings (the one container media type a server must honour), subscriptions, notifications, access requests/grants, type index and search results"],
+    ["RDF media types with <code>profile=\"https://www.w3.org/ns/lws/v1\"</code>", "The <em>LWS profile</em> of a container: JSON-LD, Turtle and the like, RDF isomorphic to the <code>application/lws+json</code> representation, where a server offers them"],
     ["<code>application/linkset+json</code>", "Linkset (metadata) resources"],
     ["<code>application/json-patch+json</code>", "PATCH bodies"],
     ["<code>application/lws-query+json</code>", "Type search filters sent with the HTTP <code>QUERY</code> method"],

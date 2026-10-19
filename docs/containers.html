@@ -162,9 +162,10 @@ page.next?.let { next -&gt;                               // opaque, server-issu
     println(client.readContainer(next).items.size)
 }</code></pre>
 </div>
-<p>The clients accept the three equivalent container media types (<code>application/lws+json</code>,
-<code>application/ld+json</code>, <code>application/json</code>). Any other content type, or a body whose type is
-not a container, is reported as a protocol error.</p>
+<p>The clients ask for <code>application/lws+json</code>, the one container media type every server must honour. They
+also read an <code>application/ld+json</code> or <code>application/json</code> answer as the same document, a leniency
+towards servers of earlier drafts. Any other content type, or a body whose type is not a container, is reported as a
+protocol error.</p>
 
 <h2 id="iterate">Iterating every member</h2>
 <p><code>listContainer</code> follows <code>rel="next"</code> lazily. A page is only fetched when you iterate past
@@ -275,7 +276,7 @@ results use the same <code>ContainerPage</code> shape. The same pagination helpe
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
         <footer class="site-footer">
-          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-19; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
         </footer>
       </article>
     </main>

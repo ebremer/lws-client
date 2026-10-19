@@ -58,8 +58,9 @@ export default {
     <ul>
       <li><strong>Complete client side of LWS 1.0:</strong> discovery, CRUD, containers, linksets,
       notifications, access requests and grants, type index and search.</li>
-      <li><strong>Authorization handled for you.</strong> On a <code>401</code> the client checks the realm,
-      discovers the authorization server and performs an OAuth 2.0 token exchange. It then caches the token per realm.</li>
+      <li><strong>Authorization handled for you.</strong> On a <code>401</code> the client finds the authorization
+      server through the protected resource metadata (RFC 9728), makes the checks the spec requires, and performs an
+      OAuth 2.0 token exchange. It then caches the token per storage.</li>
       <li><strong>Every authentication suite:</strong> OpenID Connect, SAML 2.0, and self-signed identities
       (controlled identifier documents and <code>did:key</code>) with ES256 and EdDSA.</li>
       <li><strong>Verified webhooks:</strong> RFC 9421 HTTP Message Signatures and RFC 9530

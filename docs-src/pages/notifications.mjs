@@ -47,9 +47,9 @@ ${table(
   [
     ["<code>storage</code>", "The storage the events belong to (checked against the signing key)"],
     ["<code>activities</code>", "Always a list, even when the server sent a single object (servers may batch)"],
-    ["<code>types</code>", "<code>Create</code>, <code>Update</code> (content or metadata) or <code>Delete</code>; helpers <code>isCreate()</code>, <code>isUpdate()</code>, <code>isDelete()</code>"],
+    ["<code>types</code>", "<code>Create</code>, <code>Update</code> (content or metadata), <code>Delete</code>, or <code>Move</code> (from a storage that allows moves); helpers <code>isCreate()</code>, <code>isUpdate()</code>, <code>isDelete()</code>, <code>isMove()</code>"],
     ["<code>object</code>", "The resource's <code>id</code> and types"],
-    ["<code>target</code> / <code>origin</code>", "Container a resource was added to (Create) or removed from (Delete)"],
+    ["<code>target</code> / <code>origin</code>", "Container a resource was added to (Create, Move) or removed from (Delete, Move)"],
     ["<code>actor</code>, <code>published</code>", "Who acted (optional) and when"],
   ],
 )}

@@ -219,6 +219,13 @@ if (doc.supportsPut()) {                              // Allow lists PUT
             .add(url.toString(), "license", URI.create("https://creativecommons.org/licenses/by/4.0/"));
     client.updateLinkset(doc.url(), updated, UpdateOptions.ifMatch(doc.etag().orElseThrow()));
 }
+@@@ move
+// Only a storage that describes a MoveResource capability moves resources.
+if (storage.moveCapability().map(move -> move.movesDataResources()).orElse(false)) {
+    MoveResult moved = client.move(url, container);   // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.location().
+    System.out.println(moved.location() + (moved.identifierPreserved() ? " (same URL)" : " (new URL)"));
+}
 @@@ auth-didkey
 // A did:key agent: the identifier is derived from the public key, nothing to host.
 KeyPair keys = KeyPairs.generateP256();                 // or KeyPairs.generateEd25519()
@@ -226,7 +233,7 @@ SelfSignedCredentials credentials = SelfSignedCredentials.didKey(keys);
 System.out.println(credentials.agent());                 // did:key:zDn…
 
 LwsClient client = LwsClient.builder().authenticator(TokenExchangeAuthenticator.of(credentials)).build();
-client.head(url);   // 401 → AS metadata → token exchange → retried with a Bearer token
+client.head(url);   // 401 → resource metadata → token exchange → retried with a Bearer token
 @@@ auth-cid
 // An HTTPS agent publishes a controlled identifier document listing its key…
 KeyPair keys = KeyPairs.generateP256();
@@ -255,7 +262,7 @@ OpenIdCredentials credentials = OpenIdCredentials.of(idToken);
 LwsClient client = LwsClient.builder()
         .authenticator(TokenExchangeAuthenticator.builder(credentials)
                 // ID tokens are not always audience-restricted: only send them to servers you trust.
-                .authorizationServerFilter((asUri, realm) -> asUri.equals(URI.create("https://auth.example")))
+                .authorizationServerFilter((issuer, storage) -> issuer.equals(URI.create("https://auth.example")))
                 .build())
         .build();
 @@@ auth-saml
@@ -271,7 +278,7 @@ LwsClient client = LwsClient.builder()
 Set<URI> trusted = Set.of(URI.create("https://auth.example"));
 TokenExchangeAuthenticator authenticator = TokenExchangeAuthenticator.builder(credentials)
         .allowInsecureHttp(false)                         // plain-http AS only on loopback (default)
-        .authorizationServerFilter((asUri, realm) -> trusted.contains(asUri))
+        .authorizationServerFilter((issuer, storage) -> trusted.contains(issuer))
         .refreshSkew(Duration.ofSeconds(30))              // refresh 30 s before expiry (default)
         .build();
 LwsClient client = LwsClient.builder().authenticator(authenticator).build();

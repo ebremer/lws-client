@@ -37,10 +37,10 @@ no sockets.</p>
 ${table(
   ["Interface", "What"],
   [
-    ["<code>types</code>", "The values: <code>metadata</code>, <code>read-result</code>, <code>page</code>, <code>item</code>, <code>created</code>, <code>updated</code>, <code>storage-description</code>, <code>linkset-document</code>, <code>subscription</code>, <code>patch-operation</code>, <code>type-query</code>, and <code>error</code> with its <code>error-kind</code>"],
-    ["<code>client</code> (export)", "The <code>client</code> resource, made by <code>client.new(options)</code>, with the operations of the API contract under their kebab-case names: <code>discover-storage</code>, <code>read</code>, <code>list-container</code>, <code>create</code>, <code>patch-linkset</code>, <code>subscribe</code>, <code>search-all</code>, … Lazy listings are the <code>items</code> and <code>type-iris</code> resources, read with <code>next</code>"],
+    ["<code>types</code>", "The values: <code>metadata</code>, <code>read-result</code>, <code>page</code>, <code>item</code>, <code>created</code>, <code>updated</code>, <code>storage-description</code> (with its <code>move-capability</code>), <code>linkset-document</code>, <code>moved</code>, <code>subscription</code>, <code>patch-operation</code>, <code>type-query</code>, and <code>error</code> with its <code>error-kind</code>"],
+    ["<code>client</code> (export)", "The <code>client</code> resource, made by <code>client.new(options)</code>, with the operations of the API contract under their kebab-case names: <code>discover-storage</code>, <code>read</code>, <code>list-container</code>, <code>create</code>, <code>patch-linkset</code>, <code>move</code>, <code>subscribe</code>, <code>search-all</code>, … Lazy listings are the <code>items</code> and <code>type-iris</code> resources, read with <code>next</code>"],
     ["<code>webhook</code> (export)", "The <code>verifier</code> resource: verifies signed notification deliveries (RFC 9421, RFC 9530) with the storage's published keys"],
-    ["<code>token-source</code> (import)", "Subject tokens from the host, for an <code>openid</code> or <code>saml</code> client made with <code>subject-token.host</code>"],
+    ["<code>token-source</code> (import)", "Subject tokens from the host, for an <code>openid</code> or <code>saml</code> client made with <code>subject-token.host</code>: <code>subject-token(kind, issuer, storage)</code>, for a token exchange at <code>issuer</code>, for an access token to <code>storage</code>"],
   ],
 )}
 ${table(
@@ -63,8 +63,8 @@ npm install @bytecodealliance/jco @bytecodealliance/preview2-shim
 npx jco transpile lws_client.wasm -o lws --name lws-client --map 'ebremer:lws/token-source=../token-source.js'`)}
 ${code("js", `
 // token-source.js
-export function subjectToken(kind, issuer, realm) {
-  throw \`no \${kind} token for \${realm}\`;
+export function subjectToken(kind, issuer, storage) {
+  throw \`no \${kind} token for \${storage}\`;
 }`)}
 ${code("js", `
 import { client } from "./lws/lws-client.js";
@@ -84,6 +84,12 @@ try {
     { ifMatch: '"stale"', links: [], setLinkset: false, headers: [] });
 } catch (e) {
   console.log(e.payload.kind, e.payload.http?.status); // precondition-failed 412
+}
+
+if (storage.moveCapability?.movesDataResources) {
+  const archive = lws.createContainer(notes, { slug: "archive", types: [], links: [], headers: [] }).location;
+  const moved = lws.move(hello, archive, { headers: [] });
+  console.log(moved.location, moved.identifierPreserved); // the new URL, unless the storage keeps identifiers
 }`)}
 <p>Variant tags and enum values are kebab-case (<code>"did-key"</code>, <code>"precondition-failed"</code>), record fields
 camelCase, and an <code>error</code> is thrown with the record as its <code>payload</code>.</p>
@@ -112,7 +118,7 @@ and <code>check.mjs</code> takes it through every operation against the mock ser
 ${code("bash", `
 cargo build --release --manifest-path driver/adapters/wasm/Cargo.toml
 node driver/adapters/check.mjs -- driver/adapters/wasm/target/release/lws-driver-adapter-wasm wasm/target/wasm32-wasip2/release/lws_client.wasm
-# wasm: 35 passed, 0 failed, 0 skipped`)}
+# wasm: 37 passed, 0 failed, 0 skipped`)}
 ${callout("note", "Source", ' <a href="https://github.com/ebremer/lws-client/tree/main/wasm">wasm/</a> in the repository, with its own <a href="https://github.com/ebremer/lws-client/blob/main/wasm/README.md">README</a>.')}
 `,
 };

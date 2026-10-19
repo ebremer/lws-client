@@ -210,6 +210,13 @@ if (doc.allow.includes("PUT")) {
   linkset.add(url, "license", "https://creativecommons.org/licenses/by/4.0/");
   await client.updateLinkset(doc.url, linkset, { ifMatch: doc.etag! });
 }
+@@@ move
+// Only a storage that describes a MoveResource capability moves resources.
+if (storage.moveCapability()?.movesDataResources()) {
+  const moved = await client.move(url, container);  // reads the linkset, then patches its up link
+  // A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+  console.log(moved.location, moved.identifierPreserved ? "(same URL)" : "(new URL)");
+}
 @@@ auth-didkey
 // A did:key agent: the identifier is derived from the public key, nothing to host.
 const keys = await generateKeyPair("ES256");          // or "EdDSA" (Ed25519)
@@ -217,7 +224,7 @@ const credentials = SelfSignedCredentials.didKey(keys);
 console.log(credentials.agent);                        // did:key:zDn…
 
 const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(credentials) });
-await client.head(url);   // 401 → AS metadata → token exchange → retried with a Bearer token
+await client.head(url);   // 401 → resource metadata → token exchange → retried with a Bearer token
 @@@ auth-cid
 // An HTTPS agent publishes a controlled identifier document listing its key…
 const keys = await generateKeyPair("ES256");
@@ -246,7 +253,7 @@ const credentials = new OpenIdCredentials(idToken);
 const client = new LwsClient({
   authenticator: new TokenExchangeAuthenticator(credentials, {
     // ID tokens are not always audience-restricted: only send them to servers you trust.
-    authorizationServerFilter: (asUri) => asUri === "https://auth.example",
+    authorizationServerFilter: (issuer) => issuer === "https://auth.example",
   }),
 });
 @@@ auth-saml
@@ -262,7 +269,7 @@ const client = new LwsClient({
 const trusted = new Set(["https://auth.example"]);
 const authenticator = new TokenExchangeAuthenticator(credentials, {
   allowInsecureHttp: false,                          // plain-http AS only on loopback (default)
-  authorizationServerFilter: (asUri) => trusted.has(asUri),
+  authorizationServerFilter: (issuer) => trusted.has(issuer),
   refreshSkewSeconds: 30,                            // refresh 30 s before expiry (default)
 });
 const client = new LwsClient({ authenticator });

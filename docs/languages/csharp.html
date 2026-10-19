@@ -114,7 +114,7 @@ each hop, so an <code>HttpClient</code> or <code>HttpMessageHandler</code> you s
 <div class="table-wrap"><table><thead><tr><th>Aspect</th><th>How the C# client does it</th></tr></thead><tbody>
 <tr><td>Calls</td><td>Every operation is an <code>…Async</code> method returning a <code>Task</code>, with an optional trailing <code>CancellationToken</code>. Cancelling throws <code>OperationCanceledException</code>; a timeout throws <code>LwsTransportException</code></td></tr>
 <tr><td>Pagination</td><td><code>ListContainerAsync</code>, <code>ListTypesAsync</code>, <code>SearchAllAsync</code>, <code>ListSubscriptionsAsync</code>… return lazy <code>IAsyncEnumerable&lt;T&gt;</code>s: <code>await foreach</code>, or .NET 10's <code>System.Linq.AsyncEnumerable</code> operators (<code>Where</code>, <code>Select</code>, <code>ToListAsync</code>)</td></tr>
-<tr><td>Options</td><td>Records with <code>init</code> properties, set with object initializers: <code>new CreateOptions { Slug = … }</code>, <code>new UpdateOptions { IfMatch = etag }</code>, <code>new DeleteOptions { Recursive = true }</code>, <code>new ReadOptions { Range = new RangeHeaderValue(0, 1023) }</code>. Every one also has <code>Headers</code> and <code>Timeout</code></td></tr>
+<tr><td>Options</td><td>Records with <code>init</code> properties, set with object initializers: <code>new CreateOptions { Slug = … }</code>, <code>new UpdateOptions { IfMatch = etag }</code>, <code>new DeleteOptions { Recursive = true }</code>, <code>new MoveOptions { IfMatch = etag }</code>, <code>new ReadOptions { Range = new RangeHeaderValue(0, 1023) }</code>. Every one also has <code>Headers</code> and <code>Timeout</code></td></tr>
 <tr><td>Bodies</td><td><code>ReadOnlyMemory&lt;byte&gt;</code> (replayable) or a <code>Stream</code> (sent once, after a <code>HEAD</code> obtains a token); <code>CreateTextAsync</code> and <code>CreateJsonAsync</code>; <code>ReadStreamAsync</code> for unbuffered reads</td></tr>
 <tr><td>Models</td><td>Immutable classes and records. Absent values are <code>null</code> under nullable reference types; JSON is <code>JsonElement</code> / <code>JsonObject</code>; <code>GetJson&lt;T&gt;()</code> binds with <code>System.Text.Json</code></td></tr>
 <tr><td>Errors</td><td><code>LwsException</code> → <code>HttpException</code> (<code>Status</code>, <code>Problem</code>, <code>Headers</code>, <code>Body</code>) → <code>NotFoundException</code>, <code>ConflictException</code>, …; narrow them with <code>catch … when</code></td></tr>
@@ -124,8 +124,8 @@ each hop, so an <code>HttpClient</code> or <code>HttpMessageHandler</code> you s
 
 <h2 id="namespaces">Namespaces</h2>
 <div class="table-wrap"><table><thead><tr><th>Namespace</th><th>Contents</th></tr></thead><tbody>
-<tr><td><code>Ebremer.Lws</code></td><td><code>LwsClient</code>, options, models (<code>Resource</code>, <code>ResourceMetadata</code>, <code>ContainerPage</code>, <code>StorageDescription</code>, <code>Linkset</code>…), <code>JsonPatch</code>, <code>JsonPointer</code>, <code>TypeQuery</code>, exceptions, <code>Lws</code> constants</td></tr>
-<tr><td><code>Ebremer.Lws.Auth</code></td><td><code>IAuthenticator</code>, <code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, credentials, <code>SigningKey</code>, <code>VerificationKey</code>, <code>Jwk</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifierDocument</code></td></tr>
+<tr><td><code>Ebremer.Lws</code></td><td><code>LwsClient</code>, options, models (<code>Resource</code>, <code>ResourceMetadata</code>, <code>ContainerPage</code>, <code>StorageDescription</code>, <code>Linkset</code>, <code>MoveResult</code>…), <code>JsonPatch</code>, <code>JsonPointer</code>, <code>TypeQuery</code>, exceptions, <code>Lws</code> constants</td></tr>
+<tr><td><code>Ebremer.Lws.Auth</code></td><td><code>IAuthenticator</code>, <code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, credentials, <code>ProtectedResourceMetadata</code>, <code>SigningKey</code>, <code>VerificationKey</code>, <code>Jwk</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifierDocument</code></td></tr>
 <tr><td><code>Ebremer.Lws.Notifications</code></td><td><code>WebhookSubscriptionRequest</code>, <code>Subscription</code>, <code>Notification</code>, <code>Activity</code>, <code>WebhookVerifier</code></td></tr>
 <tr><td><code>Ebremer.Lws.Access</code></td><td><code>AccessRequest</code>, <code>AccessGrant</code>, <code>AccessPolicy</code>, <code>AccessTarget</code>, <code>Constraint</code></td></tr>
 <tr><td><code>Ebremer.Lws.Http</code></td><td><code>Link</code>, <code>LinkHeader</code>, <code>WwwAuthenticate</code>, <code>AuthChallenge</code>, <code>StructuredFields</code>, <code>ProblemDetails</code>, <code>HeaderMap</code>, <code>Slug</code></td></tr>
@@ -142,7 +142,7 @@ each hop, so an <code>HttpClient</code> or <code>HttpMessageHandler</code> you s
   <code>subscriptionType</code>; <code>SubscribeAsync(Uri, …)</code> takes a raw endpoint.</li>
   <li><code>StorageDescription.GetStorageRoot()</code> is a method because it throws <code>ProtocolException</code> when there is no
   <code>StorageRoot</code> service. The other well-known services are nullable properties (<code>NotificationService</code>,
-  <code>TypeSearchService</code>…).</li>
+  <code>TypeSearchService</code>…), and so is <code>MoveCapability</code>.</li>
   <li><code>ContainerPage.Id</code> is never null: a search page without an <code>id</code> takes the page URL.</li>
   <li><code>Linkset</code>, <code>JsonPatch</code> and <code>TypeQuery</code> are immutable, so <code>Add</code>, <code>Remove</code>,
   <code>Replace</code>, <code>AllOf</code>… return new instances. Start a query from <code>new TypeQuery()</code>.</li>
@@ -169,7 +169,7 @@ dotnet run --project examples/Quickstart -- http://localhost:8787/root/</code></
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
         <footer class="site-footer">
-          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-19; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
         </footer>
       </article>
     </main>

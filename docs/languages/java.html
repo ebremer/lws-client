@@ -119,9 +119,9 @@ enabled, you bypass that protection.</p>
 
 <h2 id="idioms">Java idioms</h2>
 <div class="table-wrap"><table><thead><tr><th>Aspect</th><th>How the Java client does it</th></tr></thead><tbody>
-<tr><td>Calls</td><td>Blocking methods (ideal with virtual threads) plus <code>headAsync</code>, <code>readAsync</code>, <code>readContainerAsync</code>, <code>createAsync</code>, <code>createContainerAsync</code>, <code>updateAsync</code>, <code>patchAsync</code>, <code>deleteAsync</code>, <code>discoverStorageAsync</code></td></tr>
+<tr><td>Calls</td><td>Blocking methods (ideal with virtual threads) plus <code>headAsync</code>, <code>readAsync</code>, <code>readContainerAsync</code>, <code>createAsync</code>, <code>createContainerAsync</code>, <code>updateAsync</code>, <code>patchAsync</code>, <code>deleteAsync</code>, <code>moveAsync</code>, <code>discoverStorageAsync</code></td></tr>
 <tr><td>Pagination</td><td><code>listContainer</code>, <code>listTypes</code>, <code>searchAll</code>, <code>listSubscriptions</code>… return lazy <code>Stream</code>s</td></tr>
-<tr><td>Options</td><td>Immutable option objects with builders and static shortcuts: <code>CreateOptions.slug(…)</code>, <code>UpdateOptions.ifMatch(…)</code>, <code>DeleteOptions.recursive()</code>, <code>ReadOptions.ifNoneMatch(…)</code></td></tr>
+<tr><td>Options</td><td>Immutable option objects with builders and static shortcuts: <code>CreateOptions.slug(…)</code>, <code>UpdateOptions.ifMatch(…)</code>, <code>DeleteOptions.recursive()</code>, <code>ReadOptions.ifNoneMatch(…)</code>, <code>MoveOptions.ifMatch(…)</code></td></tr>
 <tr><td>Bodies</td><td><code>Body.of(String | byte[])</code>, <code>Body.ofJson(Object)</code>, <code>Body.ofFile(Path)</code>, <code>Body.ofInputStream(Supplier)</code>; all replayable, so the 401 retry always works</td></tr>
 <tr><td>Models</td><td>Records with <code>Optional</code> / <code>OptionalLong</code> for absent values; JSON as Jackson <code>JsonNode</code>; <code>json(Class)</code> for data binding</td></tr>
 <tr><td>Errors</td><td>Unchecked: <code>LwsException</code> → <code>HttpStatusException</code> → <code>NotFoundException</code>, <code>ConflictException</code>, …</td></tr>
@@ -130,8 +130,8 @@ enabled, you bypass that protection.</p>
 
 <h2 id="packages">Packages</h2>
 <div class="table-wrap"><table><thead><tr><th>Package</th><th>Contents</th></tr></thead><tbody>
-<tr><td><code>com.ebremer.lws</code></td><td><code>LwsClient</code>, options, <code>Body</code>, models (<code>Resource</code>, <code>ContainerPage</code>, <code>StorageDescription</code>, <code>Linkset</code>…), exceptions, <code>Lws</code> constants</td></tr>
-<tr><td><code>com.ebremer.lws.auth</code></td><td><code>Authenticator</code>, <code>TokenExchangeAuthenticator</code>, credentials, <code>KeyPairs</code>, <code>Jwk</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifiers</code></td></tr>
+<tr><td><code>com.ebremer.lws</code></td><td><code>LwsClient</code>, options, <code>Body</code>, models (<code>Resource</code>, <code>ContainerPage</code>, <code>StorageDescription</code>, <code>Linkset</code>, <code>MoveResult</code>…), exceptions, <code>Lws</code> constants</td></tr>
+<tr><td><code>com.ebremer.lws.auth</code></td><td><code>Authenticator</code>, <code>TokenExchangeAuthenticator</code>, credentials, <code>ProtectedResourceMetadata</code>, <code>KeyPairs</code>, <code>Jwk</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifiers</code></td></tr>
 <tr><td><code>com.ebremer.lws.notify</code></td><td><code>WebhookSubscriptionRequest</code>, <code>Subscription</code>, <code>Notification</code>, <code>WebhookVerifier</code>, <code>HttpExchangeWebhooks</code></td></tr>
 <tr><td><code>com.ebremer.lws.access</code></td><td><code>AccessRequest</code>, <code>AccessGrant</code>, <code>AccessPolicy</code>, <code>AccessTarget</code>, <code>Constraint</code></td></tr>
 <tr><td><code>com.ebremer.lws.index</code></td><td><code>TypeQuery</code>, <code>TypeIndexPage</code></td></tr>
@@ -164,7 +164,7 @@ java -cp &quot;target/classes:target/test-classes:$(cat cp.txt)&quot; \
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
         <footer class="site-footer">
-          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-19; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
         </footer>
       </article>
     </main>

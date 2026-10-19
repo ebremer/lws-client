@@ -61,13 +61,13 @@ ${table(
 ${table(
   ["Area", "Types"],
   [
-    ["Client", "<code>LWSClient</code>, <code>LWSClientOptions</code>, <code>RequestOptions</code>, <code>ReadOptions</code>, <code>CreateOptions</code>, <code>UpdateOptions</code>, <code>DeleteOptions</code>, <code>ByteRange</code>, <code>PagedSequence</code>, <code>HTTPTransport</code>, <code>URLSessionTransport</code>"],
-    ["Models", "<code>Resource</code>, <code>ResourceMetadata</code>, <code>CreateResult</code>, <code>UpdateResult</code>, <code>ContainerPage</code>, <code>ContainedResource</code>, <code>StorageDescription</code>, <code>Service</code>, <code>Linkset</code>, <code>LinksetDocument</code>, <code>TypeIndexPage</code>, <code>JSONPatch</code>, <code>JSONPointer</code>, <code>TypeQuery</code>, <code>JSONValue</code>"],
-    ["Auth", "<code>Authenticator</code>, <code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, <code>CredentialProvider</code>, <code>OpenIDCredentials</code>, <code>SAMLCredentials</code>, <code>SelfSignedCredentials</code>, <code>SigningKey</code>, <code>VerificationKey</code>, <code>JWT</code>, <code>DIDKey</code>, <code>ControlledIdentifierDocument</code>"],
+    ["Client", "<code>LWSClient</code>, <code>LWSClientOptions</code>, <code>RequestOptions</code>, <code>ReadOptions</code>, <code>CreateOptions</code>, <code>UpdateOptions</code>, <code>DeleteOptions</code>, <code>MoveOptions</code>, <code>ByteRange</code>, <code>PagedSequence</code>, <code>HTTPTransport</code>, <code>URLSessionTransport</code>"],
+    ["Models", "<code>Resource</code>, <code>ResourceMetadata</code>, <code>CreateResult</code>, <code>UpdateResult</code>, <code>ContainerPage</code>, <code>ContainedResource</code>, <code>StorageDescription</code>, <code>Service</code>, <code>MoveCapability</code>, <code>Linkset</code>, <code>LinksetDocument</code>, <code>MoveResult</code>, <code>TypeIndexPage</code>, <code>JSONPatch</code>, <code>JSONPointer</code>, <code>TypeQuery</code>, <code>JSONValue</code>"],
+    ["Auth", "<code>Authenticator</code>, <code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, <code>CredentialProvider</code>, <code>OpenIDCredentials</code>, <code>SAMLCredentials</code>, <code>SelfSignedCredentials</code>, <code>SigningKey</code>, <code>VerificationKey</code>, <code>JWT</code>, <code>DIDKey</code>, <code>ControlledIdentifierDocument</code>, <code>ProtectedResourceMetadata</code>, <code>AuthorizationServerMetadata</code>"],
     ["Notifications", "<code>WebhookSubscriptionRequest</code>, <code>Subscription</code>, <code>Notification</code>, <code>Activity</code>, <code>WebhookVerifier</code>, <code>VerifiedNotification</code>"],
     ["Access", "<code>AccessRequest</code>, <code>AccessGrant</code>, <code>AccessPolicy</code>, <code>AccessTarget</code>, <code>Constraint</code>"],
     ["HTTP", "<code>Link</code>, <code>LinkHeader</code>, <code>WWWAuthenticate</code>, <code>AuthChallenge</code>, <code>StructuredFields</code>, <code>ProblemDetails</code>, <code>HTTPHeaders</code>, <code>Slug</code>"],
-    ["Constants", "<code>Vocabulary</code> (namespaces, contexts, type matching), <code>LinkRelation</code>, <code>ResourceType</code>, <code>MediaType</code>, <code>ServiceType</code>, <code>TokenType</code>, <code>AccessAction</code>, <code>ConstraintOperand</code>, <code>ConstraintOperator</code>, <code>Prefer</code>, <code>ActivityType</code>"],
+    ["Constants", "<code>Vocabulary</code> (namespaces, contexts, type matching), <code>LinkRelation</code>, <code>ResourceType</code>, <code>MediaType</code>, <code>ServiceType</code>, <code>CapabilityType</code>, <code>TokenType</code>, <code>AccessAction</code>, <code>ConstraintOperand</code>, <code>ConstraintOperator</code>, <code>Prefer</code>, <code>ActivityType</code>"],
   ],
 )}
 
@@ -75,13 +75,14 @@ ${table(
 <ul>
   <li>Names follow the Swift API Design Guidelines: acronyms are upper case (<code>LWSClient</code>, <code>JSONPatch</code>,
   <code>DIDKey</code>, <code>linksetURL</code>), and creation takes the container as a label: <code>create(in:body:contentType:)</code>,
-  <code>createContainer(in:)</code>.</li>
+  <code>createContainer(in:)</code>; a move takes the destination as one: <code>move(_:to:options:)</code>.</li>
   <li>The contract's error classes are the cases of <code>LWSError</code>; its <em>ProtocolError</em> is <code>.protocolError</code>, and an
   argument that is not an absolute http(s) URL is <code>.invalidArgument</code>, thrown before any request.</li>
   <li>Request and response bodies are <code>Data</code>: there is no streaming read or upload. Every body can therefore be replayed
   for the single retry after a <code>401</code>.</li>
   <li><code>storageRoot()</code> is a throwing method, because a description without a <code>StorageRoot</code> service is a protocol
-  error. The other well-known services are optional properties (<code>notificationService</code>, <code>typeSearchService</code>…).</li>
+  error. The other well-known services are optional properties (<code>notificationService</code>, <code>typeSearchService</code>…), and so
+  is <code>moveCapability</code>.</li>
   <li><code>TypeQuery</code>'s builders throw <code>.invalidArgument</code> for an IRI that is not absolute or an empty OR group, so a query
   is written <code>try TypeQuery().anyOf(…).allOf(…)</code>. <code>Linkset</code>, <code>JSONPatch</code> and <code>TypeQuery</code> are values:
   <code>adding</code>, <code>removing</code>, <code>add</code>, <code>replace</code>… return copies.</li>

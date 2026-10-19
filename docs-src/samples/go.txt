@@ -334,6 +334,16 @@ if slices.Contains(doc.Allow, "PUT") {
 	_, err = client.UpdateLinkset(ctx, doc.URL, doc.Linkset, lws.IfMatch(doc.ETag))
 }
 return err
+@@@ move
+// Only a storage that describes a MoveResource capability moves resources.
+if capability, ok := storage.MoveCapability(); ok && capability.MovesDataResources() {
+	moved, err := client.Move(ctx, url, container) // reads the linkset, then patches its up link
+	if err != nil {
+		return err
+	}
+	// A storage that does not keep identifiers gives the resource a new URL: use moved.Location.
+	fmt.Println(moved.Location, moved.IdentifierPreserved)
+}
 @@@ auth-didkey
 // A did:key agent: the identifier is derived from the public key, nothing to host.
 key, err := lws.GenerateP256Key() // or lws.GenerateEd25519Key()
@@ -347,7 +357,7 @@ if err != nil {
 fmt.Println(credentials.Agent()) // did:key:zDn…
 
 client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials, nil)))
-_, err = client.Head(ctx, url) // 401 → AS metadata → token exchange → retried with a Bearer token
+_, err = client.Head(ctx, url) // 401 → resource metadata → token exchange → retried with a Bearer token
 return err
 @@@ auth-cid
 // An HTTPS agent publishes a controlled identifier document listing its key…
@@ -417,7 +427,7 @@ credentials := lws.NewOpenIDCredentials(idToken)
 client := lws.NewClient(lws.WithAuthenticator(lws.NewTokenExchangeAuthenticator(credentials,
 	&lws.TokenExchangeOptions{
 		// ID tokens are not always audience-restricted: only send them to servers you trust.
-		AuthorizationServerFilter: func(asURI, realm string) bool { return asURI == "https://auth.example" },
+		AuthorizationServerFilter: func(issuer, storage string) bool { return issuer == "https://auth.example" },
 	})))
 _, err := client.Head(ctx, url)
 return err
@@ -437,7 +447,7 @@ return err
 trusted := map[string]bool{"https://auth.example": true}
 authenticator := lws.NewTokenExchangeAuthenticator(credentials, &lws.TokenExchangeOptions{
 	AllowInsecureHTTP:         false, // plain-http AS only on loopback (default)
-	AuthorizationServerFilter: func(asURI, realm string) bool { return trusted[asURI] },
+	AuthorizationServerFilter: func(issuer, storage string) bool { return trusted[issuer] },
 	HTTPClient:                http.DefaultClient, // used for metadata and token requests
 })
 client := lws.NewClient(lws.WithAuthenticator(authenticator))

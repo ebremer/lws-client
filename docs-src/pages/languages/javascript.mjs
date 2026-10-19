@@ -60,7 +60,7 @@ ${table(
 
 <h2 id="notes">Notes and deviations</h2>
 <ul>
-  <li><code>links(rel?)</code>, <code>services(type?)</code> and <code>capabilities(type?)</code> are methods, not fields.</li>
+  <li><code>links(rel?)</code>, <code>services(type?)</code>, <code>capabilities(type?)</code> and <code>moveCapability()</code> are methods, not fields.</li>
   <li>The <code>Linkset</code> model keeps anchors and hrefs exactly as received, so a read-modify-write round trip is lossless.</li>
   <li><code>WebhookVerifier</code> takes a <code>resolveStorageDescription</code> callback (usually
   <code>(id) =&gt; client.getStorageDescription(id)</code>) rather than a client.</li>

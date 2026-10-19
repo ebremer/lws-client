@@ -19,31 +19,41 @@ ${table(
   [
     ["Authenticator", "Pluggable hook: adds credentials before a request, reacts to a 401", "<code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, or your own"],
     ["Credential provider", "Produces an authentication credential (subject token) for an authorization server", "<code>OpenIdCredentials</code>, <code>SamlCredentials</code>, <code>SelfSignedCredentials</code>"],
-    ["Authorization server (AS)", "Issues access tokens; metadata at <code>/.well-known/lws-configuration</code>", "Named by the storage's <code>WWW-Authenticate</code> challenge"],
-    ["Access token", "RFC 9068 JWT with <code>aud</code> = the challenge's realm, valid for minutes", "Cached and reused by the authenticator"],
+    ["Protected resource metadata", "RFC 9728 document naming the authorization servers of a resource", "Named by the <code>resource_metadata</code> of the storage's <code>WWW-Authenticate</code> challenge"],
+    ["Authorization server (AS)", "Issues access tokens; metadata at <code>/.well-known/lws-configuration</code>", "Named by the protected resource metadata"],
+    ["Access token", "RFC 9068 JWT whose <code>aud</code> includes the storage the <code>401</code> linked to, valid for minutes", "Cached and reused by the authenticator"],
   ],
 )}
 
 <h2 id="flow">What happens on a 401</h2>
 <p>See the <a href="concepts.html#auth">sequence diagram</a>. With a <code>TokenExchangeAuthenticator</code> configured, each client:</p>
 <ol class="steps">
-  <li>Parses <code>WWW-Authenticate: Bearer as_uri="…", realm="…"</code>. Without such a challenge, the
-  <code>401</code> surfaces as an <em>unauthorized</em> error that carries the parsed challenges.</li>
-  <li><strong>Checks the realm.</strong> The request URL must have the same scheme, host and port, and its path must equal the
-  realm's path or sit below it at a <code>/</code> boundary. Otherwise it raises an authentication error and sends nothing.</li>
+  <li>Parses <code>WWW-Authenticate: Bearer resource_metadata="…"</code> and the <code>Link</code> with rel
+  <code>https://www.w3.org/ns/lws#storage</code>. Without such a challenge, the <code>401</code> surfaces as an
+  <em>unauthorized</em> error that carries the parsed challenges.</li>
+  <li><strong>Checks where the metadata is.</strong> The <code>resource_metadata</code> URL must have the scheme, host and
+  port of the URL requested. Otherwise it raises an authentication error and fetches nothing.</li>
+  <li>Fetches the <strong>protected resource metadata</strong> (RFC 9728) and <strong>checks that its
+  <code>resource</code> is the URL requested</strong>, character for character. It names the authorization servers.</li>
+  <li><strong>Checks the storage.</strong> It reads the description of the storage the <code>Link</code> names (and keeps it) and
+  checks that the storage root is on the origin it requested. This stops a server from having you get a token for
+  another storage, which it could then replay there.</li>
   <li><strong>Checks transport security.</strong> The AS and its token endpoint must use HTTPS unless they are on loopback
   (or <code>allowInsecureHttp</code> is set for testing). It also applies your optional <code>authorizationServerFilter</code>.</li>
-  <li>Fetches the AS metadata (RFC 8414 path insertion) and checks that <code>issuer</code> equals <code>as_uri</code>, and that
-  <code>subject_token_types_supported</code> (if present) accepts your credential type.</li>
-  <li>Posts an RFC 8693 token exchange with <code>resource</code> = realm, <code>subject_token</code> and
+  <li>Fetches the AS metadata (RFC 8414 path insertion) and checks that <code>issuer</code> is the authorization server
+  the metadata named, and that <code>subject_token_types_supported</code> (if present) accepts your credential type.</li>
+  <li>Posts an RFC 8693 token exchange with <code>resource</code> = the storage, <code>subject_token</code> and
   <code>subject_token_type</code>. OAuth errors become authentication errors carrying <code>error</code> and
   <code>error_description</code>.</li>
-  <li>Caches the access token per (issuer, realm) until 30 s before it expires. Expiry comes from
+  <li>Caches the access token per (issuer, storage) until 30 s before it expires. Expiry comes from
   <code>expires_in</code>, else the JWT's <code>exp</code>, else 300 s. It then retries the original request once.</li>
 </ol>
-<p>Later requests inside the realm send the cached token straight away. A <code>401</code> with a cached token
-discards it and runs the exchange once more. Concurrent requests share a single in-flight exchange.
-Tokens are never sent to URLs outside their realm, including across redirects.</p>
+<p>None of these requests follows a redirect. A <code>401</code> that fails a check gets no token, and does not cost
+you the token you have. Later requests inside the storage, or inside its root, send the cached token straight away. A
+<code>401</code> with a cached token discards it and runs the exchange once more. Concurrent requests share a single
+in-flight exchange. Beyond the retry of a request that has just passed the checks, tokens are never sent to URLs
+outside their storage, including across redirects.</p>
+${callout("note", "Servers on earlier drafts", " Before 19 October 2026 the challenge was <code>Bearer as_uri=\"…\", realm=\"…\"</code>. The clients still follow it from a server that sends no <code>resource_metadata</code>: the request URL must lie inside the realm, which is then the token's <code>resource</code> and the only place it is sent.")}
 
 <h2 id="self-signed">Self-signed identities</h2>
 <p>Bots, server-side jobs and command-line tools usually hold their own key pair. With the self-signed
@@ -100,7 +110,7 @@ ${tabs(S["auth-saml"])}
 
 <h2 id="bearer">Existing access tokens</h2>
 <p>If you obtain access tokens yourself, <code>BearerTokenAuthenticator</code> sends them as
-<code>Authorization: Bearer</code>. Give it the realm so the token never leaves that storage.</p>
+<code>Authorization: Bearer</code>. Give it a realm, a URL prefix, so the token never leaves that storage.</p>
 ${tabs(S["auth-bearer"])}
 
 <h2 id="options">Options</h2>
@@ -109,7 +119,7 @@ ${table(
   ["Option", "Default", "Purpose"],
   [
     ["<code>allowInsecureHttp</code>", "<code>false</code>", "Permit <code>http://</code> authorization servers on non-loopback hosts (testing only)"],
-    ["<code>authorizationServerFilter(asUri, realm)</code>", "allow all", "Refuse to send credentials to authorization servers you don't trust"],
+    ["<code>authorizationServerFilter(issuer, storage)</code>", "allow all", "Refuse to send credentials to authorization servers you don't trust"],
     ["refresh skew / margin", "30 s", "How long before expiry a cached access token is replaced"],
     ["self-signed lifetime", "300 s", "Lifetime of each self-signed JWT credential"],
   ],
@@ -126,8 +136,11 @@ ${tabs(S["custom-authenticator"])}
   <li><strong>A storage chooses the authorization server.</strong> Self-signed credentials are audience-bound
   to that server, so a malicious storage gains nothing from them. Static OpenID or SAML tokens may not be
   audience-restricted, so restrict them with <code>authorizationServerFilter</code> or obtain audience-restricted tokens.</li>
-  <li><strong>Realm checks are not optional.</strong> They stop a server from collecting a token whose audience
-  covers resources outside its own space.</li>
+  <li><strong>The discovery checks are not optional.</strong> lws10-core requires them before any token request: they
+  stop a server from collecting a token for a storage that is not its own.</li>
+  <li><strong>Server-side applications.</strong> The metadata URL, the storage and the authorization servers are chosen
+  by the storage server, and the client fetches them. A server that runs a client on others' behalf should limit what
+  it may reach (RFC 9728 §7.7).</li>
   <li><strong>Short lifetimes.</strong> Access tokens should live five minutes or less. Self-signed credentials
   default to five minutes and are cached per audience until shortly before expiry.</li>
   <li><strong>TLS everywhere.</strong> Bearer tokens and ID tokens grant access to whoever holds them.</li>

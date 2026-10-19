@@ -207,6 +207,13 @@ if "PUT" in doc.allow:
     linkset = doc.linkset.copy()
     linkset.add(url, "license", "https://creativecommons.org/licenses/by/4.0/")
     client.update_linkset(doc.url, linkset, if_match=doc.etag)
+@@@ move
+# Only a storage that describes a MoveResource capability moves resources.
+capability = storage.move_capability()
+if capability and capability.moves_data_resources:
+    moved = client.move(url, container)     # reads the linkset, then patches its up link
+    # A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+    print(moved.location, "(same URL)" if moved.identifier_preserved else "(new URL)")
 @@@ auth-didkey
 # A did:key agent: the identifier is derived from the public key, nothing to host.
 key = SigningKey.generate("ES256")             # or "EdDSA" (Ed25519)
@@ -214,7 +221,7 @@ credentials = SelfSignedCredentials.did_key(key)
 print(credentials.agent)                        # did:key:zDn…
 
 client = LwsClient(authenticator=TokenExchangeAuthenticator(credentials))
-client.head(url)   # 401 → AS metadata → token exchange → retried with a Bearer token
+client.head(url)   # 401 → resource metadata → token exchange → retried with a Bearer token
 @@@ auth-cid
 import json
 
@@ -246,7 +253,7 @@ client = LwsClient(
     authenticator=TokenExchangeAuthenticator(
         credentials,
         # ID tokens are not always audience-restricted: only send them to servers you trust.
-        authorization_server_filter=lambda as_uri, realm: as_uri == "https://auth.example",
+        authorization_server_filter=lambda issuer, storage: issuer == "https://auth.example",
     )
 )
 @@@ auth-saml
@@ -263,7 +270,7 @@ trusted = {"https://auth.example"}
 authenticator = TokenExchangeAuthenticator(
     credentials,
     allow_insecure_http=False,                  # plain-http AS only on loopback (default)
-    authorization_server_filter=lambda as_uri, realm: as_uri in trusted,
+    authorization_server_filter=lambda issuer, storage: issuer in trusted,
     refresh_skew=30.0,                          # refresh 30 s before expiry (default)
 )
 client = LwsClient(authenticator=authenticator)

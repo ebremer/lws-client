@@ -43,9 +43,10 @@ ${callout("tip", "Relative identifiers", " Servers may return path-relative ids 
 <p><code>readContainer</code> returns a single page with its pagination links and response metadata. Page URLs are
 opaque: follow them, but never construct them.</p>
 ${tabs(S["read-container"])}
-<p>The clients accept the three equivalent container media types (<code>application/lws+json</code>,
-<code>application/ld+json</code>, <code>application/json</code>). Any other content type, or a body whose type is
-not a container, is reported as a protocol error.</p>
+<p>The clients ask for <code>application/lws+json</code>, the one container media type every server must honour. They
+also read an <code>application/ld+json</code> or <code>application/json</code> answer as the same document, a leniency
+towards servers of earlier drafts. Any other content type, or a body whose type is not a container, is reported as a
+protocol error.</p>
 
 <h2 id="iterate">Iterating every member</h2>
 <p><code>listContainer</code> follows <code>rel="next"</code> lazily. A page is only fetched when you iterate past

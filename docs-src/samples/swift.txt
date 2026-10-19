@@ -193,6 +193,13 @@ if doc.supportsPut {                                 // Allow lists PUT
         .adding(anchor: url.absoluteString, rel: "license", href: "https://creativecommons.org/licenses/by/4.0/")
     _ = try await client.updateLinkset(doc.url, linkset: updated, options: UpdateOptions(ifMatch: doc.etag))
 }
+@@@ move
+// Only a storage that describes a MoveResource capability moves resources.
+if let capability = storage.moveCapability, capability.movesDataResources {
+    let moved = try await client.move(url, to: container)   // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+    print(moved.location, moved.identifierPreserved ? "(same URL)" : "(new URL)")
+}
 @@@ auth-didkey
 // A did:key agent: the identifier is derived from the public key, nothing to host.
 let key = SigningKey.generateP256()                  // or SigningKey.generateEd25519()
@@ -200,7 +207,7 @@ let credentials = try SelfSignedCredentials.didKey(key)
 print(credentials.agent)                             // did:key:zDn…
 
 let client = LWSClient(authenticator: TokenExchangeAuthenticator(credentials: credentials))
-_ = try await client.head(url)   // 401 → AS metadata → token exchange → retried with a Bearer token
+_ = try await client.head(url)   // 401 → resource metadata → token exchange → retried with a Bearer token
 @@@ auth-cid
 // An HTTPS agent publishes a controlled identifier document listing its key…
 let key = SigningKey.generateP256()
@@ -228,7 +235,7 @@ print(credentials.agent, kid, fromDID.algorithm)
 let credentials = OpenIDCredentials(idToken: idToken)
 let authenticator = TokenExchangeAuthenticator(credentials: credentials, options: TokenExchangeOptions(
     // ID tokens are not always audience-restricted: only send them to servers you trust.
-    authorizationServerFilter: { asURI, realm in asURI.absoluteString == "https://auth.example" }
+    authorizationServerFilter: { issuer, storage in issuer.absoluteString == "https://auth.example" }
 ))
 let client = LWSClient(authenticator: authenticator)
 @@@ auth-saml
@@ -244,7 +251,7 @@ let authenticator = TokenExchangeAuthenticator(
     credentials: credentials.withLifetime(300),      // self-signed JWT lifetime in seconds (default 300)
     options: TokenExchangeOptions(
         allowInsecureHttp: false,                    // plain-http AS only on loopback (default)
-        authorizationServerFilter: { asURI, realm in trusted.contains(asURI.absoluteString) },
+        authorizationServerFilter: { issuer, storage in trusted.contains(issuer.absoluteString) },
         refreshMargin: 30,                           // refresh 30 s before expiry (default)
         timeout: 10                                  // metadata and token requests, in seconds
     ))

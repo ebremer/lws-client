@@ -44,7 +44,7 @@ ${table(
   [
     ["Calls", "Every operation is an <code>…Async</code> method returning a <code>Task</code>, with an optional trailing <code>CancellationToken</code>. Cancelling throws <code>OperationCanceledException</code>; a timeout throws <code>LwsTransportException</code>"],
     ["Pagination", "<code>ListContainerAsync</code>, <code>ListTypesAsync</code>, <code>SearchAllAsync</code>, <code>ListSubscriptionsAsync</code>… return lazy <code>IAsyncEnumerable&lt;T&gt;</code>s: <code>await foreach</code>, or .NET 10's <code>System.Linq.AsyncEnumerable</code> operators (<code>Where</code>, <code>Select</code>, <code>ToListAsync</code>)"],
-    ["Options", "Records with <code>init</code> properties, set with object initializers: <code>new CreateOptions { Slug = … }</code>, <code>new UpdateOptions { IfMatch = etag }</code>, <code>new DeleteOptions { Recursive = true }</code>, <code>new ReadOptions { Range = new RangeHeaderValue(0, 1023) }</code>. Every one also has <code>Headers</code> and <code>Timeout</code>"],
+    ["Options", "Records with <code>init</code> properties, set with object initializers: <code>new CreateOptions { Slug = … }</code>, <code>new UpdateOptions { IfMatch = etag }</code>, <code>new DeleteOptions { Recursive = true }</code>, <code>new MoveOptions { IfMatch = etag }</code>, <code>new ReadOptions { Range = new RangeHeaderValue(0, 1023) }</code>. Every one also has <code>Headers</code> and <code>Timeout</code>"],
     ["Bodies", "<code>ReadOnlyMemory&lt;byte&gt;</code> (replayable) or a <code>Stream</code> (sent once, after a <code>HEAD</code> obtains a token); <code>CreateTextAsync</code> and <code>CreateJsonAsync</code>; <code>ReadStreamAsync</code> for unbuffered reads"],
     ["Models", "Immutable classes and records. Absent values are <code>null</code> under nullable reference types; JSON is <code>JsonElement</code> / <code>JsonObject</code>; <code>GetJson&lt;T&gt;()</code> binds with <code>System.Text.Json</code>"],
     ["Errors", "<code>LwsException</code> → <code>HttpException</code> (<code>Status</code>, <code>Problem</code>, <code>Headers</code>, <code>Body</code>) → <code>NotFoundException</code>, <code>ConflictException</code>, …; narrow them with <code>catch … when</code>"],
@@ -57,8 +57,8 @@ ${table(
 ${table(
   ["Namespace", "Contents"],
   [
-    ["<code>Ebremer.Lws</code>", "<code>LwsClient</code>, options, models (<code>Resource</code>, <code>ResourceMetadata</code>, <code>ContainerPage</code>, <code>StorageDescription</code>, <code>Linkset</code>…), <code>JsonPatch</code>, <code>JsonPointer</code>, <code>TypeQuery</code>, exceptions, <code>Lws</code> constants"],
-    ["<code>Ebremer.Lws.Auth</code>", "<code>IAuthenticator</code>, <code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, credentials, <code>SigningKey</code>, <code>VerificationKey</code>, <code>Jwk</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifierDocument</code>"],
+    ["<code>Ebremer.Lws</code>", "<code>LwsClient</code>, options, models (<code>Resource</code>, <code>ResourceMetadata</code>, <code>ContainerPage</code>, <code>StorageDescription</code>, <code>Linkset</code>, <code>MoveResult</code>…), <code>JsonPatch</code>, <code>JsonPointer</code>, <code>TypeQuery</code>, exceptions, <code>Lws</code> constants"],
+    ["<code>Ebremer.Lws.Auth</code>", "<code>IAuthenticator</code>, <code>TokenExchangeAuthenticator</code>, <code>BearerTokenAuthenticator</code>, credentials, <code>ProtectedResourceMetadata</code>, <code>SigningKey</code>, <code>VerificationKey</code>, <code>Jwk</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifierDocument</code>"],
     ["<code>Ebremer.Lws.Notifications</code>", "<code>WebhookSubscriptionRequest</code>, <code>Subscription</code>, <code>Notification</code>, <code>Activity</code>, <code>WebhookVerifier</code>"],
     ["<code>Ebremer.Lws.Access</code>", "<code>AccessRequest</code>, <code>AccessGrant</code>, <code>AccessPolicy</code>, <code>AccessTarget</code>, <code>Constraint</code>"],
     ["<code>Ebremer.Lws.Http</code>", "<code>Link</code>, <code>LinkHeader</code>, <code>WwwAuthenticate</code>, <code>AuthChallenge</code>, <code>StructuredFields</code>, <code>ProblemDetails</code>, <code>HeaderMap</code>, <code>Slug</code>"],
@@ -76,7 +76,7 @@ ${table(
   <code>subscriptionType</code>; <code>SubscribeAsync(Uri, …)</code> takes a raw endpoint.</li>
   <li><code>StorageDescription.GetStorageRoot()</code> is a method because it throws <code>ProtocolException</code> when there is no
   <code>StorageRoot</code> service. The other well-known services are nullable properties (<code>NotificationService</code>,
-  <code>TypeSearchService</code>…).</li>
+  <code>TypeSearchService</code>…), and so is <code>MoveCapability</code>.</li>
   <li><code>ContainerPage.Id</code> is never null: a search page without an <code>id</code> takes the page URL.</li>
   <li><code>Linkset</code>, <code>JsonPatch</code> and <code>TypeQuery</code> are immutable, so <code>Add</code>, <code>Remove</code>,
   <code>Replace</code>, <code>AllOf</code>… return new instances. Start a query from <code>new TypeQuery()</code>.</li>

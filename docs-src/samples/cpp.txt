@@ -212,6 +212,13 @@ if (std::ranges::find(doc.allow, "PUT") != doc.allow.end()) {
     doc.linkset.add(url, "license", "https://creativecommons.org/licenses/by/4.0/");
     client.update_linkset(doc.url, doc.linkset, {.if_match = doc.etag});
 }
+@@@ move
+// Only a storage that describes a MoveResource capability moves resources.
+if (auto capability = storage.move_capability(); capability && capability->moves_data_resources()) {
+    lws::MoveResult moved = client.move(url, container);   // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+    std::cout << moved.location << (moved.identifier_preserved ? " (same URL)" : " (new URL)") << '\n';
+}
 @@@ auth-didkey
 // A did:key agent: the identifier is derived from the public key, nothing to host.
 auto key = lws::PrivateKey::generate(lws::KeyAlgorithm::ES256);   // or KeyAlgorithm::EdDSA
@@ -221,7 +228,7 @@ std::cout << credentials->agent_id() << '\n';                       // did:key:z
 lws::ClientOptions options;
 options.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(credentials);
 lws::Client client(options);
-client.head(url);   // 401 → AS metadata → token exchange → retried with a Bearer token
+client.head(url);   // 401 → resource metadata → token exchange → retried with a Bearer token
 @@@ auth-cid
 // An HTTPS agent publishes a controlled identifier document listing its key…
 auto key = lws::PrivateKey::generate(lws::KeyAlgorithm::ES256);
@@ -249,8 +256,8 @@ std::cout << (credentials->agent_id() == did.did) << ' ' << did.kid << '\n';
 // with a supplier instead to provide a fresh token whenever a new access token is needed.
 lws::TokenExchangeOptions exchange;
 // ID tokens are not always audience-restricted: only send them to servers you trust.
-exchange.authorization_server_filter = [](std::string_view as_uri, std::string_view) {
-    return as_uri == "https://auth.example";
+exchange.authorization_server_filter = [](std::string_view issuer, std::string_view /*storage*/) {
+    return issuer == "https://auth.example";
 };
 lws::ClientOptions options;
 options.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(
@@ -271,8 +278,8 @@ lws::Client client(options);
 const std::set<std::string, std::less<>> trusted = {"https://auth.example"};
 lws::TokenExchangeOptions exchange;
 exchange.allow_insecure_http = false;                 // plain-http AS only on loopback (default)
-exchange.authorization_server_filter = [trusted](std::string_view as_uri, std::string_view) {
-    return trusted.contains(as_uri);
+exchange.authorization_server_filter = [trusted](std::string_view issuer, std::string_view /*storage*/) {
+    return trusted.contains(issuer);
 };
 exchange.refresh_skew = std::chrono::seconds(30);    // refresh 30 s before expiry (default)
 lws::ClientOptions options;

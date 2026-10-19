@@ -39,17 +39,19 @@
 
 <h1>Spec coverage</h1>
 <p class="lead">The clients track the W3C Linked Web Storage Working Group drafts as of
-<strong>5 October 2026</strong>: <a href="https://github.com/w3c/lws-protocol/commit/ef02548">w3c/lws-protocol@ef02548</a>,
-"Switch baseline PATCH format from JSON Merge Patch to JSON Patch".</p>
+<strong>19 October 2026</strong>: <a href="https://github.com/w3c/lws-protocol/commit/9a08ff6">w3c/lws-protocol@9a08ff6</a>,
+"Define how resources move between containers", published as the Working Draft of 19 October 2026. Since the
+5 October baseline, a <code>401</code> leads to the authorization server through protected resource metadata (RFC 9728),
+only <code>application/lws+json</code> is a required container media type, and resources move between containers.</p>
 <div id="toc" class="toc"></div>
 
 <h2 id="documents">Documents</h2>
 <div class="table-wrap"><table><thead><tr><th>Document</th><th>Status at baseline</th><th>Coverage</th></tr></thead><tbody>
-<tr><td><a href="https://w3c.github.io/lws-protocol/lws10-core/">Linked Web Storage Protocol 1.0</a> (core)</td><td>First Public Working Draft 2026-06-05; Editor's Draft 2026-10-05</td><td>Full client side</td></tr>
-<tr><td><a href="https://www.w3.org/TR/2026/DNOTE-lws10-vocab-20260714/">LWS Vocabulary</a></td><td>Group Note Draft 2026-07-14</td><td>Constants for all terms</td></tr>
-<tr><td><a href="https://w3c.github.io/lws-protocol/lws10-authn-openid/">Authentication Suite: OpenID Connect</a></td><td>Working Draft 2026-08-03</td><td><code>OpenIdCredentials</code></td></tr>
-<tr><td><a href="https://w3c.github.io/lws-protocol/lws10-authn-saml/">Authentication Suite: SAML 2.0</a></td><td>Working Draft</td><td><code>SamlCredentials</code></td></tr>
-<tr><td><a href="https://w3c.github.io/lws-protocol/lws10-authn-ssi-cid/">Authentication Suite: Self-signed Identity using Controlled Identifiers</a></td><td>Working Draft 2026-04-23</td><td><code>SelfSignedCredentials</code> (ES256, EdDSA) and CID document helpers</td></tr>
+<tr><td><a href="https://w3c.github.io/lws-protocol/lws10-core/">Linked Web Storage Protocol 1.0</a> (core)</td><td>Working Draft 2026-10-19</td><td>Full client side</td></tr>
+<tr><td><a href="https://www.w3.org/TR/2026/DNOTE-lws10-vocab-20260714/">LWS Vocabulary</a></td><td>Group Note Draft (vocabulary of 2026-10-19)</td><td>Constants for all terms</td></tr>
+<tr><td><a href="https://w3c.github.io/lws-protocol/lws10-authn-openid/">Authentication Suite: OpenID Connect</a></td><td>Working Draft 2026-10-15</td><td><code>OpenIdCredentials</code></td></tr>
+<tr><td><a href="https://w3c.github.io/lws-protocol/lws10-authn-saml/">Authentication Suite: SAML 2.0</a></td><td>Working Draft 2026-10-15</td><td><code>SamlCredentials</code></td></tr>
+<tr><td><a href="https://w3c.github.io/lws-protocol/lws10-authn-ssi-cid/">Authentication Suite: Self-signed Identity using Controlled Identifiers</a></td><td>Working Draft 2026-10-15</td><td><code>SelfSignedCredentials</code> (ES256, EdDSA) and CID document helpers</td></tr>
 <tr><td><a href="https://w3c.github.io/lws-protocol/lws10-authn-ssi-did-key/">Authentication Suite: did:key</a></td><td>Discontinued, subsumed by the CID suite</td><td>did:key identities via <code>SelfSignedCredentials.didKey</code></td></tr>
 <tr><td><a href="https://w3c.github.io/lws-protocol/lws10-notifications-webhook/">Notification Suite: Webhooks</a></td><td>Editor's Draft</td><td>Subscribe, list, cancel, and verify signed deliveries</td></tr>
 <tr><td><a href="https://w3c.github.io/lws-protocol/lws10-index/">Search and Type Index Services</a></td><td>Editor's Draft</td><td>Type index, type search (<code>QUERY</code>), <code>Accept-Query</code> discovery</td></tr>
@@ -67,7 +69,8 @@ language guide.</p>
 <tr><td>Delete, recursive delete (<code>Depth: infinity</code>)</td><td>core §Delete resource</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
 <tr><td>Container listing and lazy pagination</td><td>core §Containers, §Pagination</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
 <tr><td>Linkset read / replace / patch</td><td>core §Metadata</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
-<tr><td>401 challenge → AS metadata → token exchange → retry</td><td>core §Authorization</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>Moving resources (<code>MoveResource</code> capability, <code>up</code> link patch)</td><td>core §Moving Resources</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+<tr><td>401 challenge → protected resource metadata → discovery checks → AS metadata → token exchange → retry</td><td>core §Authorization</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
 <tr><td>OpenID Connect, SAML 2.0, self-signed (CID, did:key) credentials</td><td>authn suites</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
 <tr><td>Webhook subscriptions</td><td>core §Notifications, webhook suite</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
 <tr><td>RFC 9421 webhook signature verification</td><td>webhook suite §Authentication</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
@@ -89,15 +92,38 @@ behave identically in every language.</p>
   <dd>The core draft defines an optional identity hint for <em>create</em> but does not bind it to a
   header. The clients send <code>Slug</code> (RFC 5023 §9.7), as Solid servers expect,
   percent-encoding non-ASCII characters.</dd>
-  <dt>Realm containment</dt>
-  <dd>The draft says the request URI must be "logically contained" in the challenge's
-  <code>realm</code>. The clients require the same scheme, host and port, and a path equal to the
-  realm path or below it at a <code>/</code> boundary. So <code>/storage_10/x</code> is <em>not</em>
-  inside realm <code>/storage_1</code>.</dd>
+  <dt>Discovery checks</dt>
+  <dd>Same scheme and authority means the scheme and host compared case-insensitively and the port after
+  defaults. The protected resource metadata's <code>resource</code> must be the URL requested exactly, after
+  only that normalisation: no trailing-slash or percent-encoding leniency. None of the discovery requests
+  follows a redirect. Storage descriptions read for the check are cached.</dd>
+  <dt>Where a token goes</dt>
+  <dd>A token is for a storage, which is no path prefix in general. The clients send a cached token ahead to
+  URLs inside the storage's URL or its root, each taken as a directory: same scheme, host and port, and a path
+  equal to it or below it at a <code>/</code> boundary. Anywhere else they wait for a <code>401</code>: the retry of
+a request that has just passed the checks carries the token, and later ones reuse it after their own checks, with no
+new token request.</dd>
+  <dt>A 401 that fails a check</dt>
+  <dd>Gets no token request, and the token the request carried is kept: a storage may hold a resource whose
+  <code>401</code> links to another storage.</dd>
+  <dt>Challenges of earlier drafts</dt>
+  <dd>A <code>Bearer</code> challenge with <code>as_uri</code> and <code>realm</code> and no
+  <code>resource_metadata</code> is still followed: the URL must be inside the realm (same scheme, host and
+  port, and a path equal to the realm path or below it at a <code>/</code> boundary, so <code>/storage_10/x</code>
+  is <em>not</em> inside realm <code>/storage_1</code>), which is then the token's <code>resource</code> and scope.</dd>
   <dt>Authorization server metadata location</dt>
   <dd><code>/.well-known/lws-configuration</code> is resolved with RFC 8414 §3.1 path insertion, so
-  issuers with a path work. The <code>issuer</code> in the metadata must equal the challenge's
-  <code>as_uri</code>.</dd>
+  issuers with a path work. The <code>issuer</code> in the metadata must equal the authorization server the
+  protected resource metadata named (the first that passes the HTTPS check and your filter).</dd>
+  <dt>Container media types</dt>
+  <dd>The clients ask for <code>application/lws+json</code>, the one a server must honour, and read an
+  <code>application/ld+json</code> or <code>application/json</code> answer as the same document, a leniency
+  towards servers of earlier drafts. They do not parse RDF.</dd>
+  <dt>Moves</dt>
+  <dd><code>move</code> reads the linkset, then patches it with a <code>test</code> and a <code>replace</code> of the
+  <code>up</code> link's <code>href</code>, conditional on the linkset's ETag. It takes the resource's identifier after
+  the move from the answer: the anchor of a <code>200</code>'s linkset, else the URL it had. Whether a storage
+  allows moves is the application's to check, with <code>moveCapability()</code>.</dd>
   <dt>Transport security for tokens</dt>
   <dd>Authorization servers and token endpoints must use HTTPS, except on loopback hosts or when
   explicitly allowed for testing.</dd>
@@ -122,7 +148,7 @@ behave identically in every language.</p>
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
         <footer class="site-footer">
-          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-19; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
         </footer>
       </article>
     </main>

@@ -225,9 +225,9 @@ Authorization: Bearer eyJ…
 <div class="table-wrap"><table><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody>
 <tr><td><code>storage</code></td><td>The storage the events belong to (checked against the signing key)</td></tr>
 <tr><td><code>activities</code></td><td>Always a list, even when the server sent a single object (servers may batch)</td></tr>
-<tr><td><code>types</code></td><td><code>Create</code>, <code>Update</code> (content or metadata) or <code>Delete</code>; helpers <code>isCreate()</code>, <code>isUpdate()</code>, <code>isDelete()</code></td></tr>
+<tr><td><code>types</code></td><td><code>Create</code>, <code>Update</code> (content or metadata), <code>Delete</code>, or <code>Move</code> (from a storage that allows moves); helpers <code>isCreate()</code>, <code>isUpdate()</code>, <code>isDelete()</code>, <code>isMove()</code></td></tr>
 <tr><td><code>object</code></td><td>The resource's <code>id</code> and types</td></tr>
-<tr><td><code>target</code> / <code>origin</code></td><td>Container a resource was added to (Create) or removed from (Delete)</td></tr>
+<tr><td><code>target</code> / <code>origin</code></td><td>Container a resource was added to (Create, Move) or removed from (Delete, Move)</td></tr>
 <tr><td><code>actor</code>, <code>published</code></td><td>Who acted (optional) and when</td></tr>
 </tbody></table></div>
 <p><code>parseNotification</code> parses a body you have already verified, or trust for another reason.</p>
@@ -560,7 +560,7 @@ algorithm confusion.</p>
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
         <footer class="site-footer">
-          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-19; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
         </footer>
       </article>
     </main>

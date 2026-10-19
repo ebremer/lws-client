@@ -58,6 +58,10 @@ The LWS core spec defines their shape (an optional <code>id</code>, a required <
 not their vocabulary. The clients keep every property and let you look capabilities up by type. Because
 <code>PATCH</code> formats are also advertised per resource in <code>Accept-Patch</code>, check that header before you
 send a non-baseline format.</p>
+<p>One capability is defined by LWS itself: <code>MoveResource</code>, which says that resources can move between
+containers, which kinds (<code>appliesTo</code>) and whether they keep their URLs (<code>preservesIdentifier</code>).
+<code>moveCapability()</code> returns it, or nothing when the storage describes none, and then resources cannot be
+moved. See <a href="metadata.html#move">Moving resources</a>.</p>
 
 <h2 id="keys">Signing keys</h2>
 <p>A storage that signs webhooks publishes its keys as <code>verificationMethod</code> entries referenced from

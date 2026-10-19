@@ -40,7 +40,7 @@
 <section class="hero">
   <div class="badges">
     <span class="badge accent">MIT licensed</span>
-    <span class="badge">LWS drafts as of 2026-10-05</span>
+    <span class="badge">LWS drafts as of 2026-10-19</span>
     <span class="badge">10 languages · 1 API design</span>
     <span class="badge">v0.1.0</span>
   </div>
@@ -62,8 +62,9 @@
     <ul>
       <li><strong>Complete client side of LWS 1.0:</strong> discovery, CRUD, containers, linksets,
       notifications, access requests and grants, type index and search.</li>
-      <li><strong>Authorization handled for you.</strong> On a <code>401</code> the client checks the realm,
-      discovers the authorization server and performs an OAuth 2.0 token exchange. It then caches the token per realm.</li>
+      <li><strong>Authorization handled for you.</strong> On a <code>401</code> the client finds the authorization
+      server through the protected resource metadata (RFC 9728), makes the checks the spec requires, and performs an
+      OAuth 2.0 token exchange. It then caches the token per storage.</li>
       <li><strong>Every authentication suite:</strong> OpenID Connect, SAML 2.0, and self-signed identities
       (controlled identifier documents and <code>did:key</code>) with ES256 and EdDSA.</li>
       <li><strong>Verified webhooks:</strong> RFC 9421 HTTP Message Signatures and RFC 9530
@@ -245,13 +246,13 @@ RFC 9421 webhook vectors and the did:key specification vector. They also all pas
 <a href="testing.html#interop">end-to-end interop scenario</a> against a bundled mock LWS server.
 Every code sample on this site is type-checked or compiled against the real libraries before it is published.
 The getting-started program is also run against the mock server in all ten languages.</p>
-<p>The baseline is the W3C LWS Working Group's documents as of 2026-10-05, including the switch of
+<p>The baseline is the W3C LWS Working Group's documents as of 2026-10-19, including the switch of
 the baseline <code>PATCH</code> format to JSON Patch. See <a href="spec-coverage.html">spec coverage</a> for
 details and interpretation decisions.</p>
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
         <footer class="site-footer">
-          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-19; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
         </footer>
       </article>
     </main>

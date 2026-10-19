@@ -114,7 +114,7 @@ console.log(page.totalItems);</code></pre>
 
 <h2 id="notes">Notes and deviations</h2>
 <ul>
-  <li><code>links(rel?)</code>, <code>services(type?)</code> and <code>capabilities(type?)</code> are methods, not fields.</li>
+  <li><code>links(rel?)</code>, <code>services(type?)</code>, <code>capabilities(type?)</code> and <code>moveCapability()</code> are methods, not fields.</li>
   <li>The <code>Linkset</code> model keeps anchors and hrefs exactly as received, so a read-modify-write round trip is lossless.</li>
   <li><code>WebhookVerifier</code> takes a <code>resolveStorageDescription</code> callback (usually
   <code>(id) =&gt; client.getStorageDescription(id)</code>) rather than a client.</li>
@@ -137,7 +137,7 @@ LWS_SERVER=http://localhost:8787 node examples/quickstart.mjs</code></pre>
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
         <footer class="site-footer">
-          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-19; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
         </footer>
       </article>
     </main>

@@ -88,6 +88,7 @@ ${table(
     ["update", "<code>200</code> / <code>204</code>", "<code>412</code> stale ETag · <code>404</code> (no create-by-PUT) · <code>405</code> on containers"],
     ["patch", "<code>200</code> / <code>204</code>", "<code>415</code> unsupported format · <code>409</code>/<code>422</code> patch failed · <code>412</code>"],
     ["delete", "<code>204</code>", "<code>409</code> non-empty container · <code>412</code> · <code>405</code> storage root"],
+    ["move", "<code>200</code> / <code>204</code>", "<code>409</code> move refused (no capability, not a container, into itself) · <code>403</code> · <code>412</code>"],
   ],
 )}
 <p>See <a href="errors.html">Errors</a> for how each status maps to a typed error in every language.</p>

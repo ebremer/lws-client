@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Metadata &amp; linksets · LWS Client</title>
-  <meta name="description" content="Read, patch and replace Linked Web Storage metadata stored in RFC 9264 linkset resources, including JSON Pointer escaping for URI relation types.">
+  <meta name="description" content="Read, patch and replace Linked Web Storage metadata stored in RFC 9264 linkset resources, including JSON Pointer escaping for URI relation types, and move resources between containers by changing their up link.">
   <meta property="og:title" content="Metadata &amp; linksets · LWS Client">
-  <meta property="og:description" content="Read, patch and replace Linked Web Storage metadata stored in RFC 9264 linkset resources, including JSON Pointer escaping for URI relation types.">
+  <meta property="og:description" content="Read, patch and replace Linked Web Storage metadata stored in RFC 9264 linkset resources, including JSON Pointer escaping for URI relation types, and move resources between containers by changing their up link.">
   <meta property="og:type" content="website">
   <meta name="color-scheme" content="light dark">
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
@@ -45,7 +45,8 @@
 <h2 id="kinds">Kinds of metadata</h2>
 <div class="table-wrap"><table><thead><tr><th>Kind</th><th>Examples</th><th>Who changes it</th></tr></thead><tbody>
 <tr><td>System managed</td><td><code>linkset</code>, <code>type</code> (Container/DataResource), <code>format</code>, <code>size</code>, <code>modified</code></td><td>Server only</td></tr>
-<tr><td>Core</td><td><code>up</code>, <code>items</code>, <code>title</code>, <code>creator</code></td><td>Client, subject to server restrictions</td></tr>
+<tr><td>Core</td><td><code>items</code>, <code>title</code>, <code>creator</code></td><td>Client, subject to server restrictions</td></tr>
+<tr><td>Containment</td><td><code>up</code></td><td>Client, only where the storage describes a <code>MoveResource</code> capability: changing it moves the resource (see <a href="#move">Moving resources</a>)</td></tr>
 <tr><td>User-defined</td><td><code>describedby</code>, <code>license</code>, extension relation URIs</td><td>Client</td></tr>
 </tbody></table></div>
 <pre data-lang="json" data-title="GET /alice/personalinfo.json.meta  (application/linkset+json)"><code class="language-json">{
@@ -257,6 +258,113 @@ client.patchLinkset(doc.url, patch, ifMatch = doc.etag)</code></pre>
 </div>
 <div class="callout tip"><p><strong>Always send If-Match</strong> Several agents may edit the same metadata. Pass the linkset's ETag so a concurrent change produces <code>412 Precondition Failed</code> instead of a silent overwrite.</p></div>
 
+<h2 id="move">Moving resources</h2>
+<p>LWS has no method for a move. A resource moves into another container when the <code>up</code> link in its linkset
+changes to that container, and the storage moves it (a container with everything in it) in one step. That only works
+where the storage description lists a <code>MoveResource</code> capability. Without one the <code>up</code> link is not
+modifiable, and a client must not assume it is. <code>moveCapability()</code> returns the capability, or nothing:</p>
+<ul>
+  <li><strong><code>appliesTo</code></strong> names what moves: <code>DataResource</code>, <code>Container</code> or both. A capability
+  that does not say moves data resources only. <code>movesDataResources()</code> and <code>movesContainers()</code> check it.</li>
+  <li><strong><code>preservesIdentifier</code></strong> says whether a moved resource keeps its URL. When it is absent, do not
+  assume it does.</li>
+</ul>
+<pre data-lang="json" data-title="In the storage description"><code class="language-json">&quot;capability&quot;: [
+  { &quot;type&quot;: &quot;MoveResource&quot;, &quot;appliesTo&quot;: [&quot;DataResource&quot;, &quot;Container&quot;], &quot;preservesIdentifier&quot;: false }
+]</code></pre>
+<p><code>move(resourceUrl, destinationUrl)</code> reads the resource's linkset first, because JSON Patch addresses the
+<code>up</code> link by its position (<code>/linkset/<em>i</em>/up/<em>j</em>/href</code>) and the request should be
+conditional on the linkset's ETag. It then sends two operations in one conditional <code>PATCH</code>: a <code>test</code>
+that the link still holds the <code>href</code> it read, and a <code>replace</code> of it with the destination.</p>
+<p>A storage that keeps identifiers answers <code>204</code> (or <code>200</code> with the linkset), and the resource keeps its
+URL. One that does not answers <code>200</code> with the updated linkset, whose <code>anchor</code> is the resource's new URL,
+and a <code>Content-Location</code> header with the linkset's new URL. The result reports the outcome: <code>location</code> is
+where the resource is now, <code>linkset</code> is where its metadata is, and <code>identifierPreserved</code> says whether the URL
+stayed. Unless the capability says <code>preservesIdentifier: true</code>, take the resource's URL from the result.</p>
+<pre data-lang="http" data-title="A move in a storage that does not keep identifiers"><code class="language-http">PATCH /alice/notes/shoppinglist.txt.meta HTTP/1.1
+Content-Type: application/json-patch+json
+If-Match: &quot;7f3a&quot;
+
+[
+  { &quot;op&quot;: &quot;test&quot;,    &quot;path&quot;: &quot;/linkset/0/up/0/href&quot;, &quot;value&quot;: &quot;https://storage.example/alice/notes/&quot; },
+  { &quot;op&quot;: &quot;replace&quot;, &quot;path&quot;: &quot;/linkset/0/up/0/href&quot;, &quot;value&quot;: &quot;https://storage.example/alice/archive/&quot; }
+]
+
+HTTP/1.1 200 OK
+Content-Type: application/linkset+json
+Content-Location: /alice/archive/shoppinglist.txt.meta
+
+{ &quot;linkset&quot;: [{ &quot;anchor&quot;: &quot;/alice/archive/shoppinglist.txt&quot;, &quot;up&quot;: [{ &quot;href&quot;: &quot;/alice/archive/&quot; }] }] }</code></pre>
+<div class="code-tabs">
+<pre data-lang="java" data-tab="java" data-label="Java"><code class="language-java">// Only a storage that describes a MoveResource capability moves resources.
+if (storage.moveCapability().map(move -&gt; move.movesDataResources()).orElse(false)) {
+    MoveResult moved = client.move(url, container);   // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.location().
+    System.out.println(moved.location() + (moved.identifierPreserved() ? &quot; (same URL)&quot; : &quot; (new URL)&quot;));
+}</code></pre>
+<pre data-lang="ts" data-tab="ts" data-label="TypeScript"><code class="language-ts">// Only a storage that describes a MoveResource capability moves resources.
+if (storage.moveCapability()?.movesDataResources()) {
+  const moved = await client.move(url, container);  // reads the linkset, then patches its up link
+  // A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+  console.log(moved.location, moved.identifierPreserved ? &quot;(same URL)&quot; : &quot;(new URL)&quot;);
+}</code></pre>
+<pre data-lang="cpp" data-tab="cpp" data-label="C++"><code class="language-cpp">// Only a storage that describes a MoveResource capability moves resources.
+if (auto capability = storage.move_capability(); capability &amp;&amp; capability-&gt;moves_data_resources()) {
+    lws::MoveResult moved = client.move(url, container);   // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+    std::cout &lt;&lt; moved.location &lt;&lt; (moved.identifier_preserved ? &quot; (same URL)&quot; : &quot; (new URL)&quot;) &lt;&lt; '\n';
+}</code></pre>
+<pre data-lang="rust" data-tab="rust" data-label="Rust"><code class="language-rust">// Only a storage that describes a MoveResource capability moves resources.
+if storage.move_capability().is_some_and(|m| m.moves_data_resources()) {
+    // move_resource (move is a keyword) reads the linkset, then patches its up link.
+    let moved = client.move_resource(url, container).await?;
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+    println!(&quot;{} {}&quot;, moved.location, if moved.identifier_preserved { &quot;(same URL)&quot; } else { &quot;(new URL)&quot; });
+}</code></pre>
+<pre data-lang="go" data-tab="go" data-label="Go"><code class="language-go">// Only a storage that describes a MoveResource capability moves resources.
+if capability, ok := storage.MoveCapability(); ok &amp;&amp; capability.MovesDataResources() {
+	moved, err := client.Move(ctx, url, container) // reads the linkset, then patches its up link
+	if err != nil {
+		return err
+	}
+	// A storage that does not keep identifiers gives the resource a new URL: use moved.Location.
+	fmt.Println(moved.Location, moved.IdentifierPreserved)
+}</code></pre>
+<pre data-lang="python" data-tab="python" data-label="Python"><code class="language-python"># Only a storage that describes a MoveResource capability moves resources.
+capability = storage.move_capability()
+if capability and capability.moves_data_resources:
+    moved = client.move(url, container)     # reads the linkset, then patches its up link
+    # A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+    print(moved.location, &quot;(same URL)&quot; if moved.identifier_preserved else &quot;(new URL)&quot;)</code></pre>
+<pre data-lang="csharp" data-tab="csharp" data-label="C#"><code class="language-csharp">// Only a storage that describes a MoveResource capability moves resources.
+if (storage.MoveCapability is { MovesDataResources: true })
+{
+    MoveResult moved = await client.MoveAsync(url, container);   // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.Location.
+    Console.WriteLine($&quot;{moved.Location} {(moved.IdentifierPreserved ? &quot;(same URL)&quot; : &quot;(new URL)&quot;)}&quot;);
+}</code></pre>
+<pre data-lang="swift" data-tab="swift" data-label="Swift"><code class="language-swift">// Only a storage that describes a MoveResource capability moves resources.
+if let capability = storage.moveCapability, capability.movesDataResources {
+    let moved = try await client.move(url, to: container)   // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+    print(moved.location, moved.identifierPreserved ? &quot;(same URL)&quot; : &quot;(new URL)&quot;)
+}</code></pre>
+<pre data-lang="php" data-tab="php" data-label="PHP"><code class="language-php">// Only a storage that describes a MoveResource capability moves resources.
+$capability = $storage-&gt;moveCapability();
+if ($capability !== null &amp;&amp; $capability-&gt;movesDataResources()) {
+    $moved = $client-&gt;move($url, $container);         // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use $moved-&gt;location.
+    echo $moved-&gt;location, $moved-&gt;identifierPreserved ? ' (same URL)' : ' (new URL)', &quot;\n&quot;;
+}</code></pre>
+<pre data-lang="kotlin" data-tab="kotlin" data-label="Kotlin"><code class="language-kotlin">// Only a storage that describes a MoveResource capability moves resources.
+if (storage.moveCapability()?.movesDataResources == true) {
+    val moved = client.move(url, container)             // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+    println(&quot;${moved.location} ${if (moved.identifierPreserved) &quot;(same URL)&quot; else &quot;(new URL)&quot;}&quot;)
+}</code></pre>
+</div>
+<div class="callout warn"><p><strong>Refused moves</strong> A storage that does not allow the move answers <code>409 Conflict</code> (<code>ConflictError</code>), as it does for a destination that is not an existing container, or for a container moved into itself or one of its descendants. A move needs permission to delete the resource and to create in the destination (<code>403 Forbidden</code> otherwise). A concurrent change to the linkset is <code>412 Precondition Failed</code>.</p></div>
+
 <h2 id="put">Replacing a linkset</h2>
 <p>Servers may also accept <code>PUT</code> of a complete linkset, and advertise it in <code>Allow</code>. Check before
 you use it. Servers without <code>PUT</code> support answer <code>405 Method Not Allowed</code>.</p>
@@ -328,12 +436,12 @@ if (doc.supportsPut) {                                 // Allow lists PUT
 <h2 id="combined">Content and links together</h2>
 <p>To change a resource's content and its links in one atomic request, pass <code>links</code> with
 <code>setLinkset</code> to <code>update</code> or <code>patch</code>. See <a href="resources.html#update">Replace (PUT)</a>.
-Server-managed relations such as <code>up</code>, <code>linkset</code> and the LWS type are never overridden
-by client-supplied links.</p>
+Server-managed relations such as <code>linkset</code> and the LWS type are never overridden by client-supplied
+links, and neither is <code>up</code>, which only a <a href="#move">move</a> changes.</p>
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
         <footer class="site-footer">
-          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-19; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
         </footer>
       </article>
     </main>

@@ -56,12 +56,13 @@ ${table(
 <ul>
   <li><code>NotImplementedByServerError</code> (501) avoids shadowing the built-in <code>NotImplementedError</code>.
   <code>GoneError</code> subclasses <code>NotFoundError</code>, since expired page links may answer either status.</li>
-  <li><code>links_for(rel)</code> and <code>find_services(type)</code> are the lookups, because <code>links</code> and <code>services</code> are fields.</li>
+  <li><code>links_for(rel)</code> and <code>find_services(type)</code> are the lookups, because <code>links</code> and <code>services</code> are fields.
+  <code>move_capability()</code> is a method too; the capability's <code>moves_data_resources</code> and <code>moves_containers</code> are properties.</li>
   <li><code>subscribe(service, topics, inbox, expires=…)</code> takes arguments rather than a request object.</li>
   <li>Invalid builder input raises <code>ValueError</code>. A malformed notification body during webhook verification raises
   <code>SignatureVerificationError</code>, so a handler only needs to catch one exception type.</li>
   <li>Redirects are followed manually, for <code>GET</code>/<code>HEAD</code>/<code>OPTIONS</code>/<code>QUERY</code> only, with credentials re-evaluated per hop.</li>
-  <li>Extras: <code>authenticate(url)</code> to obtain a token up front, <code>stream</code>, <code>read_linkset_at</code>, ES384, <code>verify_jwt</code> and <code>did_key_to_jwk</code>.</li>
+  <li>Extras: <code>authenticate(url)</code> to obtain a token up front, <code>stream</code>, <code>read_linkset_at</code>, <code>move_patch</code>, ES384, <code>verify_jwt</code> and <code>did_key_to_jwk</code>.</li>
 </ul>
 
 <h2 id="build">Build, test and examples</h2>

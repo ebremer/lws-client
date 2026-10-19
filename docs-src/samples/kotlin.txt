@@ -202,6 +202,13 @@ if (doc.supportsPut) {                                 // Allow lists PUT
     doc.linkset.add(url.toString(), "license", "https://creativecommons.org/licenses/by/4.0/")   // changes it in place
     client.updateLinkset(doc.url, doc.linkset, ifMatch = doc.etag)
 }
+@@@ move
+// Only a storage that describes a MoveResource capability moves resources.
+if (storage.moveCapability()?.movesDataResources == true) {
+    val moved = client.move(url, container)             // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+    println("${moved.location} ${if (moved.identifierPreserved) "(same URL)" else "(new URL)"}")
+}
 @@@ auth-didkey
 // A did:key agent: the identifier is derived from the public key, nothing to host.
 val key = SigningKey.generateP256()                    // or SigningKey.generateEd25519()
@@ -209,7 +216,7 @@ val credentials = SelfSignedCredentials.didKey(key)
 println(credentials.agent)                             // did:key:zDn…
 
 val client = LwsClient(authenticator = TokenExchangeAuthenticator(credentials))
-client.head(url)   // 401 → AS metadata → token exchange → retried with a Bearer token
+client.head(url)   // 401 → resource metadata → token exchange → retried with a Bearer token
 @@@ auth-cid
 // An HTTPS agent publishes a controlled identifier document listing its key…
 val key = SigningKey.generateP256()
@@ -241,7 +248,7 @@ val credentials = OpenIdCredentials(idToken)
 val authenticator = TokenExchangeAuthenticator(
     credentials,
     // ID tokens are not always audience-restricted: only send them to servers you trust.
-    authorizationServerFilter = { asUri, _ -> asUri == "https://auth.example" },
+    authorizationServerFilter = { issuer, _ -> issuer == "https://auth.example" },
 )
 val client = LwsClient(authenticator = authenticator)
 @@@ auth-saml
@@ -256,7 +263,7 @@ val trusted = setOf("https://auth.example")
 val authenticator = TokenExchangeAuthenticator(
     credentials.withLifetime(5.minutes),               // self-signed JWT lifetime (default 300 s)
     allowInsecureHttp = false,                         // plain-http AS only on loopback (default)
-    authorizationServerFilter = { asUri, _ -> asUri in trusted },
+    authorizationServerFilter = { issuer, _ -> issuer in trusted },
     refreshMargin = 30.seconds,                        // refresh 30 s before expiry (default)
     timeout = 10.seconds,                              // metadata and token requests
 )

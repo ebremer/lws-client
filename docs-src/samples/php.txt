@@ -203,6 +203,14 @@ if ($doc->supportsPut()) {                           // Allow lists PUT
     $doc->linkset->add($url, 'license', 'https://creativecommons.org/licenses/by/4.0/');   // changes it in place
     $client->updateLinkset($doc->url, $doc->linkset, ifMatch: $doc->etag);
 }
+@@@ move
+// Only a storage that describes a MoveResource capability moves resources.
+$capability = $storage->moveCapability();
+if ($capability !== null && $capability->movesDataResources()) {
+    $moved = $client->move($url, $container);         // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use $moved->location.
+    echo $moved->location, $moved->identifierPreserved ? ' (same URL)' : ' (new URL)', "\n";
+}
 @@@ auth-didkey
 // A did:key agent: the identifier is derived from the public key, nothing to host.
 $key = SigningKey::generateP256();                   // or SigningKey::generateEd25519()
@@ -210,7 +218,7 @@ $credentials = SelfSignedCredentials::didKey($key);
 echo $credentials->agent, "\n";                      // did:key:zDn…
 
 $client = new LwsClient(authenticator: new TokenExchangeAuthenticator($credentials));
-$client->head($url);   // 401 → AS metadata → token exchange → retried with a Bearer token
+$client->head($url);   // 401 → resource metadata → token exchange → retried with a Bearer token
 @@@ auth-cid
 // An HTTPS agent publishes a controlled identifier document listing its key…
 $key = SigningKey::generateP256();
@@ -238,7 +246,7 @@ echo $credentials->agent, ' ', $kid, ' ', $fromDid->algorithm(), "\n";
 $credentials = new OpenIdCredentials($idToken);
 $authenticator = new TokenExchangeAuthenticator($credentials,
     // ID tokens are not always audience-restricted: only send them to servers you trust.
-    authorizationServerFilter: static fn (string $asUri, string $realm): bool => $asUri === 'https://auth.example',
+    authorizationServerFilter: static fn (string $issuer, string $storage): bool => $issuer === 'https://auth.example',
 );
 $client = new LwsClient(authenticator: $authenticator);
 @@@ auth-saml
@@ -253,7 +261,7 @@ $trusted = ['https://auth.example'];
 $authenticator = new TokenExchangeAuthenticator(
     $credentials->withLifetime(300),                 // self-signed JWT lifetime in seconds (default 300)
     allowInsecureHttp: false,                        // plain-http AS only on loopback (default)
-    authorizationServerFilter: static fn (string $asUri, string $realm): bool => in_array($asUri, $trusted, true),
+    authorizationServerFilter: static fn (string $issuer, string $storage): bool => in_array($issuer, $trusted, true),
     refreshMargin: 30,                               // refresh 30 s before expiry (default)
     timeout: 10,                                     // metadata and token requests, in seconds
 );

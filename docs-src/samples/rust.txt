@@ -233,6 +233,14 @@ if doc.allow.iter().any(|m| m == "PUT") {
         .if_match(doc.etag.as_deref().unwrap_or("*"))
         .await?;
 }
+@@@ move
+// Only a storage that describes a MoveResource capability moves resources.
+if storage.move_capability().is_some_and(|m| m.moves_data_resources()) {
+    // move_resource (move is a keyword) reads the linkset, then patches its up link.
+    let moved = client.move_resource(url, container).await?;
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.location.
+    println!("{} {}", moved.location, if moved.identifier_preserved { "(same URL)" } else { "(new URL)" });
+}
 @@@ auth-didkey
 // A did:key agent: the identifier is derived from the public key, nothing to host.
 let key = SigningKey::generate_p256()?;            // or SigningKey::generate_ed25519()?
@@ -242,7 +250,7 @@ println!("{}", credentials.agent());                // did:key:zDn…
 let client = Client::builder()
     .authenticator(TokenExchangeAuthenticator::new(credentials))
     .build()?;
-client.head(url).await?;   // 401 → AS metadata → token exchange → retried with a Bearer token
+client.head(url).await?;   // 401 → resource metadata → token exchange → retried with a Bearer token
 @@@ auth-cid
 // An HTTPS agent publishes a controlled identifier document listing its key…
 let key = SigningKey::generate_p256()?;
@@ -271,7 +279,7 @@ println!("{} {} {:?}", credentials.agent() == did.did, did.kid, public.algorithm
 let credentials = OpenIdCredentials::new(id_token);
 let authenticator = TokenExchangeAuthenticator::builder(credentials)
     // ID tokens are not always audience-restricted: only send them to servers you trust.
-    .authorization_server_filter(|as_uri, _realm| as_uri.host_str() == Some("auth.example"))
+    .authorization_server_filter(|issuer, _storage| issuer.host_str() == Some("auth.example"))
     .build();
 let client = Client::builder().authenticator(authenticator).build()?;
 @@@ auth-saml
@@ -289,7 +297,7 @@ let client = Client::builder()
 @@@ auth-options
 let authenticator = TokenExchangeAuthenticator::builder(credentials)
     .allow_insecure_http(false)                            // plain-http AS only on loopback (default)
-    .authorization_server_filter(|as_uri, _realm| as_uri.host_str() == Some("auth.example"))
+    .authorization_server_filter(|issuer, _storage| issuer.host_str() == Some("auth.example"))
     .refresh_margin(Duration::from_secs(30))               // refresh 30 s before expiry (default)
     .build();
 let client = Client::builder().authenticator(authenticator).build()?;

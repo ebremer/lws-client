@@ -38,9 +38,9 @@ enabled, you bypass that protection.</p>
 ${table(
   ["Aspect", "How the Java client does it"],
   [
-    ["Calls", "Blocking methods (ideal with virtual threads) plus <code>headAsync</code>, <code>readAsync</code>, <code>readContainerAsync</code>, <code>createAsync</code>, <code>createContainerAsync</code>, <code>updateAsync</code>, <code>patchAsync</code>, <code>deleteAsync</code>, <code>discoverStorageAsync</code>"],
+    ["Calls", "Blocking methods (ideal with virtual threads) plus <code>headAsync</code>, <code>readAsync</code>, <code>readContainerAsync</code>, <code>createAsync</code>, <code>createContainerAsync</code>, <code>updateAsync</code>, <code>patchAsync</code>, <code>deleteAsync</code>, <code>moveAsync</code>, <code>discoverStorageAsync</code>"],
     ["Pagination", "<code>listContainer</code>, <code>listTypes</code>, <code>searchAll</code>, <code>listSubscriptions</code>… return lazy <code>Stream</code>s"],
-    ["Options", "Immutable option objects with builders and static shortcuts: <code>CreateOptions.slug(…)</code>, <code>UpdateOptions.ifMatch(…)</code>, <code>DeleteOptions.recursive()</code>, <code>ReadOptions.ifNoneMatch(…)</code>"],
+    ["Options", "Immutable option objects with builders and static shortcuts: <code>CreateOptions.slug(…)</code>, <code>UpdateOptions.ifMatch(…)</code>, <code>DeleteOptions.recursive()</code>, <code>ReadOptions.ifNoneMatch(…)</code>, <code>MoveOptions.ifMatch(…)</code>"],
     ["Bodies", "<code>Body.of(String | byte[])</code>, <code>Body.ofJson(Object)</code>, <code>Body.ofFile(Path)</code>, <code>Body.ofInputStream(Supplier)</code>; all replayable, so the 401 retry always works"],
     ["Models", "Records with <code>Optional</code> / <code>OptionalLong</code> for absent values; JSON as Jackson <code>JsonNode</code>; <code>json(Class)</code> for data binding"],
     ["Errors", "Unchecked: <code>LwsException</code> → <code>HttpStatusException</code> → <code>NotFoundException</code>, <code>ConflictException</code>, …"],
@@ -52,8 +52,8 @@ ${table(
 ${table(
   ["Package", "Contents"],
   [
-    ["<code>com.ebremer.lws</code>", "<code>LwsClient</code>, options, <code>Body</code>, models (<code>Resource</code>, <code>ContainerPage</code>, <code>StorageDescription</code>, <code>Linkset</code>…), exceptions, <code>Lws</code> constants"],
-    ["<code>com.ebremer.lws.auth</code>", "<code>Authenticator</code>, <code>TokenExchangeAuthenticator</code>, credentials, <code>KeyPairs</code>, <code>Jwk</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifiers</code>"],
+    ["<code>com.ebremer.lws</code>", "<code>LwsClient</code>, options, <code>Body</code>, models (<code>Resource</code>, <code>ContainerPage</code>, <code>StorageDescription</code>, <code>Linkset</code>, <code>MoveResult</code>…), exceptions, <code>Lws</code> constants"],
+    ["<code>com.ebremer.lws.auth</code>", "<code>Authenticator</code>, <code>TokenExchangeAuthenticator</code>, credentials, <code>ProtectedResourceMetadata</code>, <code>KeyPairs</code>, <code>Jwk</code>, <code>Jwt</code>, <code>DidKey</code>, <code>ControlledIdentifiers</code>"],
     ["<code>com.ebremer.lws.notify</code>", "<code>WebhookSubscriptionRequest</code>, <code>Subscription</code>, <code>Notification</code>, <code>WebhookVerifier</code>, <code>HttpExchangeWebhooks</code>"],
     ["<code>com.ebremer.lws.access</code>", "<code>AccessRequest</code>, <code>AccessGrant</code>, <code>AccessPolicy</code>, <code>AccessTarget</code>, <code>Constraint</code>"],
     ["<code>com.ebremer.lws.index</code>", "<code>TypeQuery</code>, <code>TypeIndexPage</code>"],

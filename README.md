@@ -4,7 +4,7 @@
 WebAssembly component.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-0b7a6d.svg)](LICENSE)
-![Spec baseline](https://img.shields.io/badge/LWS%20spec-2026--10--05-0a6c94.svg)
+![Spec baseline](https://img.shields.io/badge/LWS%20spec-2026--10--19-0a6c94.svg)
 [![Docs](https://img.shields.io/badge/docs-ebremer.github.io%2Flws--client-555.svg)](https://ebremer.github.io/lws-client/)
 
 [Linked Web Storage](https://w3c.github.io/lws-protocol/lws10-core/) is the W3C Working Group's protocol
@@ -18,7 +18,7 @@ can host components.
 
 ## Features
 
-Every client implements the full client side of the LWS drafts as of **2026-10-05**:
+Every client implements the full client side of the LWS drafts as of **2026-10-19**:
 
 - **Discovery:** `rel="https://www.w3.org/ns/lws#storage"`, storage descriptions (`application/lws+cid`),
   services and capabilities.
@@ -26,8 +26,12 @@ Every client implements the full client side of the LWS drafts as of **2026-10-0
   `PUT` with `If-Match`, JSON Patch (the baseline `PATCH` format), recursive delete.
 - **Containers:** `application/lws+json` listings with lazy, link-based pagination.
 - **Metadata:** linkset resources (RFC 9264), read, replace and patch, plus `Prefer: set-linkset`.
-- **Authorization:** automatic `401` → authorization server metadata → OAuth 2.0 token exchange
-  (RFC 8693) → retry, with realm checks, token caching and proactive reuse.
+- **Moving resources:** `move` changes a resource's `up` link, where the storage describes a
+  `MoveResource` capability, and reports its identifier after the move.
+- **Authorization:** automatic `401` → protected resource metadata (RFC 9728) → the discovery checks →
+  authorization server metadata → OAuth 2.0 token exchange (RFC 8693) for the storage → retry, with token
+  caching and proactive reuse (and the `as_uri`/`realm` challenge of earlier drafts, for servers that
+  still send it).
 - **Authentication suites:** OpenID Connect, SAML 2.0, and self-signed identities (controlled
   identifier documents and `did:key`) with ES256 and EdDSA.
 - **Notifications:** webhook subscriptions, plus verification of signed deliveries
@@ -278,11 +282,11 @@ docs/              GitHub Pages site (generated from docs-src/ with `node docs-s
 
 ## Spec baseline
 
-The clients target the W3C LWS Working Group documents as of 2026-10-05
-([w3c/lws-protocol@ef02548](https://github.com/w3c/lws-protocol/commit/ef02548)):
-LWS Protocol 1.0 (FPWD 2026-06-05 plus the editor's draft), the OpenID Connect, SAML 2.0 and
-self-signed (CID) authentication suites, the Webhook notification suite, the Search and Type Index
-services, and the LWS vocabulary. Interpretation decisions for points the drafts leave open are listed
+The clients target the W3C LWS Working Group documents as of 2026-10-19
+([w3c/lws-protocol@9a08ff6](https://github.com/w3c/lws-protocol/commit/9a08ff6)):
+LWS Protocol 1.0 (Working Draft of 19 October 2026), the OpenID Connect, SAML 2.0 and
+self-signed (CID) authentication suites (Working Drafts of 15 October 2026), the Webhook notification
+suite, the Search and Type Index services, and the LWS vocabulary. Interpretation decisions for points the drafts leave open are listed
 in [`design/client-api.md`](design/client-api.md) and on the
 [spec coverage page](https://ebremer.github.io/lws-client/spec-coverage.html).
 

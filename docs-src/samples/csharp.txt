@@ -222,6 +222,14 @@ if (doc.SupportsPut)                                   // Allow lists PUT
         .Add(url.AbsoluteUri, "license", "https://creativecommons.org/licenses/by/4.0/");
     await client.UpdateLinksetAsync(doc.Url, updated, new UpdateOptions { IfMatch = doc.ETag });
 }
+@@@ move
+// Only a storage that describes a MoveResource capability moves resources.
+if (storage.MoveCapability is { MovesDataResources: true })
+{
+    MoveResult moved = await client.MoveAsync(url, container);   // reads the linkset, then patches its up link
+    // A storage that does not keep identifiers gives the resource a new URL: use moved.Location.
+    Console.WriteLine($"{moved.Location} {(moved.IdentifierPreserved ? "(same URL)" : "(new URL)")}");
+}
 @@@ auth-didkey
 // A did:key agent: the identifier is derived from the public key, nothing to host.
 SigningKey key = SigningKey.GenerateP256();                 // or SigningKey.GenerateEd25519()
@@ -230,7 +238,7 @@ Console.WriteLine(credentials.Agent);                        // did:key:zDn…
 
 using var authenticator = new TokenExchangeAuthenticator(credentials);
 using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
-await client.HeadAsync(url);   // 401 → AS metadata → token exchange → retried with a Bearer token
+await client.HeadAsync(url);   // 401 → resource metadata → token exchange → retried with a Bearer token
 @@@ auth-cid
 // An HTTPS agent publishes a controlled identifier document listing its key…
 SigningKey key = SigningKey.GenerateP256();
@@ -260,7 +268,7 @@ var credentials = new OpenIdCredentials(idToken);
 using var authenticator = new TokenExchangeAuthenticator(credentials, new TokenExchangeOptions
 {
     // ID tokens are not always audience-restricted: only send them to servers you trust.
-    AuthorizationServerFilter = (asUri, realm) => asUri == new Uri("https://auth.example"),
+    AuthorizationServerFilter = (issuer, storage) => issuer == new Uri("https://auth.example"),
 });
 using var client = new LwsClient(new LwsClientOptions { Authenticator = authenticator });
 @@@ auth-saml
@@ -281,7 +289,7 @@ using var authenticator = new TokenExchangeAuthenticator(
     new TokenExchangeOptions
     {
         AllowInsecureHttp = false,                           // plain-http AS only on loopback (default)
-        AuthorizationServerFilter = (asUri, realm) => trusted.Contains(asUri),
+        AuthorizationServerFilter = (issuer, storage) => trusted.Contains(issuer),
         RefreshMargin = TimeSpan.FromSeconds(30),            // refresh 30 s before expiry (default)
         Timeout = TimeSpan.FromSeconds(10),                  // metadata and token requests
     });

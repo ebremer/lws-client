@@ -124,13 +124,15 @@ carries <code>Link: &lt;storage&gt;; rel="https://www.w3.org/ns/lws#storage"</co
 <tr><td>Replace</td><td><code>PUT</code></td><td><code>200</code> / <code>204</code></td><td><code>If-Match</code> to avoid lost updates (<code>412</code>)</td></tr>
 <tr><td>Patch</td><td><code>PATCH</code></td><td><code>200</code> / <code>204</code></td><td>JSON Patch (<code>application/json-patch+json</code>) is the baseline format</td></tr>
 <tr><td>Delete</td><td><code>DELETE</code></td><td><code>204</code></td><td>Non-empty container → <code>409</code> unless <code>Depth: infinity</code></td></tr>
+<tr><td>Move</td><td><code>PATCH</code> the linkset</td><td><code>204</code> / <code>200</code></td><td>Replace the <code>up</code> link; only where the storage describes a <code>MoveResource</code> capability</td></tr>
 </tbody></table></div>
 <div class="callout tip"><p><strong>Baseline patch format</strong> The 2026-10-05 editor's draft made JSON Patch (RFC 6902) the mandatory PATCH format for resources and linksets, replacing JSON Merge Patch. Every client ships a <code>JsonPatch</code> builder.</p></div>
 
 <h2 id="media-types">Media types</h2>
 <div class="table-wrap"><table><thead><tr><th>Media type</th><th>Used for</th></tr></thead><tbody>
 <tr><td><code>application/lws+cid</code></td><td>Storage descriptions</td></tr>
-<tr><td><code>application/lws+json</code></td><td>Container listings, subscriptions, notifications, access requests/grants, type index and search results (equivalent to <code>application/ld+json</code> and <code>application/json</code> for containers)</td></tr>
+<tr><td><code>application/lws+json</code></td><td>Container listings (the one container media type a server must honour), subscriptions, notifications, access requests/grants, type index and search results</td></tr>
+<tr><td>RDF media types with <code>profile="https://www.w3.org/ns/lws/v1"</code></td><td>The <em>LWS profile</em> of a container: JSON-LD, Turtle and the like, RDF isomorphic to the <code>application/lws+json</code> representation, where a server offers them</td></tr>
 <tr><td><code>application/linkset+json</code></td><td>Linkset (metadata) resources</td></tr>
 <tr><td><code>application/json-patch+json</code></td><td>PATCH bodies</td></tr>
 <tr><td><code>application/lws-query+json</code></td><td>Type search filters sent with the HTTP <code>QUERY</code> method</td></tr>
@@ -143,23 +145,27 @@ JWT). The client exchanges it at the storage's authorization server for a short-
 access token (RFC 8693 token exchange), then presents that token as a <code>Bearer</code> token.</p>
 
 <figure class="diagram">
-<svg viewBox="0 0 760 392" role="img" aria-labelledby="auth-title">
-  <title id="auth-title">LWS authorization sequence: 401 challenge, authorization server metadata discovery, OAuth 2.0 token exchange, and a retried request with a bearer token.</title>
+<svg viewBox="0 0 760 552" role="img" aria-labelledby="auth-title">
+  <title id="auth-title">LWS authorization sequence: a 401 challenge naming protected resource metadata, the metadata and the storage description read and checked, authorization server metadata discovery, OAuth 2.0 token exchange for the storage, and a retried request with a bearer token.</title>
   <defs><marker id="seq-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0L10 5L0 10z"/></marker></defs>
   <rect class="box-accent" x="40" y="10" width="160" height="38" rx="8"/><text class="label" x="120" y="34" text-anchor="middle">LWS client</text>
   <rect class="box" x="300" y="10" width="160" height="38" rx="8"/><text class="label" x="380" y="34" text-anchor="middle">Storage server</text>
   <rect class="box" x="560" y="10" width="160" height="38" rx="8"/><text class="label" x="640" y="34" text-anchor="middle">Authorization server</text>
-  <path class="edge" d="M120 48V384M380 48V384M640 48V384" stroke-dasharray="3 5"/>
+  <path class="edge" d="M120 48V544M380 48V544M640 48V544" stroke-dasharray="3 5"/>
   <path class="edge" d="M120 84H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="76" text-anchor="middle">GET /root/notes/</text>
-  <path class="edge" d="M380 122H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="114" text-anchor="middle">401 · Bearer as_uri, realm</text>
-  <path class="edge" d="M120 164H638" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="156" text-anchor="middle">GET /.well-known/lws-configuration</text>
-  <path class="edge" d="M640 202H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="194" text-anchor="middle">issuer · token_endpoint</text>
-  <path class="edge" d="M120 244H638" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="236" text-anchor="middle">POST token (token-exchange, subject_token)</text>
-  <path class="edge" d="M640 282H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="274" text-anchor="middle">access_token (aud = realm)</text>
-  <path class="edge" d="M120 324H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="316" text-anchor="middle">GET + Authorization: Bearer</text>
-  <path class="edge" d="M380 362H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="354" text-anchor="middle">200 OK</text>
+  <path class="edge" d="M380 122H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="114" text-anchor="middle">401 · resource_metadata · Link storage</text>
+  <path class="edge" d="M120 164H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="156" text-anchor="middle">GET protected resource metadata</text>
+  <path class="edge" d="M380 202H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="194" text-anchor="middle">resource · authorization_servers</text>
+  <path class="edge" d="M120 244H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="236" text-anchor="middle">GET storage description</text>
+  <path class="edge" d="M380 282H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="274" text-anchor="middle">StorageRoot (same origin?)</text>
+  <path class="edge" d="M120 324H638" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="316" text-anchor="middle">GET /.well-known/lws-configuration</text>
+  <path class="edge" d="M640 362H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="354" text-anchor="middle">issuer · token_endpoint</text>
+  <path class="edge" d="M120 404H638" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="396" text-anchor="middle">POST token (resource = storage, subject_token)</text>
+  <path class="edge" d="M640 442H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="510" y="434" text-anchor="middle">access_token (aud includes the storage)</text>
+  <path class="edge" d="M120 484H378" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="476" text-anchor="middle">GET + Authorization: Bearer</text>
+  <path class="edge" d="M380 522H122" marker-end="url(#seq-arrow)"/><text class="edge-label" x="250" y="514" text-anchor="middle">200 OK</text>
 </svg>
-<figcaption>Every client runs this flow automatically when configured with a <code>TokenExchangeAuthenticator</code>. Tokens are cached per authorization server and realm and reused proactively.</figcaption>
+<figcaption>Every client runs this flow automatically when configured with a <code>TokenExchangeAuthenticator</code>, and asks for no token unless the metadata URL and the storage root are on the origin it requested and the metadata names the URL it requested. Tokens are cached per authorization server and storage and reused proactively.</figcaption>
 </figure>
 <p>Three authentication suites are defined. Each is a credential provider in every client:</p>
 <div class="table-wrap"><table><thead><tr><th>Suite</th><th>Credential</th><th>Token type</th></tr></thead><tbody>
@@ -205,7 +211,7 @@ filtered to what the caller may read. See <a href="type-index.html">Type index &
 
         <nav class="page-nav" id="page-nav" aria-label="Previous and next pages"></nav>
         <footer class="site-footer">
-          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-05; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
+          <p>LWS Client is MIT licensed. It implements the W3C Linked Web Storage Working Group drafts as of 2026-10-19; it is an independent project and is not a W3C publication. <a href="https://github.com/ebremer/lws-client">Source on GitHub</a>.</p>
         </footer>
       </article>
     </main>
