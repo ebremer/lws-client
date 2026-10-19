@@ -40,12 +40,13 @@ console.log("CID document to publish at", agent, JSON.stringify(controlledIdenti
 const _httpsCredentials = SelfSignedCredentials.forAgent(agent, pair, "key-1");
 
 // Authenticate: the first request receives a 401 challenge, the authenticator
-// fetches the authorization server metadata, exchanges a freshly signed JWT for
-// an access token, and the client retries transparently.
+// reads the protected resource metadata it names, checks it and the storage
+// description, fetches the authorization server metadata, exchanges a freshly
+// signed JWT for an access token, and the client retries transparently.
 const client = new LwsClient({
   authenticator: new TokenExchangeAuthenticator(didKeyCredentials, {
     // Only trust the authorization server we expect (recommended for static tokens).
-    authorizationServerFilter: (asUri) => new URL(asUri).origin === new URL(server).origin,
+    authorizationServerFilter: (issuer) => new URL(issuer).origin === new URL(server).origin,
   }),
 });
 const meta = await client.head(`${server}/root/`);

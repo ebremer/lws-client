@@ -45,6 +45,10 @@ test("interop scenario (conformance/scenario.md)", { skip: BASE ? false : "LWS_T
   ]) {
     assert.ok(s, "service advertised");
   }
+  const move = storage.moveCapability();
+  assert.ok(move, "MoveResource capability");
+  assert.ok(move.movesDataResources() && move.movesContainers());
+  assert.equal(move.preservesIdentifier, false);
 
   // 2. Container
   const C = (await client.createContainer(storage.storageRoot(), { slug: name })).location;
@@ -142,7 +146,23 @@ test("interop scenario (conformance/scenario.md)", { skip: BASE ? false : "LWS_T
   await client.revokeAccessGrant(grantUrl);
   await client.cancelAccessRequest(reqUrl);
 
-  // 13. Delete
+  // 13. Move
+  const D = (await client.createContainer(C, { slug: "archive" })).location;
+  const M = (await client.createText(C, "Move me", { slug: "move-me.txt" })).location;
+  const moved = await client.move(M, D);
+  assert.equal(moved.location, `${D}move-me.txt`);
+  assert.equal(moved.identifierPreserved, false);
+  assert.equal(moved.linkset, `${moved.location}.meta`);
+  assert.equal(await (await client.read(moved.location)).text(), "Move me");
+  const inD: string[] = [];
+  for await (const item of client.listContainer(D)) inD.push(item.id);
+  assert.ok(inD.includes(moved.location), "the destination holds the moved resource");
+  const inC: string[] = [];
+  for await (const item of client.listContainer(C)) inC.push(item.id);
+  assert.ok(!inC.includes(M), "the origin no longer holds it");
+  await assert.rejects(client.move(C, D), ConflictError);
+
+  // 14. Delete
   await assert.rejects(client.delete(C), ConflictError);
   await client.delete(C, { recursive: true });
   await assert.rejects(client.read(H), NotFoundError);

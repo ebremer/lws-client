@@ -123,7 +123,7 @@ export class InsufficientStorageError extends HttpError {
   override name = "InsufficientStorageError";
 }
 
-/** Failure of the LWS authorization flow (realm check, metadata, token exchange). */
+/** Failure of the LWS authorization flow (discovery checks, realm check, metadata, token exchange). */
 export class AuthenticationError extends LwsError {
   override name = "AuthenticationError";
   /** OAuth `error` code from the token endpoint, if any. */

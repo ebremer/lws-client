@@ -22,7 +22,7 @@ import { fixture } from "./support/fixtures.js";
 
 const ctx = (issuer: string): CredentialContext => ({
   issuer,
-  realm: "https://storage.example/",
+  storage: "https://storage.example/",
   metadata: { issuer, token_endpoint: `${issuer}/token` },
 });
 

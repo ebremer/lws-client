@@ -14,8 +14,11 @@ import {
   JsonPatch,
   TypeQuery,
   Linkset,
+  isSameOrigin,
+  isSameResource,
   isWithinRealm,
   metadataUrl,
+  ProtectedResourceMetadata,
   tokenExpiry,
   AuthenticationError,
   ConflictError,
@@ -41,11 +44,21 @@ import { FakeServer, json } from "./support/fake-fetch.js";
 import { fixture } from "./support/fixtures.js";
 
 const S = "https://storage.example";
+const PRM = "/.well-known/oauth-protected-resource";
 const linkHeaders = (...links: string[]): Headers => {
   const h = new Headers();
   for (const l of links) h.append("link", l);
   return h;
 };
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    let data = "";
+    req.setEncoding("utf8");
+    req.on("data", (c: string) => (data += c));
+    req.on("end", () => resolve(data));
+  });
+}
 
 describe("discovery", () => {
   test("discoverStorage follows the storage link (HEAD) and parses the description", async () => {
@@ -288,22 +301,100 @@ describe("linksets", () => {
   });
 });
 
+describe("moves", () => {
+  const fx = fixture("move.json");
+
+  /** A storage holding `resource`, whose linkset at `linksetUrl` is `linkset`; the PATCH is answered by `answer`. */
+  function storageWith(resource: string, linksetUrl: string, linkset: unknown, answer: () => Response): FakeServer {
+    return new FakeServer()
+      .on("HEAD", new URL(resource).pathname, () => new Response(null, { headers: linkHeaders(`<${linksetUrl}>; rel="linkset"`) }))
+      .get(new URL(linksetUrl).pathname, () => json(linkset, { contentType: MediaType.LINKSET_JSON, headers: { etag: '"ls-1"' } }))
+      .on("PATCH", new URL(linksetUrl).pathname, answer);
+  }
+
+  for (const c of fx.patches) {
+    test(`move sends the patch of move.json: ${c.name}`, async () => {
+      const server = storageWith(c.resource, c.linksetUrl, c.linkset, () => new Response(null, { status: 204 }));
+      const client = new LwsClient({ fetch: server.fetch });
+      if (c.error) {
+        await assert.rejects(client.move(c.resource, c.destination), ProtocolError);
+        assert.equal(server.requests.filter((r) => r.method === "PATCH").length, 0, "nothing is sent");
+        return;
+      }
+      const r = await client.move(c.resource, c.destination);
+      const patch = server.requests.at(-1)!;
+      assert.equal(patch.method, "PATCH");
+      assert.equal(patch.url, c.linksetUrl);
+      assert.equal(patch.headers.get("content-type"), MediaType.JSON_PATCH);
+      assert.equal(patch.headers.get("if-match"), '"ls-1"');
+      assert.deepEqual(JSON.parse(patch.body), c.expected);
+      assert.equal(r.location, c.resource);
+      assert.ok(r.identifierPreserved);
+    });
+  }
+
+  for (const c of fx.responses) {
+    test(`move reads the answer of move.json: ${c.name}`, async () => {
+      const linkset = { linkset: [{ anchor: c.resource, up: [{ href: new URL("./", c.resource).href }] }] };
+      const body = c.body === null ? null : JSON.stringify(c.body);
+      const server = storageWith(c.resource, c.linksetUrl, linkset, () => new Response(body, { status: c.status, headers: c.headers }));
+      const r = await new LwsClient({ fetch: server.fetch }).move(c.resource, "https://storage.example/elsewhere/");
+      assert.equal(r.status, c.status);
+      assert.equal(r.location, c.expected.location);
+      assert.equal(r.linkset, c.expected.linkset);
+      assert.equal(r.identifierPreserved, c.expected.identifierPreserved);
+      assert.equal(r.etag ?? null, c.expected.etag);
+      if (c.body !== null) assert.deepEqual(r.document?.toJSON(), c.body);
+    });
+  }
+
+  test("ifMatch overrides the linkset's ETag; a refused move is a ConflictError", async () => {
+    const resource = `${S}/notes/a.txt`;
+    const linkset = { linkset: [{ anchor: resource, up: [{ href: `${S}/notes/` }] }] };
+    const server = storageWith(resource, `${resource}.meta`, linkset, () =>
+      json({ title: "Cannot move a container into one of its own descendants", status: 409 }, { status: 409, contentType: "application/problem+json" }),
+    );
+    const err = await new LwsClient({ fetch: server.fetch }).move(resource, `${S}/archive/`, { ifMatch: '"mine"' }).catch((e: unknown) => e);
+    assert.ok(err instanceof ConflictError);
+    assert.equal(server.requests.at(-1)!.headers.get("if-match"), '"mine"');
+  });
+});
+
 describe("authorization (token exchange)", () => {
   const AS = "https://as.example";
-  function lwsServer(opts: { asUri?: string; realm?: string; tokenTypes?: string[]; issuer?: string } = {}) {
+
+  interface ServerOptions {
+    /** The protected resource metadata's authorization_servers. */
+    authorizationServers?: string[];
+    /** Answer with the as_uri/realm challenge of the drafts before 19 October 2026. */
+    legacy?: { asUri?: string; realm?: string };
+    tokenTypes?: string[];
+    issuer?: string;
+  }
+
+  /** A storage `${S}/` with its root at `${S}/r/`, and an authorization server at AS. */
+  function lwsServer(opts: ServerOptions = {}) {
     const issued: string[] = [];
+    const storage = opts.legacy ? (opts.legacy.realm ?? `${S}/r/`) : `${S}/`;
     const server = new FakeServer();
     server
       .get(/^\/(r|other)\//, (req) => {
         const auth = req.headers.get("authorization");
         if (auth && issued.includes(auth.slice(7))) return new Response("secret", { headers: { "content-type": "text/plain" } });
+        const challenge = opts.legacy
+          ? `Bearer as_uri="${opts.legacy.asUri ?? AS}", realm="${storage}", error="invalid_token"`
+          : `Bearer resource_metadata="${S}${PRM}${new URL(req.url).pathname}", error="invalid_token"`;
         return new Response(null, {
           status: 401,
-          headers: {
-            "www-authenticate": `Bearer as_uri="${opts.asUri ?? AS}", realm="${opts.realm ?? `${S}/r/`}", error="invalid_token"`,
-          },
+          headers: { "www-authenticate": challenge, link: `<${S}/>; rel="https://www.w3.org/ns/lws#storage"` },
         });
       })
+      .get(new RegExp(`^${PRM}/`), (req) =>
+        json({ resource: S + new URL(req.url).pathname.slice(PRM.length), authorization_servers: opts.authorizationServers ?? [AS] }),
+      )
+      .get("/", () =>
+        json({ id: `${S}/`, type: "Storage", service: [{ type: "StorageRoot", serviceEndpoint: `${S}/r/` }] }, { contentType: "application/lws+cid" }),
+      )
       .get("/.well-known/lws-configuration", () =>
         json({
           issuer: opts.issuer ?? AS,
@@ -315,7 +406,7 @@ describe("authorization (token exchange)", () => {
       .on("POST", "/token", (_req, body) => {
         const form = new URLSearchParams(body);
         if (form.get("grant_type") !== "urn:ietf:params:oauth:grant-type:token-exchange") return json({ error: "unsupported_grant_type" }, { status: 400 });
-        if (form.get("resource") !== (opts.realm ?? `${S}/r/`)) return json({ error: "invalid_target" }, { status: 400 });
+        if (form.get("resource") !== storage) return json({ error: "invalid_target" }, { status: 400 });
         const token = `at-${issued.length + 1}`;
         issued.push(token);
         return json({ access_token: token, token_type: "Bearer", expires_in: 300 });
@@ -323,7 +414,9 @@ describe("authorization (token exchange)", () => {
     return { server, issued };
   }
 
-  test("401 → metadata → token exchange → retry, then proactive reuse", async () => {
+  const tokenRequests = (server: FakeServer) => server.requests.filter((q) => q.url === `${AS}/token`);
+
+  test("401 → protected resource metadata → storage description → AS metadata → token exchange → retry, then proactive reuse", async () => {
     const { server, issued } = lwsServer();
     const pair = await generateKeyPair();
     const creds = SelfSignedCredentials.didKey(pair);
@@ -331,18 +424,32 @@ describe("authorization (token exchange)", () => {
     const r = await client.read(`${S}/r/secret.txt`);
     assert.equal(await r.text(), "secret");
     assert.deepEqual(issued, ["at-1"]);
-    const tokenReq = server.requests.find((q) => q.url === `${AS}/token`)!;
-    const form = new URLSearchParams(tokenReq.body);
+    assert.deepEqual(
+      server.requests.map((q) => `${q.method} ${q.url}`),
+      [
+        `GET ${S}/r/secret.txt`,
+        `GET ${S}${PRM}/r/secret.txt`,
+        `GET ${S}/`,
+        `GET ${AS}/.well-known/lws-configuration`,
+        `POST ${AS}/token`,
+        `GET ${S}/r/secret.txt`,
+      ],
+    );
+    for (const q of server.requests.slice(1, 5)) assert.equal(q.headers.get("authorization"), null, `${q.url} carries no credentials`);
+    assert.match(server.requests[2]!.headers.get("accept")!, /^application\/lws\+cid/);
+    const form = new URLSearchParams(tokenRequests(server)[0]!.body);
     assert.equal(form.get("subject_token_type"), "urn:ietf:params:oauth:token-type:jwt");
-    assert.equal(form.get("resource"), `${S}/r/`);
+    assert.equal(form.get("resource"), `${S}/`, "the token is for the storage the 401 links to");
     const { payload } = await verifyJwt(form.get("subject_token")!, pair.publicJwk);
     assert.deepEqual(payload["aud"], [AS]);
-    assert.equal(server.requests.filter((q) => q.url.endsWith("/.well-known/lws-configuration")).length, 1);
 
-    const before = server.requests.length;
-    await client.read(`${S}/r/other.txt`);
-    assert.equal(server.requests.length - before, 1, "token sent proactively, no 401 round trip");
-    assert.equal(server.requests.at(-1)!.headers.get("authorization"), "Bearer at-1");
+    for (const url of [`${S}/r/other.txt`, `${S}/other/x`]) {
+      const before = server.requests.length;
+      await client.read(url);
+      assert.equal(server.requests.length - before, 1, `${url}: token sent proactively, no 401 round trip`);
+      assert.equal(server.requests.at(-1)!.headers.get("authorization"), "Bearer at-1");
+    }
+    assert.ok(!client.authenticator!.hasCredentials!("https://elsewhere.example/r/x"), "no token for another origin");
   });
 
   test("an invalidated token is replaced once", async () => {
@@ -355,24 +462,155 @@ describe("authorization (token exchange)", () => {
     const r = await client.read(`${S}/r/a`);
     assert.equal(await r.text(), "secret");
     assert.ok(issued.includes("at-2"));
+    assert.equal(server.requests.filter((q) => q.url === `${S}/`).length, 1, "the storage description is cached");
   });
 
   test("concurrent 401s share one token exchange", async () => {
     const { server } = lwsServer();
     const client = new LwsClient({ fetch: server.fetch, authenticator: new TokenExchangeAuthenticator(SelfSignedCredentials.didKey(await generateKeyPair())) });
     await Promise.all([1, 2, 3, 4].map((i) => client.read(`${S}/r/${i}`)));
-    assert.equal(server.requests.filter((q) => q.url === `${AS}/token`).length, 1);
+    assert.equal(tokenRequests(server).length, 1);
+    assert.equal(server.requests.filter((q) => q.url === `${S}/`).length, 1);
+  });
+
+  test("a 401 that fails a discovery check asks for no token and keeps the one the request carried", async () => {
+    const { server } = lwsServer();
+    // A decoy: a resource of this storage whose 401 links to a storage with its root on another origin.
+    server
+      .get("/other/decoy", () =>
+        new Response(null, {
+          status: 401,
+          headers: {
+            "www-authenticate": `Bearer resource_metadata="${S}${PRM}/other/decoy", error="invalid_token"`,
+            link: `<${S}/vault/>; rel="https://www.w3.org/ns/lws#storage"`,
+          },
+        }),
+      )
+      .get("/vault/", () =>
+        json({ id: `${S}/vault/`, type: "Storage", service: [{ type: "StorageRoot", serviceEndpoint: "https://evil.example/vault/" }] }),
+      );
+    const client = new LwsClient({ fetch: server.fetch, authenticator: new TokenExchangeAuthenticator(SelfSignedCredentials.didKey(await generateKeyPair())) });
+    await client.read(`${S}/r/a`);
+    await assert.rejects(client.read(`${S}/other/decoy`), AuthenticationError);
+    assert.equal(server.requests.at(-3)!.headers.get("authorization"), "Bearer at-1", "the decoy was sent the token");
+    const before = server.requests.length;
+    assert.equal(await (await client.read(`${S}/r/b`)).text(), "secret");
+    assert.equal(server.requests.length - before, 1, "the token was kept");
+    assert.equal(tokenRequests(server).length, 1);
+  });
+
+  test("a 401 that names another storage keeps the first storage's token; the longest scope wins", async () => {
+    // Two storages on one origin: main (root /r/) and inner (root /r/inner/, inside main's root).
+    const storages = { main: `${S}/sd/main`, inner: `${S}/sd/inner` };
+    const issued = new Map<string, string>(); // token → storage
+    const server = new FakeServer()
+      .get(/^\/r\//, (req) => {
+        const path = new URL(req.url).pathname;
+        const storage = path.startsWith("/r/inner/") ? storages.inner : storages.main;
+        if (issued.get(req.headers.get("authorization")?.slice(7) ?? "") === storage) return new Response("secret");
+        return new Response(null, {
+          status: 401,
+          headers: { "www-authenticate": `Bearer resource_metadata="${S}${PRM}${path}"`, link: `<${storage}>; rel="https://www.w3.org/ns/lws#storage"` },
+        });
+      })
+      .get(new RegExp(`^${PRM}/`), (req) => json({ resource: S + new URL(req.url).pathname.slice(PRM.length), authorization_servers: [AS] }))
+      .get("/sd/main", () => json({ id: storages.main, type: "Storage", service: [{ type: "StorageRoot", serviceEndpoint: `${S}/r/` }] }))
+      .get("/sd/inner", () => json({ id: storages.inner, type: "Storage", service: [{ type: "StorageRoot", serviceEndpoint: `${S}/r/inner/` }] }))
+      .get("/.well-known/lws-configuration", () => json({ issuer: AS, token_endpoint: `${AS}/token` }))
+      .on("POST", "/token", (_req, body) => {
+        const token = `at-${issued.size + 1}`;
+        issued.set(token, new URLSearchParams(body).get("resource")!);
+        return json({ access_token: token, token_type: "Bearer", expires_in: 300 });
+      });
+    const client = new LwsClient({ fetch: server.fetch, authenticator: new TokenExchangeAuthenticator(new OpenIdCredentials("id")) });
+    await client.read(`${S}/r/a`);
+    await client.read(`${S}/r/inner/a`); // carries at-1, which the inner storage refuses
+    assert.deepEqual([...issued.values()], [storages.main, storages.inner]);
+    for (const [url, token] of [[`${S}/r/b`, "at-1"], [`${S}/r/inner/b`, "at-2"]] as const) {
+      const before = server.requests.length;
+      assert.equal(await (await client.read(url)).text(), "secret");
+      assert.equal(server.requests.length - before, 1, `${url}: no 401 round trip`);
+      assert.equal(server.requests.at(-1)!.headers.get("authorization"), `Bearer ${token}`);
+    }
+    assert.equal(tokenRequests(server).length, 2);
+  });
+
+  test("outside the storage and its root, the retry carries the token and a later 401 reuses it", async () => {
+    // The storage is ${S}/sd with its root at /r/; /services/ is on its origin, outside both.
+    const issued: string[] = [];
+    const server = new FakeServer()
+      .get(/^\/services\//, (req) => {
+        const path = new URL(req.url).pathname;
+        if (issued.includes(req.headers.get("authorization")?.slice(7) ?? "")) return new Response("secret");
+        return new Response(null, {
+          status: 401,
+          headers: { "www-authenticate": `Bearer resource_metadata="${S}${PRM}${path}"`, link: `<${S}/sd>; rel="https://www.w3.org/ns/lws#storage"` },
+        });
+      })
+      .get(new RegExp(`^${PRM}/`), (req) => json({ resource: S + new URL(req.url).pathname.slice(PRM.length), authorization_servers: [AS] }))
+      .get("/sd", () => json({ id: `${S}/sd`, type: "Storage", service: [{ type: "StorageRoot", serviceEndpoint: `${S}/r/` }] }))
+      .get("/.well-known/lws-configuration", () => json({ issuer: AS, token_endpoint: `${AS}/token` }))
+      .on("POST", "/token", () => {
+        issued.push(`at-${issued.length + 1}`);
+        return json({ access_token: issued.at(-1), token_type: "Bearer", expires_in: 300 });
+      });
+    const client = new LwsClient({ fetch: server.fetch, authenticator: new TokenExchangeAuthenticator(new OpenIdCredentials("id")) });
+    for (const url of [`${S}/services/inbox`, `${S}/services/other`]) {
+      assert.equal(await (await client.read(url)).text(), "secret");
+      const [first, retry] = server.requests.filter((q) => q.url === url);
+      assert.equal(first!.headers.get("authorization"), null, `${url}: no token up front`);
+      assert.equal(retry!.headers.get("authorization"), "Bearer at-1", `${url}: the retry carries the token`);
+    }
+    assert.equal(tokenRequests(server).length, 1, "the second 401 reuses the cached token");
+    assert.ok(!client.authenticator!.hasCredentials!(`${S}/services/inbox`));
+  });
+
+  test("the checks are against the last hop of a redirected request", async () => {
+    let token: string | undefined;
+    const server = createServer((req, res) => {
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const send = (status: number, headers: Record<string, string>, body?: unknown): void => {
+        res.writeHead(status, headers).end(body === undefined ? undefined : JSON.stringify(body));
+      };
+      if (req.url === `${PRM}/new`) send(200, { "content-type": "application/json" }, { resource: `${base}/new`, authorization_servers: [base] });
+      else if (req.url === "/") send(200, { "content-type": "application/lws+cid" }, { id: `${base}/`, type: "Storage", service: [{ type: "StorageRoot", serviceEndpoint: `${base}/` }] });
+      else if (req.url === "/.well-known/lws-configuration") send(200, { "content-type": "application/json" }, { issuer: base, token_endpoint: `${base}/token` });
+      else if (req.url === "/token") send(200, { "content-type": "application/json" }, { access_token: (token = "t-1"), token_type: "Bearer" });
+      else if (req.url === "/old") send(301, { location: "/new" });
+      else if (req.headers.authorization === `Bearer ${token}`) res.writeHead(200, { "content-type": "text/plain" }).end("ok");
+      else send(401, { "www-authenticate": `Bearer resource_metadata="${base}${PRM}${req.url}"`, link: `<${base}/>; rel="https://www.w3.org/ns/lws#storage"` });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const client = new LwsClient({ authenticator: new TokenExchangeAuthenticator(new OpenIdCredentials("id")) });
+      assert.equal(await (await client.read(`${base}/old`)).text(), "ok");
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+  test("the challenge of the drafts before 19 October 2026 is still followed", async () => {
+    const { server, issued } = lwsServer({ legacy: {}, tokenTypes: ["urn:ietf:params:oauth:token-type:id_token"] });
+    const client = new LwsClient({ fetch: server.fetch, authenticator: new TokenExchangeAuthenticator(new OpenIdCredentials("id")) });
+    assert.equal(await (await client.read(`${S}/r/a`)).text(), "secret");
+    assert.deepEqual(issued, ["at-1"]);
+    assert.equal(new URLSearchParams(tokenRequests(server)[0]!.body).get("resource"), `${S}/r/`, "the realm is the resource");
+    assert.equal(server.requests.filter((q) => q.url.includes(PRM) || q.url === `${S}/`).length, 0);
+    assert.ok(client.authenticator!.hasCredentials!(`${S}/r/b`));
+    assert.ok(!client.authenticator!.hasCredentials!(`${S}/other/x`), "the realm alone is the token's scope");
   });
 
   test("realm that does not contain the request URL is rejected", async () => {
-    const { server } = lwsServer({ realm: `${S}/other/` });
+    const { server } = lwsServer({ legacy: { realm: `${S}/other/` } });
     const client = new LwsClient({ fetch: server.fetch, authenticator: new TokenExchangeAuthenticator(new OpenIdCredentials("id")) });
     await assert.rejects(client.read(`${S}/r/x`), AuthenticationError);
     assert.equal(server.requests.filter((q) => q.url.startsWith(AS)).length, 0, "no credentials sent");
   });
 
-  test("the authorization server's redirects are not followed", async () => {
-    for (const redirected of ["/.well-known/lws-configuration", "/token"]) {
+  test("discovery and the authorization server's redirects are not followed", async () => {
+    for (const redirected of [`${PRM}/data/a`, "/", "/.well-known/lws-configuration", "/token"]) {
       let stolen = 0;
       const thief = createServer((_req, res) => {
         stolen++;
@@ -384,10 +622,14 @@ describe("authorization (token exchange)", () => {
         const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
         if (req.url === redirected) {
           res.writeHead(307, { location: thiefBase + redirected }).end();
+        } else if (req.url === `${PRM}/data/a`) {
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ resource: `${base}/data/a`, authorization_servers: [base] }));
+        } else if (req.url === "/") {
+          res.writeHead(200, { "content-type": "application/lws+cid" }).end(JSON.stringify({ id: `${base}/`, type: "Storage", service: [{ type: "StorageRoot", serviceEndpoint: `${base}/` }] }));
         } else if (req.url === "/.well-known/lws-configuration") {
           res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ issuer: base, token_endpoint: `${base}/token` }));
         } else {
-          res.writeHead(401, { "www-authenticate": `Bearer as_uri="${base}", realm="${base}/"` }).end();
+          res.writeHead(401, { "www-authenticate": `Bearer resource_metadata="${base}${PRM}${req.url}"`, link: `<${base}/>; rel="https://www.w3.org/ns/lws#storage"` }).end();
         }
       });
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -406,15 +648,33 @@ describe("authorization (token exchange)", () => {
   test("insecure authorization servers, issuer mismatch, unsupported token types and filters are rejected", async () => {
     const creds = SelfSignedCredentials.didKey(await generateKeyPair());
     const cases: [ReturnType<typeof lwsServer>, ConstructorParameters<typeof TokenExchangeAuthenticator>[1]][] = [
-      [lwsServer({ asUri: "http://as.example" }), {}],
+      [lwsServer({ authorizationServers: ["http://as.example"] }), {}],
       [lwsServer({ issuer: "https://evil.example" }), {}],
       [lwsServer({ tokenTypes: ["urn:ietf:params:oauth:token-type:id_token"] }), {}],
-      [lwsServer(), { authorizationServerFilter: (asUri) => asUri === "https://trusted.example" }],
+      [lwsServer(), { authorizationServerFilter: (issuer) => issuer === "https://trusted.example" }],
+      [lwsServer({ legacy: { asUri: "http://as.example" } }), {}],
+      [lwsServer({ legacy: {} }), { authorizationServerFilter: () => false }],
     ];
     for (const [{ server }, options] of cases) {
       const client = new LwsClient({ fetch: server.fetch, authenticator: new TokenExchangeAuthenticator(creds, options) });
       await assert.rejects(client.read(`${S}/r/x`), AuthenticationError);
     }
+  });
+
+  test("the issuer is the first authorization server that is secure and passes the filter", async () => {
+    const { server } = lwsServer({ authorizationServers: ["http://as.example", "https://untrusted.example", AS] });
+    const asked: string[][] = [];
+    const filter = (issuer: string, storage: string): boolean => {
+      asked.push([issuer, storage]);
+      return issuer !== "https://untrusted.example";
+    };
+    const client = new LwsClient({
+      fetch: server.fetch,
+      authenticator: new TokenExchangeAuthenticator(SelfSignedCredentials.didKey(await generateKeyPair()), { authorizationServerFilter: filter }),
+    });
+    assert.equal(await (await client.read(`${S}/r/x`)).text(), "secret");
+    assert.deepEqual(asked, [["https://untrusted.example", `${S}/`], [AS, `${S}/`]]);
+    assert.equal(server.requests.filter((q) => q.url.startsWith("http://as.example") || q.url.startsWith("https://untrusted.example")).length, 0);
   });
 
   test("token endpoint errors surface as AuthenticationError with the OAuth error", async () => {
@@ -434,14 +694,91 @@ describe("authorization (token exchange)", () => {
     assert.equal(await (await client.read(`${S}/elsewhere`)).text(), "none");
   });
 
-  test("oauth fixtures: metadata URLs, realm containment, token expiry", () => {
+  test("oauth fixtures: metadata URLs, protected resource metadata, origin, resource and realm checks, token expiry", () => {
     const fx = fixture("responses/oauth.json");
     for (const m of fx.metadataUrls) assert.equal(metadataUrl(m.issuer), m.url, m.issuer);
+    const prm = ProtectedResourceMetadata.parse(fx.protectedResourceMetadata.body);
+    assert.equal(prm.resource, fx.protectedResourceMetadata.expected.resource);
+    assert.deepEqual(prm.authorizationServers, fx.protectedResourceMetadata.expected.authorizationServers);
+    assert.deepEqual(prm.raw, fx.protectedResourceMetadata.body);
+    for (const [name, body] of Object.entries(fx.protectedResourceMetadataInvalid)) {
+      if (name === "description") continue;
+      assert.throws(() => ProtectedResourceMetadata.parse(body), AuthenticationError, name);
+    }
+    for (const c of fx.originChecks) assert.equal(isSameOrigin(c.a, c.b), c.sameOrigin, `${c.a} / ${c.b}`);
+    for (const c of fx.resourceChecks) assert.equal(isSameResource(c.requested, c.resource), c.identical, `${c.resource} for ${c.requested}`);
     for (const c of fx.realmChecks) assert.equal(isWithinRealm(c.url, c.realm), c.contained, `${c.url} in ${c.realm}`);
     assert.equal(tokenExpiry(fx.tokenResponse.body, 1000), 1000 + fx.tokenResponse.expectedExpiresIn * 1000);
     assert.equal(tokenExpiry(fx.tokenResponseNoExpiry.body, 0), fx.tokenResponseNoExpiry.expectedExp * 1000);
     assert.equal(tokenExpiry({ access_token: "opaque" }, 0), 300_000);
   });
+});
+
+describe("authorization discovery — conformance/fixtures/discovery.json", () => {
+  const fx = fixture("discovery.json");
+
+  // {A} and {B} are two origins of one loopback listener: http://127.0.0.1:<port> and http://localhost:<port>.
+  for (const c of fx.cases) {
+    test(c.name, async () => {
+      const seen: { url: string; method: string; authorization: string | undefined; body: string }[] = [];
+      let k: any;
+      let later = false;
+      const server = createServer(async (req, res) => {
+        const url = `http://${req.headers.host}${req.url}`;
+        const body = await readBody(req);
+        seen.push({ url, method: req.method!, authorization: req.headers.authorization, body });
+        if (later) {
+          res.writeHead(200, { "content-type": "text/plain" }).end("ok");
+        } else if (req.method === "POST" && url === k.tokenEndpoint) {
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(fx.tokenResponse));
+        } else if (url === k.request) {
+          if (req.headers.authorization === "Bearer token-1") res.writeHead(200, { "content-type": "text/plain" }).end("ok");
+          else res.writeHead(401, k.challenge).end();
+        } else if (req.method === "GET" && k.documents[url]) {
+          const doc = k.documents[url];
+          res.writeHead(doc.status, doc.headers).end(doc.body === null ? undefined : JSON.stringify(doc.body));
+        } else {
+          res.writeHead(404).end();
+        }
+      });
+      await new Promise<void>((resolve) => server.listen(0, resolve));
+      const port = (server.address() as AddressInfo).port;
+      const A = `http://127.0.0.1:${port}`;
+      const B = `http://localhost:${port}`;
+      k = JSON.parse(JSON.stringify(c).replaceAll("{A}", A).replaceAll("{B}", B));
+      k.tokenEndpoint = `${A}/as/token`;
+      const fetched: string[] = [];
+      const recording: typeof fetch = (input, init) => {
+        fetched.push(input instanceof Request ? input.url : String(input));
+        return fetch(input, init);
+      };
+      try {
+        const client = new LwsClient({ fetch: recording, authenticator: new TokenExchangeAuthenticator(new OpenIdCredentials("id-token")) });
+        const outcome = await client.read(k.request).then(
+          async (r) => (await r.text()) === "ok" && r.status === 200 ? "ok" : `status ${r.status}`,
+          (e: unknown) => (e as Error).name,
+        );
+        assert.equal(outcome, k.expected.outcome);
+        if (outcome === "ok") assert.equal(seen.filter((s) => s.url === k.request).length, 2, "retried once");
+        const tokenRequests = seen
+          .filter((s) => s.method === "POST")
+          .map((s) => ({ endpoint: s.url, resource: new URLSearchParams(s.body).get("resource") }));
+        assert.deepEqual(tokenRequests, k.expected.tokenRequest ? [k.expected.tokenRequest] : []);
+        for (const url of k.expected.notFetched) assert.ok(!fetched.includes(url), `${url} was fetched`);
+
+        later = true;
+        for (const t of k.expected.then ?? []) {
+          await (await client.read(t.request)).text();
+          const last = seen.at(-1)!;
+          assert.equal(last.url, t.request);
+          assert.equal(last.authorization === "Bearer token-1", t.sendsToken, `${t.request} ${t.sendsToken ? "gets" : "does not get"} the token`);
+        }
+      } finally {
+        server.closeAllConnections();
+        server.close();
+      }
+    });
+  }
 });
 
 describe("notifications, access and type services", () => {
@@ -525,20 +862,21 @@ describe("notifications, access and type services", () => {
 });
 
 describe("over real HTTP (node:http)", () => {
-  function readBody(req: IncomingMessage): Promise<string> {
-    return new Promise((resolve) => {
-      let data = "";
-      req.setEncoding("utf8");
-      req.on("data", (c: string) => (data += c));
-      req.on("end", () => resolve(data));
-    });
-  }
-
   test("QUERY, streaming upload with auth preflight, abort", async () => {
     let token: string | undefined;
     const server = createServer(async (req, res) => {
       const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
       const body = await readBody(req);
+      if (req.url!.startsWith(`${PRM}/`)) {
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ resource: base + req.url!.slice(PRM.length), authorization_servers: [base] }));
+        return;
+      }
+      if (req.url === "/") {
+        res.setHeader("content-type", "application/lws+cid");
+        res.end(JSON.stringify({ id: `${base}/`, type: "Storage", service: [{ type: "StorageRoot", serviceEndpoint: `${base}/` }] }));
+        return;
+      }
       if (req.url === "/.well-known/lws-configuration") {
         res.setHeader("content-type", "application/json");
         res.end(JSON.stringify({ issuer: base, token_endpoint: `${base}/token` }));
@@ -552,7 +890,8 @@ describe("over real HTTP (node:http)", () => {
       }
       if (req.headers.authorization !== `Bearer ${token}`) {
         res.statusCode = 401;
-        res.setHeader("www-authenticate", `Bearer as_uri="${base}", realm="${base}/"`);
+        res.setHeader("www-authenticate", `Bearer resource_metadata="${base}${PRM}${req.url}"`);
+        res.setHeader("link", `<${base}/>; rel="https://www.w3.org/ns/lws#storage"`);
         res.end();
         return;
       }

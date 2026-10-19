@@ -21,11 +21,15 @@ export class AuthChallenge {
     return this.scheme.toLowerCase() === scheme.toLowerCase();
   }
 
-  /** LWS `as_uri`: the authorization server issuer. */
+  /** `resource_metadata` (RFC 9728): the URL of the requested resource's protected resource metadata. */
+  get resourceMetadata(): string | undefined {
+    return this.params["resource_metadata"];
+  }
+  /** `as_uri`: the authorization server issuer, in the LWS challenge of the drafts before 19 October 2026. */
   get asUri(): string | undefined {
     return this.params["as_uri"];
   }
-  /** `realm`: the protection space (the access token audience). */
+  /** `realm`: the protection space (in the LWS challenge of the drafts before 19 October 2026, the storage). */
   get realm(): string | undefined {
     return this.params["realm"];
   }

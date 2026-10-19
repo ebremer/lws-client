@@ -8,10 +8,10 @@ import type { AuthorizationServerMetadata } from "./oauth.js";
 
 /** What a credential provider learns about the token request. */
 export interface CredentialContext {
-  /** Authorization server issuer (`as_uri`); the audience of the credential. */
+  /** Authorization server issuer; the audience of the credential. */
   readonly issuer: string;
-  /** Realm (storage) the access token will be issued for. */
-  readonly realm: string;
+  /** The storage the access token will be issued for (the token request's `resource`). */
+  readonly storage: string;
   readonly metadata: AuthorizationServerMetadata;
   readonly signal?: AbortSignal | undefined;
 }

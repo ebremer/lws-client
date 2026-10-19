@@ -150,6 +150,10 @@ function pageResult(p) {
 }
 
 const updateResult = (u) => ({ status: u.status, etag: u.etag, metadata: metadataResult(u.metadata) });
+const movedResult = (m) => ({
+  status: m.status, location: m.location, linkset: m.linkset, identifierPreserved: m.identifierPreserved,
+  etag: m.etag, metadata: metadataResult(m.metadata),
+});
 const createdResult = (c) => ({ location: c.location, metadata: metadataResult(c.metadata) });
 
 function storageResult(s) {
@@ -159,6 +163,7 @@ function storageResult(s) {
   } catch {
     storageRoot = undefined;
   }
+  const move = s.moveCapability();
   return {
     id: s.id,
     types: s.types,
@@ -168,6 +173,7 @@ function storageResult(s) {
       subscriptionType: svc.property("subscriptionType") === undefined ? undefined : svc.subscriptionTypes,
     })),
     verificationMethods: s.verificationMethods.map((vm) => ({ id: vm.id, type: vm.type, controller: vm.controller })),
+    moveCapability: move && { appliesTo: move.appliesTo, preservesIdentifier: move.preservesIdentifier },
     raw: s.raw,
   };
 }
@@ -357,6 +363,13 @@ const operations = {
     const ifMatch = optional(args, "ifMatch");
     if (ifMatch !== undefined) options.ifMatch = ifMatch;
     return updateResult(await client.patchLinkset(required(args, "linksetUrl"), patchOf(args.patch), options));
+  },
+
+  async move(args) {
+    const options = {};
+    const ifMatch = optional(args, "ifMatch");
+    if (ifMatch !== undefined) options.ifMatch = ifMatch;
+    return movedResult(await client.move(required(args, "url"), required(args, "destination"), options));
   },
 
   async subscribe(args) {

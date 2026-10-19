@@ -13,6 +13,8 @@ export const VERSION = "0.1.0";
 export const LWS_NS = "https://www.w3.org/ns/lws#";
 /** The LWS JSON-LD context. */
 export const LWS_CONTEXT = "https://www.w3.org/ns/lws/v1";
+/** The LWS profile: the `profile` parameter of an RDF media type (`application/ld+json; profile="…"`, …). */
+export const LWS_PROFILE = "https://www.w3.org/ns/lws/v1";
 /** The W3C Controlled Identifiers v1 JSON-LD context. */
 export const CID_CONTEXT = "https://www.w3.org/ns/cid/v1";
 /** The Activity Streams 2.0 JSON-LD context. */
@@ -62,6 +64,12 @@ export const ServiceType = {
   TYPE_SEARCH: "TypeSearchService",
 } as const;
 
+/** Capability types found in a storage description's `capability` array. */
+export const CapabilityType = {
+  /** The storage lets clients move resources by changing their `up` link (lws10-core "Moving Resources"). */
+  MOVE_RESOURCE: "MoveResource",
+} as const;
+
 /** The webhook notification suite's subscription type. */
 export const SUBSCRIPTION_WEBHOOK = "WebhookSubscription";
 
@@ -81,6 +89,8 @@ export const TokenType = {
 
 /** Path of the LWS authorization server metadata document. */
 export const WELL_KNOWN_LWS_CONFIGURATION = "/.well-known/lws-configuration";
+/** Path prefix of protected resource metadata documents (RFC 9728). */
+export const WELL_KNOWN_OAUTH_PROTECTED_RESOURCE = "/.well-known/oauth-protected-resource";
 /** CID service type pointing at an agent's OpenID provider. */
 export const OPENID_PROVIDER_SERVICE = "https://www.w3.org/ns/lws#OpenIdProvider";
 
@@ -133,4 +143,5 @@ export const ActivityType = {
   CREATE: "Create",
   UPDATE: "Update",
   DELETE: "Delete",
+  MOVE: "Move",
 } as const;

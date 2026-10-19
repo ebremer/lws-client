@@ -14,9 +14,10 @@ import { JsonPatch, type JsonPatchOperation } from "./json-patch.js";
 import { AccessGrant, AccessRequest, type AccessDocumentInit } from "./models/access.js";
 import { ContainedResource, ContainerPage, type SearchPage } from "./models/container.js";
 import { Linkset, type LinksetDocument } from "./models/linkset.js";
+import { movePatch, readMoveResult, type MoveResult } from "./models/move.js";
 import { Subscription, type WebhookSubscriptionRequest } from "./models/notification.js";
 import { Resource, ResourceMetadata } from "./models/resource.js";
-import { Service, StorageDescription } from "./models/storage.js";
+import { Service, STORAGE_DESCRIPTION_ACCEPT, StorageDescription } from "./models/storage.js";
 import { TypeIndexPage, TypeQuery } from "./models/type-index.js";
 import {
   encodeSlug,
@@ -102,6 +103,12 @@ export interface DeleteOptions extends RequestOptions {
   ifMatch?: string;
   /** Delete a container and everything in it (`Depth: infinity`). */
   recursive?: boolean;
+}
+
+/** Options of {@link LwsClient.move}. */
+export interface MoveOptions extends RequestOptions {
+  /** `If-Match` for the linkset patch (default: the ETag the linkset was read with). */
+  ifMatch?: string;
 }
 
 /** A raw patch document in a format other than JSON Patch. */
@@ -304,7 +311,7 @@ export class LwsClient {
   /** Fetch and parse a storage description resource. */
   async getStorageDescription(storageUrl: UrlLike, opts?: RequestOptions): Promise<StorageDescription> {
     const url = new URL(storageUrl).href;
-    const headers = new Headers({ accept: `${MediaType.LWS_CID}, ${MediaType.LD_JSON};q=0.9, ${MediaType.JSON};q=0.8` });
+    const headers = new Headers({ accept: STORAGE_DESCRIPTION_ACCEPT });
     const res = await this.#ok({ method: "GET", url, headers }, opts);
     return new StorageDescription(await this.#json(res, url), res.url || url);
   }
@@ -506,12 +513,17 @@ export class LwsClient {
 
   /** Discover and read the linkset of a resource. */
   async readLinkset(resourceUrl: UrlLike, opts?: RequestOptions): Promise<LinksetDocument> {
+    return (await this.#readLinkset(resourceUrl, opts)).document;
+  }
+
+  /** The linkset of a resource, and the JSON it was read from (JSON Patch addresses the JSON). */
+  async #readLinkset(resourceUrl: UrlLike, opts: RequestOptions | undefined): Promise<{ document: LinksetDocument; json: unknown }> {
     const url = await this.linksetUrl(resourceUrl, opts);
     const headers = new Headers({ accept: MediaType.LINKSET_JSON });
     const res = await this.#ok({ method: "GET", url, headers }, opts);
     const metadata = ResourceMetadata.fromResponse(res, url);
     const json = await this.#json(res, url);
-    return {
+    const document: LinksetDocument = {
       url: metadata.url,
       etag: metadata.etag,
       linkset: Linkset.parse(json),
@@ -519,6 +531,7 @@ export class LwsClient {
       acceptPatch: metadata.acceptPatch,
       metadata,
     };
+    return { document, json };
   }
 
   /** `PUT` a complete linkset (only when the server allows PUT on the linkset). */
@@ -533,6 +546,29 @@ export class LwsClient {
   /** `PATCH` a linkset with a JSON Patch. */
   patchLinkset(linksetUrl: UrlLike, patch: JsonPatch | readonly JsonPatchOperation[], opts: ConditionalOptions = {}): Promise<UpdateResult> {
     return this.patch(linksetUrl, patch, opts);
+  }
+
+  // -------------------------------------------------------------------------
+  // Moving
+  // -------------------------------------------------------------------------
+
+  /**
+   * Move a resource (a container with everything in it) into another
+   * container: read its linkset, then `PATCH` it to change the `up` link,
+   * conditional on the linkset's ETag. Check the storage description's
+   * `moveCapability()` first: a storage that does not allow moves refuses the
+   * patch (`409` → `ConflictError`). The result's `location` is where the
+   * resource is now, which changes unless the storage preserves identifiers.
+   */
+  async move(resourceUrl: UrlLike, destinationUrl: UrlLike, opts: MoveOptions = {}): Promise<MoveResult> {
+    const resource = new URL(resourceUrl).href;
+    const { document, json } = await this.#readLinkset(resource, opts);
+    const patch = movePatch(resource, document.url, json, destinationUrl);
+    const headers = new Headers({ "content-type": MediaType.JSON_PATCH });
+    const ifMatch = opts.ifMatch ?? document.etag;
+    if (ifMatch) headers.set("if-match", ifMatch);
+    const res = await this.#ok({ method: "PATCH", url: document.url, headers, body: patch.toString() }, opts);
+    return readMoveResult(resource, document.url, res);
   }
 
   // -------------------------------------------------------------------------

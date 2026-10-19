@@ -14,7 +14,9 @@ import {
   TypeIndexPage,
   ProtocolError,
   LwsType,
+  MoveCapability,
 } from "../src/index.js";
+import { movePatch, readMoveResult } from "../src/models/move.js";
 import { fixture } from "./support/fixtures.js";
 
 function headersOf(h: Record<string, string | string[]>): Headers {
@@ -50,6 +52,26 @@ describe("StorageDescription — responses/storage-description.json", () => {
     assert.ok(sd.service("https://www.w3.org/ns/lws#StorageRoot"), "full IRI matches short term");
     assert.deepEqual(sd.accessGrantService()?.conformsTo, ["https://www.w3.org/ns/lws#AccessProfile"]);
   });
+
+  const moveOf = (m: MoveCapability | undefined): unknown =>
+    m && {
+      appliesTo: m.appliesTo,
+      preservesIdentifier: m.preservesIdentifier ?? null,
+      movesDataResources: m.movesDataResources(),
+      movesContainers: m.movesContainers(),
+    };
+
+  test("move capability", () => {
+    assert.deepEqual(moveOf(sd.moveCapability()), e.moveCapability);
+    assert.equal(sd.capability("MoveResource"), sd.moveCapability());
+  });
+
+  for (const c of fx.moveCapabilities) {
+    test(`move capability: ${c.name}`, () => {
+      const body = { id: fx.url, type: "Storage", ...(c.capability === null ? {} : { capability: c.capability }) };
+      assert.deepEqual(moveOf(new StorageDescription(body).moveCapability()) ?? null, c.expected);
+    });
+  }
 
   test("invalid documents", () => {
     assert.throws(() => new StorageDescription(fx.invalid.notStorage), ProtocolError);
@@ -135,7 +157,7 @@ describe("Linkset — responses/linkset.json", () => {
 describe("Notifications — responses/notification.json", () => {
   const fx = fixture("responses/notification.json");
 
-  for (const kind of ["single", "batch"] as const) {
+  for (const kind of ["single", "batch", "move"] as const) {
     test(kind, () => {
       const n = parseNotification(JSON.stringify(fx[kind]));
       const exp = fx[`${kind}Expected`];
@@ -151,9 +173,10 @@ describe("Notifications — responses/notification.json", () => {
         if (x.origin) assert.equal(a.origin, x.origin);
         if (x.actor) assert.equal(a.actor, x.actor);
         if (x.published) assert.equal(a.published?.getTime(), new Date(x.published).getTime());
-        if (x.isCreate) assert.ok(a.isCreate());
-        if (x.isUpdate) assert.ok(a.isUpdate());
-        if (x.isDelete) assert.ok(a.isDelete());
+        if (x.isCreate !== undefined) assert.equal(a.isCreate(), x.isCreate);
+        if (x.isUpdate !== undefined) assert.equal(a.isUpdate(), x.isUpdate);
+        if (x.isDelete !== undefined) assert.equal(a.isDelete(), x.isDelete);
+        if (x.isMove !== undefined) assert.equal(a.isMove(), x.isMove);
       });
     });
   }
@@ -166,6 +189,41 @@ describe("Notifications — responses/notification.json", () => {
   test("bytes input", () => {
     const n = parseNotification(new TextEncoder().encode(JSON.stringify(fx.single)));
     assert.equal(n.activities[0]!.isDelete(), true);
+  });
+});
+
+describe("Moves — move.json", () => {
+  const fx = fixture("move.json");
+
+  for (const c of fx.patches) {
+    test(`patch: ${c.name}`, () => {
+      const build = () => movePatch(c.resource, c.linksetUrl, c.linkset, c.destination);
+      if (c.error) {
+        assert.throws(build, ProtocolError);
+        return;
+      }
+      assert.deepEqual(build().toJSON(), c.expected);
+      assert.deepEqual(movePatch(c.resource, c.linksetUrl, Linkset.parse(c.linkset), c.destination).toJSON(), c.expected);
+    });
+  }
+
+  for (const c of fx.responses) {
+    test(`response: ${c.name}`, async () => {
+      const body = c.body === null ? null : JSON.stringify(c.body);
+      const r = await readMoveResult(c.resource, c.linksetUrl, new Response(body, { status: c.status, headers: c.headers }));
+      assert.equal(r.status, c.status);
+      assert.equal(r.location, c.expected.location);
+      assert.equal(r.linkset, c.expected.linkset);
+      assert.equal(r.identifierPreserved, c.expected.identifierPreserved);
+      assert.equal(r.etag ?? null, c.expected.etag);
+      assert.equal(r.metadata.status, c.status);
+      assert.equal(r.document === undefined, c.body === null);
+    });
+  }
+
+  test("an answer that is not a linkset is a ProtocolError", async () => {
+    const response = new Response("[1]", { status: 200, headers: { "content-type": "application/linkset+json" } });
+    await assert.rejects(readMoveResult("https://s.example/a", "https://s.example/a.meta", response), ProtocolError);
   });
 });
 

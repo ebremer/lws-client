@@ -61,11 +61,18 @@ describe("WWW-Authenticate — conformance/fixtures/www-authenticate.json", () =
   }
 
   test("LWS accessors", () => {
+    const [c] = parseWwwAuthenticate('Bearer resource_metadata="https://s.example/.well-known/oauth-protected-resource/a", error="invalid_token"');
+    assert.equal(c!.resourceMetadata, "https://s.example/.well-known/oauth-protected-resource/a");
+    assert.equal(c!.asUri, undefined);
+    assert.equal(c!.error, "invalid_token");
+    assert.ok(c!.is("bearer"));
+  });
+
+  test("accessors of the challenge of the drafts before 19 October 2026", () => {
     const [c] = parseWwwAuthenticate('Bearer as_uri="https://as.example", realm="https://s.example/", error="invalid_token"');
     assert.equal(c!.asUri, "https://as.example");
     assert.equal(c!.realm, "https://s.example/");
-    assert.equal(c!.error, "invalid_token");
-    assert.ok(c!.is("bearer"));
+    assert.equal(c!.resourceMetadata, undefined);
   });
 });
 

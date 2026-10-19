@@ -2,7 +2,7 @@
 /**
  * lws-client — a W3C Linked Web Storage (LWS) client for JavaScript and TypeScript.
  *
- * Targets the LWS 1.0 specifications as of 2026-10-05 (core protocol, OpenID
+ * Targets the LWS 1.0 specifications as of 2026-10-19 (core protocol, OpenID
  * Connect / SAML 2.0 / self-signed authentication suites, webhook
  * notifications, type index and type search).
  *
@@ -21,6 +21,7 @@ export type {
   UpdateOptions,
   ConditionalOptions,
   DeleteOptions,
+  MoveOptions,
   RawPatch,
   CreateResult,
   UpdateResult,
@@ -54,8 +55,10 @@ export {
   StorageDescription,
   Service,
   Capability,
+  MoveCapability,
   type VerificationMethod,
 } from "./models/storage.js";
+export type { MoveResult } from "./models/move.js";
 export { ContainerPage, ContainedResource, type PageLinks, type SearchPage } from "./models/container.js";
 export {
   Linkset,
@@ -101,6 +104,10 @@ export {
   type SelfSignedOptions,
 } from "./auth/credentials.js";
 export {
+  ProtectedResourceMetadata,
+  fetchProtectedResourceMetadata,
+  isSameOrigin,
+  isSameResource,
   isWithinRealm,
   metadataUrl,
   fetchAuthorizationServerMetadata,

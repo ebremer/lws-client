@@ -19,9 +19,9 @@ export class Activity {
   readonly object: ActivityObject;
   /** Agent that performed the action. */
   readonly actor: string | undefined;
-  /** Container the resource was added to (Create). */
+  /** Container the resource was added to (Create, Move). */
   readonly target: string | undefined;
-  /** Container the resource was removed from (Delete). */
+  /** Container the resource was removed from (Delete, Move). */
   readonly origin: string | undefined;
   readonly published: Date | undefined;
   readonly publishedRaw: string | undefined;
@@ -64,6 +64,10 @@ export class Activity {
   }
   isDelete(): boolean {
     return this.isType(ActivityType.DELETE);
+  }
+  /** A move between containers: `object` is the resource as it is after the move. */
+  isMove(): boolean {
+    return this.isType(ActivityType.MOVE);
   }
 }
 

@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Storage description resource (a Controlled Identifier document specialisation).
-import { ServiceType, SUBSCRIPTION_WEBHOOK } from "../constants.js";
+import { CapabilityType, MediaType, ServiceType, SUBSCRIPTION_WEBHOOK } from "../constants.js";
 import { ProtocolError } from "../errors.js";
 import { resolveUrl } from "../util/http.js";
 import { hasType, isObject, toStringList } from "../util/types.js";
+
+/** The `Accept` of a storage description request. */
+export const STORAGE_DESCRIPTION_ACCEPT = `${MediaType.LWS_CID}, ${MediaType.LD_JSON};q=0.9, ${MediaType.JSON};q=0.8`;
 
 /** A service entry of a storage description. */
 export class Service {
@@ -72,6 +75,36 @@ export class Capability {
   }
 }
 
+/**
+ * The `MoveResource` capability (lws10-core "Storage Description Capabilities"):
+ * the storage lets clients move resources between containers by changing
+ * their `up` link.
+ */
+export class MoveCapability extends Capability {
+  /** The resource types that can be moved; `["DataResource"]` when the capability does not say. */
+  readonly appliesTo: string[];
+  /** Whether a moved resource keeps its URL; `undefined` (do not assume it does) when the capability does not say. */
+  readonly preservesIdentifier: boolean | undefined;
+
+  constructor(raw: Record<string, unknown>, base: string) {
+    super(raw, base);
+    const appliesTo = raw["appliesTo"];
+    this.appliesTo = appliesTo === undefined || appliesTo === null ? ["DataResource"] : toStringList(appliesTo);
+    const preserves = raw["preservesIdentifier"];
+    this.preservesIdentifier = typeof preserves === "boolean" ? preserves : undefined;
+  }
+
+  /** True when data resources can be moved. */
+  movesDataResources(): boolean {
+    return hasType(this.appliesTo, "DataResource");
+  }
+
+  /** True when containers (with everything in them) can be moved. */
+  movesContainers(): boolean {
+    return hasType(this.appliesTo, "Container");
+  }
+}
+
 /** A verification method (public key) of a controlled identifier document. */
 export interface VerificationMethod {
   /** The id as written (may be absolute, `#fragment` or a bare fragment). */
@@ -125,7 +158,9 @@ export class StorageDescription {
       throw new ProtocolError(`storage description type must include "Storage" (got ${JSON.stringify(json["type"])})`);
     }
     this.#services = asObjects(json["service"]).map((s) => new Service(s, base));
-    this.#capabilities = asObjects(json["capability"]).map((c) => new Capability(c, base));
+    this.#capabilities = asObjects(json["capability"]).map((c) =>
+      hasType(toStringList(c["type"]), CapabilityType.MOVE_RESOURCE) ? new MoveCapability(c, base) : new Capability(c, base),
+    );
     this.verificationMethods = asObjects(json["verificationMethod"]).map(toVerificationMethod);
     this.authentication = (Array.isArray(json["authentication"]) ? json["authentication"] : [])
       .map((a: unknown) => (typeof a === "string" ? a : isObject(a) ? toVerificationMethod(a) : undefined))
@@ -150,6 +185,14 @@ export class StorageDescription {
   /** The first capability of a type. */
   capability(type: string): Capability | undefined {
     return this.#capabilities.find((c) => c.hasType(type));
+  }
+
+  /**
+   * The storage's `MoveResource` capability, or `undefined` when it describes
+   * none: then the `up` link is not modifiable, and resources cannot be moved.
+   */
+  moveCapability(): MoveCapability | undefined {
+    return this.#capabilities.find((c): c is MoveCapability => c instanceof MoveCapability);
   }
 
   /** The storage root container URL. Throws {@link ProtocolError} when missing. */

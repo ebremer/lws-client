@@ -4,11 +4,13 @@ A client for the **W3C Linked Web Storage (LWS)** protocol for browsers, Node.js
 Written in strict TypeScript, shipped as ESM with type declarations, and with **zero runtime
 dependencies** — it uses the platform's `fetch`, WebCrypto, `URL` and streams.
 
-It implements the LWS 1.0 specification family as of 2026-10-05: the core protocol (storage
-discovery, containers, CRUD, linkset metadata, JSON Patch), OAuth 2.0 token-exchange
-authorization with the OpenID Connect, SAML 2.0 and self-signed (controlled identifier /
-did:key) authentication suites, webhook notifications with RFC 9421 signature verification,
-access requests/grants, and the Type Index / Type Search services (HTTP `QUERY`).
+It implements the LWS 1.0 specification family as of the Working Draft of 19 October 2026
+(`w3c/lws-protocol` 9a08ff6): the core protocol (storage discovery, containers, CRUD, linkset
+metadata, JSON Patch, moving resources between containers), OAuth 2.0 token-exchange
+authorization discovered through protected resource metadata (RFC 9728) with the OpenID Connect,
+SAML 2.0 and self-signed (controlled identifier / did:key) authentication suites, webhook
+notifications with RFC 9421 signature verification, access requests/grants, and the Type Index /
+Type Search services (HTTP `QUERY`).
 
 MIT licensed — see [`../LICENSE`](../LICENSE).
 
@@ -55,28 +57,55 @@ More in [`examples/`](examples): `quickstart.mjs`, `self-signed-auth.mjs`,
 
 | Area | API |
 |---|---|
-| Discovery | `discoverStorage(url)`, `getStorageDescription(url)` → `StorageDescription` (`storageRoot()`, `service(type)`, `notificationService()`, `typeSearchService()`, …) |
+| Discovery | `discoverStorage(url)`, `getStorageDescription(url)` → `StorageDescription` (`storageRoot()`, `service(type)`, `notificationService()`, `typeSearchService()`, `moveCapability()`, …) |
 | Read | `head`, `read` (conditional `ifNoneMatch` → `notModified`, `range` → `206`), `readContainer`, `listContainer` (async iterable over all pages) |
 | Write | `create`, `createJson`, `createText`, `createContainer` (`slug`, user `links`, extra `types`), `update` / `updateJson` (`ifMatch`, `setLinkset`), `patch` (JSON Patch or raw formats), `delete` (`recursive`) |
 | Metadata | `linksetUrl`, `readLinkset` → `LinksetDocument`, `updateLinkset`, `patchLinkset`, `Linkset` model |
+| Move | `move(resource, destination)` → `MoveResult` (`location`, `linkset`, `identifierPreserved`), `MoveCapability` |
 | Auth | `Authenticator` interface, `TokenExchangeAuthenticator`, `BearerTokenAuthenticator`, `OpenIdCredentials`, `SamlCredentials`, `SelfSignedCredentials` (ES256, EdDSA, did:key) |
 | Notifications | `subscribe`, `listSubscriptions`, `getSubscription`, `unsubscribe`, `parseNotification`, `WebhookVerifier`, `lws-client/node` handler |
 | Access | `requestAccess`, `listAccessRequests`, `getAccessRequest`, `cancelAccessRequest`, `grantAccess`, `listAccessGrants`, `getAccessGrant`, `revokeAccessGrant`, `Constraints` |
 | Type services | `readTypeIndex`, `listTypes`, `searchTypes` (HTTP `QUERY`), `searchAll`, `acceptedQueryFormats`, `TypeQuery` |
-| Primitives | `parseLinkHeader`, `formatLink`, `parseWwwAuthenticate`, structured fields (`parseDictionary`, …), `parseProblemDetails`, `JsonPatch`, `JsonPointer` |
+| Primitives | `parseLinkHeader`, `formatLink`, `parseWwwAuthenticate`, `ProtectedResourceMetadata`, structured fields (`parseDictionary`, …), `parseProblemDetails`, `JsonPatch`, `JsonPointer` |
 | Errors | `LwsError` → `HttpError` (`NotFoundError`, `ConflictError`, `PreconditionFailedError`, `UnauthorizedError`, …), `AuthenticationError`, `ProtocolError`, `SignatureVerificationError` |
 
 Every operation accepts `{ headers, signal }` (an `AbortSignal`); the client accepts
 `{ fetch, authenticator, headers, userAgent, timeoutMs }`. Every URL the library returns is
 absolute, even when the server sends relative ids, `Location` or `Link` targets.
 
+## Moving resources
+
+A storage that describes a `MoveResource` capability lets you move a resource (or a container
+with everything in it) into another container. `move` reads the resource's linkset and patches
+its `up` link, conditional on the linkset's ETag:
+
+```ts
+const move = storage.moveCapability();
+if (move?.movesDataResources()) {
+  const { location: archive } = await client.createContainer(root, { slug: "archive" });
+  const { location, identifierPreserved } = await client.move(todo, archive);
+  // Unless the storage preserves identifiers, the resource now has a new URL: use `location`.
+}
+```
+
+A storage that does not allow the move refuses it (`409` → `ConflictError`), as it does a
+destination that is not a container, or a container moved into itself.
+
 ## Authentication
 
-On a `401` with `WWW-Authenticate: Bearer as_uri="…", realm="…"`, the
-`TokenExchangeAuthenticator` checks that the request URL lies inside the realm, fetches the
-authorization server metadata (`/.well-known/lws-configuration`), exchanges a subject token
-from your credential provider for an access token (RFC 8693), caches it per realm and retries.
-Later requests inside the realm send the token immediately.
+On a `401` with `WWW-Authenticate: Bearer resource_metadata="…"`, the
+`TokenExchangeAuthenticator` follows the discovery of the Working Draft of 19 October 2026: it
+checks that the protected resource metadata (RFC 9728) is on the origin of the URL requested (the
+last hop's, after redirects),
+reads it and checks that it describes that very URL, reads the description of the storage the
+`401` links to (`rel="https://www.w3.org/ns/lws#storage"`) and checks that its root is on the same
+origin, then takes the first authorization server of the metadata that uses https and passes your
+filter. Only then does it fetch that server's metadata (`/.well-known/lws-configuration`),
+exchange a subject token from your credential provider for an access token for the storage
+(RFC 8693), cache it per (authorization server, storage) and retry with it. Later requests inside
+the storage or its root send the token immediately; elsewhere their `401` reuses it. A `401` that fails a check gets no token, and
+costs the client none. The `as_uri`/`realm` challenge of earlier drafts is still followed, with
+its realm check. Metadata, storage description and token requests never follow a redirect.
 
 ```ts
 // OpenID Connect: pass the ID token you obtained with your OIDC library (or a callback).
@@ -90,8 +119,8 @@ const pair = await importKeyPair(privateJwk);
 console.log(controlledIdentifierDocument("https://bot.example/agent", pair.publicJwk, "key-1"));
 new TokenExchangeAuthenticator(SelfSignedCredentials.forAgent("https://bot.example/agent", pair, "key-1"));
 
-// Restrict which authorization servers may receive your credentials:
-new TokenExchangeAuthenticator(creds, { authorizationServerFilter: (as) => as === "https://as.example" });
+// Restrict which authorization servers may receive your credentials (and for which storages):
+new TokenExchangeAuthenticator(creds, { authorizationServerFilter: (issuer, storage) => issuer === "https://as.example" });
 ```
 
 Plain `http` authorization servers are refused except on loopback hosts (or with
