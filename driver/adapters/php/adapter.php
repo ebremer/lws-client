@@ -50,6 +50,7 @@ use Ebremer\Lws\Model\ContainedResource;
 use Ebremer\Lws\Model\ContainerPage;
 use Ebremer\Lws\Model\CreateResult;
 use Ebremer\Lws\Model\Linkset;
+use Ebremer\Lws\Model\MoveResult;
 use Ebremer\Lws\Model\ReadResult;
 use Ebremer\Lws\Model\ResourceMetadata;
 use Ebremer\Lws\Model\Service;
@@ -421,6 +422,13 @@ function update_result(UpdateResult $u): array
 }
 
 /** @return array<string, mixed> */
+function moved_result(MoveResult $m): array
+{
+    return members(['status' => $m->status, 'location' => $m->location, 'linkset' => $m->linkset, 'identifierPreserved' => $m->identifierPreserved,
+        'etag' => $m->etag, 'metadata' => metadata_result($m->metadata)]);
+}
+
+/** @return array<string, mixed> */
 function created_result(CreateResult $c): array
 {
     return ['location' => $c->location, 'metadata' => metadata_result($c->metadata)];
@@ -445,6 +453,7 @@ function storage_result(StorageDescription $s): array
     } catch (ProtocolException) {
         $root = null;
     }
+    $move = $s->moveCapability();
     return members([
         'id' => $s->id,
         'types' => $s->types,
@@ -452,6 +461,7 @@ function storage_result(StorageDescription $s): array
         'services' => array_map(service_result(...), $s->services),
         'verificationMethods' => array_map(static fn ($vm): array => members(['id' => $vm->id, 'type' => $vm->type, 'controller' => $vm->controller]),
             $s->verificationMethods),
+        'moveCapability' => $move === null ? null : members(['appliesTo' => $move->appliesTo, 'preservesIdentifier' => $move->preservesIdentifier]),
         'raw' => Json::object($s->raw),
     ]);
 }
@@ -589,6 +599,7 @@ final class Adapter
             'read_linkset' => $this->readLinkset(...),
             'update_linkset' => $this->updateLinkset(...),
             'patch_linkset' => fn (Args $a): array => update_result($this->client->patchLinkset($a->url('linksetUrl'), patch_of($a->raw('patch')), ifMatch: $a->optStr('ifMatch'))),
+            'move' => fn (Args $a): array => moved_result($this->client->move($a->url('url'), $a->url('destination'), ifMatch: $a->optStr('ifMatch'))),
             'subscribe' => $this->subscribe(...),
             'list_subscriptions' => fn (Args $a): array => listing($this->client->listSubscriptions($a->url('serviceUrl')), $a->limit()),
             'get_subscription' => fn (Args $a): array => subscription_result($this->client->getSubscription($a->url('url'))),

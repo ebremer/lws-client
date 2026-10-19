@@ -14,10 +14,13 @@ final class Vocabulary
 {
     public const LWS_NS = 'https://www.w3.org/ns/lws#';
     public const LWS_CONTEXT = 'https://www.w3.org/ns/lws/v1';
+    /** The LWS profile, the `profile` of RDF media types whose representations match `application/lws+json`. */
+    public const LWS_PROFILE = 'https://www.w3.org/ns/lws/v1';
     public const CID_CONTEXT = 'https://www.w3.org/ns/cid/v1';
     public const ACTIVITYSTREAMS_CONTEXT = 'https://www.w3.org/ns/activitystreams';
     public const GRANT_TYPE_TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange';
     public const WELL_KNOWN_LWS_CONFIGURATION = '/.well-known/lws-configuration';
+    public const WELL_KNOWN_OAUTH_PROTECTED_RESOURCE = '/.well-known/oauth-protected-resource';
     public const OPENID_PROVIDER_SERVICE = 'https://www.w3.org/ns/lws#OpenIdProvider';
     public const ACCESS_PROFILE = 'https://www.w3.org/ns/lws#AccessProfile';
     public const PUBLIC_AGENT = 'http://xmlns.com/foaf/0.1/Agent';

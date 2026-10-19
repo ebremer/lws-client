@@ -11,6 +11,7 @@ use Ebremer\Lws\Access\AccessTarget;
 use Ebremer\Lws\Access\Constraint;
 use Ebremer\Lws\Auth\AccessToken;
 use Ebremer\Lws\Auth\AuthorizationServerMetadata;
+use Ebremer\Lws\Auth\ProtectedResourceMetadata;
 use Ebremer\Lws\Exception\ConflictException;
 use Ebremer\Lws\Exception\HttpException;
 use Ebremer\Lws\Exception\ProtocolException;
@@ -22,6 +23,8 @@ use Ebremer\Lws\Model\ContainerPage;
 use Ebremer\Lws\Model\Linkset;
 use Ebremer\Lws\Model\LinksetDocument;
 use Ebremer\Lws\Model\LinkTarget;
+use Ebremer\Lws\Model\MoveCapability;
+use Ebremer\Lws\Model\MoveResult;
 use Ebremer\Lws\Model\ResourceMetadata;
 use Ebremer\Lws\Model\StorageDescription;
 use Ebremer\Lws\Model\TypeIndexPage;
@@ -68,6 +71,32 @@ final class ModelFixtureTest extends TestCase
         self::assertSame($e['customService']['serviceEndpoint'], $custom->serviceEndpoint);
         self::assertNotNull($sd->capability('https://feature.example/PatchSupport'));
         self::assertTrue($sd->hasType('https://www.w3.org/ns/lws#Storage'));
+        self::assertMoveCapability($e['moveCapability'], $sd->moveCapability());
+    }
+
+    /** @param ?array<string, mixed> $expected */
+    private static function assertMoveCapability(?array $expected, ?MoveCapability $move): void
+    {
+        if ($expected === null) {
+            self::assertNull($move);
+            return;
+        }
+        self::assertNotNull($move);
+        self::assertSame([$expected['appliesTo'], $expected['preservesIdentifier'], $expected['movesDataResources'], $expected['movesContainers']],
+            [$move->appliesTo, $move->preservesIdentifier, $move->movesDataResources(), $move->movesContainers()]);
+    }
+
+    public function testMoveCapabilities(): void
+    {
+        $f = Fixtures::load('responses/storage-description.json');
+        foreach ($f['moveCapabilities'] as $c) {
+            $body = $f['body'];
+            unset($body['capability']);
+            if ($c['capability'] !== null) {
+                $body['capability'] = $c['capability'];
+            }
+            self::assertMoveCapability($c['expected'], StorageDescription::parse(self::wire($body), $f['url'])->moveCapability());
+        }
     }
 
     public function testStorageDescriptionInvalid(): void
@@ -177,7 +206,7 @@ final class ModelFixtureTest extends TestCase
     public function testNotificationFixture(): void
     {
         $f = Fixtures::load('responses/notification.json');
-        foreach (['single', 'batch'] as $key) {
+        foreach (['single', 'batch', 'move'] as $key) {
             $n = Notification::parse(self::wire($f[$key]));
             $e = $f[$key . 'Expected'];
             self::assertSame($e['storage'], $n->storage);
@@ -187,7 +216,7 @@ final class ModelFixtureTest extends TestCase
                 self::assertSame($x['id'], $a->id);
                 self::assertSame($x['types'], $a->types);
                 self::assertSame($x['objectId'], $a->object->id);
-                foreach (['isCreate', 'isUpdate', 'isDelete'] as $flag) {
+                foreach (['isCreate', 'isUpdate', 'isDelete', 'isMove'] as $flag) {
                     if (isset($x[$flag])) {
                         self::assertSame($x[$flag], $a->$flag());
                     }
@@ -297,6 +326,12 @@ final class ModelFixtureTest extends TestCase
         foreach ($f['realmChecks'] as $c) {
             self::assertSame($c['contained'], Url::contains($c['realm'], $c['url']), json_encode($c) ?: '');
         }
+        foreach ($f['originChecks'] as $c) {
+            self::assertSame($c['sameOrigin'], Url::sameOrigin($c['a'], $c['b']), json_encode($c) ?: '');
+        }
+        foreach ($f['resourceChecks'] as $c) {
+            self::assertSame($c['identical'], (new ProtectedResourceMetadata($c['resource'], ['https://as.example']))->describes($c['requested']), json_encode($c) ?: '');
+        }
         $now = 1_700_000_000.0;
         $t = AccessToken::fromTokenResponse($f['tokenResponse']['body'], $now);
         self::assertSame($now + $f['tokenResponse']['expectedExpiresIn'], $t->expiresAt);
@@ -307,6 +342,52 @@ final class ModelFixtureTest extends TestCase
         self::assertNotSame('', $md->tokenEndpoint);
         self::assertTrue(Url::isHttp($md->tokenEndpoint));
         self::assertNotEmpty($md->raw);
+    }
+
+    public function testProtectedResourceMetadataFixture(): void
+    {
+        $f = Fixtures::load('responses/oauth.json');
+        $c = $f['protectedResourceMetadata'];
+        $prm = ProtectedResourceMetadata::parse(self::wire($c['body']));
+        self::assertSame([$c['expected']['resource'], $c['expected']['authorizationServers']], [$prm->resource, $prm->authorizationServers]);
+        self::assertSame('Photos', $prm->raw['resource_name']);
+        self::assertTrue($prm->describes($c['expected']['resource']));
+        foreach ($f['protectedResourceMetadataInvalid'] as $name => $body) {
+            if ($name === 'description') {
+                continue;
+            }
+            try {
+                ProtectedResourceMetadata::parse(self::wire($body));
+                self::fail("Accepted $name");
+            } catch (ProtocolException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function testMoveFixture(): void
+    {
+        $f = Fixtures::load('move.json');
+        foreach ($f['patches'] as $c) {
+            $doc = new LinksetDocument($c['linksetUrl'], Linkset::parse(self::wire($c['linkset'])), self::metadata($c['linksetUrl'], 200, []));
+            try {
+                $patch = $doc->movePatch($c['resource'], $c['destination']);
+                self::assertNull($c['error'] ?? null, $c['name']);
+                self::assertSame($c['expected'], $patch->operations(), $c['name']);
+            } catch (ProtocolException) {
+                self::assertSame('ProtocolError', $c['error'] ?? null, $c['name']);
+            }
+        }
+        foreach ($f['responses'] as $c) {
+            $body = $c['body'] === null ? '' : Json::encode($c['body']);
+            $r = MoveResult::fromResponse($c['resource'], self::metadata($c['linksetUrl'], $c['status'], $c['headers']), $body);
+            $e = $c['expected'];
+            self::assertSame([$c['status'], $e['location'], $e['linkset'], $e['identifierPreserved'], $e['etag']],
+                [$r->status, $r->location, $r->linkset, $r->identifierPreserved, $r->etag], $c['name']);
+            self::assertSame($c['body'] === null, $r->document === null);
+        }
+        $this->expectException(ProtocolException::class);
+        MoveResult::fromResponse('https://s.example/a', self::metadata('https://s.example/a.meta', 200, []), 'not a linkset');
     }
 
     public function testProblemDetailsFixture(): void

@@ -6,7 +6,7 @@ namespace Ebremer\Lws\Http;
 
 /**
  * Parses `WWW-Authenticate` fields (RFC 9110 section 11.6.1), including several challenges in one field value
- * (`Bearer as_uri="…", realm="…", DPoP algs="ES256"`).
+ * (`Bearer resource_metadata="…", error="invalid_token", DPoP algs="ES256"`).
  */
 final class WwwAuthenticate
 {

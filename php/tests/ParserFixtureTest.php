@@ -103,6 +103,10 @@ final class ParserFixtureTest extends TestCase
         self::assertSame(['https://as.example', 'https://s.example/', 'invalid_token', 'expired'],
             [$ch->asUri(), $ch->realm(), $ch->error(), $ch->errorDescription()]);
         self::assertSame('https://as.example', $ch->param('AS_URI'));
+        self::assertNull($ch->resourceMetadata());
+        [$ch] = WwwAuthenticate::parse('Bearer resource_metadata="https://s.example/.well-known/oauth-protected-resource/a", error="invalid_token"');
+        self::assertSame(['https://s.example/.well-known/oauth-protected-resource/a', null, null, 'invalid_token'],
+            [$ch->resourceMetadata(), $ch->asUri(), $ch->realm(), $ch->error()]);
     }
 
     private static function bare(mixed $v): mixed

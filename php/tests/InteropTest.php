@@ -47,6 +47,9 @@ final class InteropTest extends TestCase
         foreach (['notificationService', 'accessRequestService', 'accessGrantService', 'typeIndexService', 'typeSearchService'] as $s) {
             self::assertNotNull($storage->$s(), $s);
         }
+        $move = $storage->moveCapability();
+        self::assertNotNull($move);
+        self::assertSame([true, true, false], [$move->movesDataResources(), $move->movesContainers(), $move->preservesIdentifier]);
         $root = $storage->storageRoot();
 
         // 2. A container for this run.
@@ -138,7 +141,24 @@ final class InteropTest extends TestCase
         $client->revokeAccessGrant($grantUrl);
         $client->cancelAccessRequest($requestUrl);
 
-        // 13. Delete.
+        // 13. Move, under the new identifier the storage gives the resource.
+        $archive = $client->createContainer($c, slug: 'archive')->location;
+        $m = $client->createText($c, 'Move me', slug: 'move-me.txt')->location;
+        $moved = $client->move($m, $archive);
+        self::assertSame($archive . 'move-me.txt', $moved->location);
+        self::assertFalse($moved->identifierPreserved);
+        self::assertSame($moved->location . '.meta', $moved->linkset);
+        self::assertSame('Move me', $client->read($moved->location)->text());
+        self::assertContains($moved->location, array_map(static fn ($item): string => $item->id, $client->listContainer($archive)->toArray()));
+        self::assertNotContains($m, array_map(static fn ($item): string => $item->id, $client->listContainer($c)->toArray()));
+        try {
+            $client->move($c, $archive);
+            self::fail('Moved a container into its own descendant');
+        } catch (ConflictException) {
+            self::addToAssertionCount(1);
+        }
+
+        // 14. Delete.
         try {
             $client->delete($c);
             self::fail('Deleted a non-empty container');

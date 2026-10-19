@@ -300,6 +300,16 @@ final class Url
         return $scheme . '://' . $authority . $path . ($c['query'] === null ? '' : '?' . $c['query']);
     }
 
+    /**
+     * Whether two absolute http(s) URLs are identical as RFC 9728 section 3.3 compares them: scheme and host
+     * case-insensitively, a default port the same as none, and nothing else normalised (no trailing slash, case or
+     * percent-encoding leniency).
+     */
+    public static function identical(string $a, string $b): bool
+    {
+        return self::isHttp($a) && self::isHttp($b) && self::canonical($a) === self::canonical($b) && self::fragment($a) === self::fragment($b);
+    }
+
     /** Compares two URI strings, ignoring one trailing slash on each. */
     public static function equalsIgnoringTrailingSlash(string $a, string $b): bool
     {

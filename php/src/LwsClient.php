@@ -34,6 +34,7 @@ use Ebremer\Lws\Model\ContainerPage;
 use Ebremer\Lws\Model\CreateResult;
 use Ebremer\Lws\Model\Linkset;
 use Ebremer\Lws\Model\LinksetDocument;
+use Ebremer\Lws\Model\MoveResult;
 use Ebremer\Lws\Model\ReadResult;
 use Ebremer\Lws\Model\ResourceMetadata;
 use Ebremer\Lws\Model\Service;
@@ -65,7 +66,7 @@ use Ebremer\Lws\Notification\WebhookSubscriptionRequest;
  * `\InvalidArgumentException` before any request is sent.
  *
  * Redirects are followed by the client itself (at most `maxRedirects`), authorizing every hop afresh for its own
- * URL, so that an access token never leaves its realm. `POST` is never sent twice, except for the single retry
+ * URL, so that an access token never leaves its storage. `POST` is never sent twice, except for the single retry
  * after a `401` that the authenticator handled (when nothing was created). Instances are immutable.
  */
 final class LwsClient
@@ -73,7 +74,8 @@ final class LwsClient
     public const VERSION = '0.1.0';
     public const DEFAULT_USER_AGENT = 'lws-client-php/' . self::VERSION;
 
-    private const ACCEPT_DESCRIPTION = MediaType::LWS_CID . ', ' . MediaType::LD_JSON . ';q=0.9, ' . MediaType::JSON . ';q=0.8';
+    /** The `Accept` of storage description requests. */
+    public const ACCEPT_DESCRIPTION = MediaType::LWS_CID . ', ' . MediaType::LD_JSON . ';q=0.9, ' . MediaType::JSON . ';q=0.8';
     private const ACCEPT_LINKSET = MediaType::LINKSET_JSON . ', ' . MediaType::JSON . ';q=0.5';
     private const REDIRECTS = [301, 302, 303, 307, 308];
     private const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS', 'QUERY'];
@@ -193,7 +195,8 @@ final class LwsClient
     }
 
     /**
-     * Reads one page of a container listing (`Accept: application/lws+json`); also takes opaque page URLs.
+     * Reads one page of a container listing (`Accept: application/lws+json`); also takes opaque page URLs. An
+     * `application/ld+json` or `application/json` answer, from servers of earlier drafts, is read the same way.
      *
      * @param Headers|iterable<array-key, mixed> $headers
      * @throws ProtocolException when the response is not an LWS container representation
@@ -452,6 +455,31 @@ final class LwsClient
     public function patchLinkset(string $linksetUrl, JsonPatch $patch, ?string $ifMatch = null, Headers|iterable $headers = [], ?float $timeout = null): UpdateResult
     {
         return $this->patch($linksetUrl, $patch, ifMatch: $ifMatch, headers: $headers, timeout: $timeout);
+    }
+
+    /**
+     * Moves a resource, or a container with everything in it, into another container (lws10-core "Moving
+     * Resources"): reads the resource's linkset and patches it, conditionally on its ETag, replacing the `up` link
+     * with the destination. Check {@see StorageDescription::moveCapability()} first. The result says where the
+     * resource is now, which may be a new URL.
+     *
+     * @param ?string $ifMatch the ETag the linkset must still have (default: the ETag it was read with)
+     * @param Headers|iterable<array-key, mixed> $headers
+     * @throws HttpException for an error status: a {@see Exception\ConflictException} when the storage allows no
+     *     moves, the destination is not a container, or a container would move into itself
+     * @throws ProtocolException when the linkset shows no `up` link of the resource to replace (then nothing is sent)
+     */
+    public function move(string $resourceUrl, string $destinationUrl, ?string $ifMatch = null, Headers|iterable $headers = [], ?float $timeout = null): MoveResult
+    {
+        Url::requireHttp($resourceUrl, 'resourceUrl');
+        $destination = Url::requireHttp($destinationUrl, 'destinationUrl');
+        $m = $this->head($resourceUrl, $headers, $timeout);
+        $doc = $this->readLinksetResource($m->linkset ?? throw new ProtocolException("{$m->url} has no linkset link"), $headers, $timeout);
+        $patch = $doc->movePatch($m->url, $destination);
+        $h = (new Headers(['Content-Type' => MediaType::JSON_PATCH]))->with('If-Match', $ifMatch ?? $doc->etag);
+        $r = $this->call('PATCH', $doc->url, $patch->encode(), $h, $headers, $timeout);
+        self::check($r);
+        return MoveResult::fromResponse($m->url, self::metadata($r), $r->body);
     }
 
     // ------------------------------------------------------------------------------------------------

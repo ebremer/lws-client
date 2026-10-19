@@ -34,7 +34,7 @@ echo json_encode(ControlledIdentifierDocument::create($agent, $edKey->publicKey,
 // Either credential plugs into the LWS token exchange flow.
 $authenticator = new TokenExchangeAuthenticator($didKey,
     // Optional: only send credentials to authorization servers you trust.
-    authorizationServerFilter: static fn (string $server, string $realm): bool => str_starts_with($server, 'https://')
+    authorizationServerFilter: static fn (string $server, string $storage): bool => str_starts_with($server, 'https://')
         || in_array(parse_url($server, PHP_URL_HOST), ['localhost', '127.0.0.1'], true));
 $client = new LwsClient(authenticator: $authenticator);
 echo 'Client ready: the did:key agent signs with ', $didKey->algorithm(), ', the HTTPS agent with ', $https->algorithm(), "\n";

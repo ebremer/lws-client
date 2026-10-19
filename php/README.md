@@ -1,10 +1,11 @@
 # LWS Client for PHP
 
 A client for the [W3C Linked Web Storage (LWS) Protocol 1.0](https://www.w3.org/TR/lws10-core/) and its companion
-specifications, as published by the LWS Working Group on 2026-10-05: discovery, resources and containers, linkset
-metadata, OAuth 2.0 token exchange with the OpenID Connect / SAML 2.0 / self-signed (controlled identifier,
-`did:key`) authentication suites, webhook notifications with RFC 9421 signature verification (and signing, for servers), access requests and
-grants, and the type index / type search services.
+specifications, as they stood on 2026-10-19 (the Working Draft of 19 October 2026, `w3c/lws-protocol` 9a08ff6):
+discovery, resources and containers, linkset metadata, moving resources between containers, OAuth 2.0 token exchange
+after RFC 9728 discovery with the OpenID Connect / SAML 2.0 / self-signed (controlled identifier, `did:key`)
+authentication suites, webhook notifications with RFC 9421 signature verification (and signing, for servers), access
+requests and grants, and the type index / type search services.
 
 * PHP 8.2 or later, with the bundled extensions ext-curl, ext-openssl and ext-sodium; no Composer dependencies
 * Operation options are named arguments (`slug:`, `ifMatch:`, `recursive:`, `headers:`, `timeout:`); listings are
@@ -89,6 +90,7 @@ notifications).
 | Creating | `create`, `createText`, `createJson`, `createContainer` (`slug:`, `types:`, `links:`) |
 | Updating | `update` (`ifMatch:`, `ifNoneMatch:`, `links:`, `setLinkset:`), `patch` (a `JsonPatch`, or bytes and a content type), `delete` (`ifMatch:`, `recursive:`) |
 | Linksets | `linksetUrl`, `readLinkset`, `readLinksetResource`, `updateLinkset`, `patchLinkset` |
+| Moving | `move` (`ifMatch:`), where `getStorageDescription(...)->moveCapability()` allows it |
 | Notifications | `subscribe`, `listSubscriptions`, `getSubscription`, `unsubscribe`; `WebhookVerifier`, and `WebhookSigner` for servers |
 | Access | `requestAccess`, `listAccessRequests`, `getAccessRequest`, `cancelAccessRequest`, `grantAccess`, `listAccessGrants`, `getAccessGrant`, `revokeAccessGrant` |
 | Type index and search | `readTypeIndex`, `listTypes`, `searchTypes` (HTTP `QUERY`), `searchAll`, `acceptedQueryFormats` |
@@ -113,6 +115,24 @@ requests) encode back to the same JSON. Values you send (`createJson`, JSON Patc
 copy, or throws `JsonPatchException` (a failed `test`, a missing location) and changes nothing. Servers use it to
 honour `PATCH`; `conformance/fixtures/json-patch-apply.json` holds its cases.
 
+## Moving resources
+
+```php
+$move = $client->discoverStorage($root)->moveCapability();   // null: this storage moves nothing
+if ($move !== null && $move->movesDataResources()) {
+    $moved = $client->move($note, $archive);
+    $note = $moved->location;   // the storage may have given it a new URL
+}
+```
+
+`move` reads the resource's linkset and sends a JSON Patch that `test`s and `replace`s its `up` link, conditionally on
+the linkset's ETag (`ifMatch:` overrides it). Unless the capability says `preservesIdentifier: true`, take the
+resource's URL from the result: `location` and `linkset` are where the resource and its linkset are now, and
+`identifierPreserved` says whether the URL stayed. A storage that refuses the move (no capability, a destination
+that is not a container, a container moved into itself) answers `409`, a `ConflictException`. `LinksetDocument::movePatch()`
+and `MoveResult::fromResponse()` are its two halves. Notifications report moves as `Move` activities
+(`$activity->isMove()`, with `origin` and `target`).
+
 ## Errors
 
 ```
@@ -131,7 +151,7 @@ LwsException (\RuntimeException)
 │   ├── UnprocessableContentException  422
 │   ├── NotImplementedException        501
 │   └── InsufficientStorageException   507
-├── AuthenticationException       the token exchange failed: $oauthError, $oauthErrorDescription, $status
+├── AuthenticationException       a discovery check or the token exchange failed: $oauthError, $oauthErrorDescription, $status
 ├── ProtocolException             the server broke the specification (no Location, wrong media type, bad JSON)
 ├── SignatureVerificationException  a webhook delivery that does not verify
 └── TransportException            no response: refused, TLS, isTimeout()
@@ -143,11 +163,18 @@ is sent.
 
 ## Authentication
 
-`TokenExchangeAuthenticator` runs the LWS flow: on a `401` with `WWW-Authenticate: Bearer as_uri="…", realm="…"` it
-checks that the request lies inside the realm and that the authorization server uses HTTPS (loopback hosts
-excepted), reads the server's metadata (never following a redirect), exchanges a subject token for an access
-token, and sends the request once more. Tokens are reused for every URL inside their realm until 30 seconds before
-they expire, and are never sent outside it, redirects included.
+`TokenExchangeAuthenticator` runs the LWS flow. A `401` carries `WWW-Authenticate: Bearer resource_metadata="…"` and
+a `Link` to the storage that holds the resource. Before it asks for a token, the authenticator checks what the `401`
+said against the URL it requested: the metadata URL is on that origin, the protected resource metadata (RFC 9728)
+describes that very URL, and the storage's description (read without credentials, and cached until `clear()`) puts
+the storage root on that origin too. A `401` that fails a check gets no token, and does not cost the client the
+token it has. The first authorization server of the metadata that uses HTTPS (loopback hosts excepted) and passes
+the filter is used: its metadata is read and its `issuer` checked, a subject token is exchanged for an access token
+with `resource` = the storage, and the request is sent once more with it. None of these requests follows a redirect.
+Tokens are cached per authorization server and storage, and sent at once to every URL inside the storage or its root
+until 30 seconds before they expire, never anywhere else, redirects included: a URL outside them gets the token only
+after its own `401` passes the checks. A server still on the drafts before 19 October 2026 (`Bearer as_uri="…",
+realm="…"`) is followed too: the request must lie inside the realm, which is then the token's storage and scope.
 
 | Suite | Credentials |
 |---|---|
@@ -158,9 +185,10 @@ they expire, and are never sent outside it, redirects included.
 | A known token | `new BearerTokenAuthenticator($token, realm: 'https://storage.example/')` |
 
 Keys round-trip as JWKs: `$key->jwk()` and `SigningKey::fromJwk($jwk)`. Options of the flow:
-`allowInsecureHttp:` (testing only), `authorizationServerFilter:` (decide which servers may receive your
-credentials), `refreshMargin:`, `timeout:`, `transport:`. Keys, tokens and credentials are kept out of `var_dump()`
-and `print_r()`, and are `#[\SensitiveParameter]`s.
+`allowInsecureHttp:` (testing only), `authorizationServerFilter:` (a `fn (string $issuer, string $storage): bool`
+that decides which servers may receive your credentials), `refreshMargin:`, `timeout:`, `transport:`.
+`accessToken($issuer, $storage)` gets a token without a request first. Keys, tokens and credentials are kept out of
+`var_dump()` and `print_r()`, and are `#[\SensitiveParameter]`s.
 
 ## Webhooks
 

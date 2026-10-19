@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ebremer\Lws\Model;
 
+use Ebremer\Lws\CapabilityType;
 use Ebremer\Lws\Exception\ProtocolException;
 use Ebremer\Lws\Internal\JsonAccess;
 use Ebremer\Lws\Internal\Url;
@@ -117,6 +118,16 @@ final class StorageDescription implements \Stringable
             }
         }
         return null;
+    }
+
+    /**
+     * The storage's `MoveResource` capability, or null when it describes none: then the `up` link is not modifiable,
+     * and resources cannot move.
+     */
+    public function moveCapability(): ?MoveCapability
+    {
+        $c = $this->capability(CapabilityType::MOVE_RESOURCE);
+        return $c === null ? null : MoveCapability::of($c);
     }
 
     public function notificationService(): ?Service

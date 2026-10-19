@@ -12,7 +12,10 @@ use Ebremer\Lws\Internal\Url;
 use Ebremer\Lws\Json\Json;
 use Ebremer\Lws\Vocabulary;
 
-/** One activity of a notification (`Create`, `Update`, `Delete`). */
+/**
+ * One activity of a notification (`Create`, `Update`, `Delete`, `Move`). A `Move` has `origin`, the container the
+ * resource left, `target`, the one it joined, and `object`, the resource as it is after the move.
+ */
 final class Activity
 {
     public readonly ?\DateTimeImmutable $published;
@@ -64,6 +67,11 @@ final class Activity
     public function isDelete(): bool
     {
         return $this->hasType(ActivityType::DELETE);
+    }
+
+    public function isMove(): bool
+    {
+        return $this->hasType(ActivityType::MOVE);
     }
 
     /** Whether the activity has a type (`Update`, `as:Update` and the full Activity Streams IRI are equal). */

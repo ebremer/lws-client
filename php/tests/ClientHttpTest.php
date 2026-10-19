@@ -296,6 +296,53 @@ final class ClientHttpTest extends TestCase
         $client->linksetUrl(self::S . 'x');
     }
 
+    public function testMove(): void
+    {
+        $fx = Fixtures::load('move.json');
+        $read = $fx['patches'][1];
+        $answer = $fx['responses'][1];
+        // The storage of the lws10-core example, answering the patch as given.
+        $storage = static fn (int $status, array $headers, mixed $body): \Closure => static fn (HttpRequest $r): HttpResponse => match ($r->method) {
+            'HEAD' => FakeTransport::response($r, 200, ['Link' => '<shoppinglist.txt.meta>; rel="linkset"']),
+            'GET' => FakeTransport::response($r, 200, ['Content-Type' => 'application/linkset+json', 'ETag' => '"meta-v3"'], $read['linkset']),
+            default => FakeTransport::response($r, $status, $headers, $body),
+        };
+        $client = $this->client($storage($answer['status'], $answer['headers'], $answer['body']));
+        $moved = $client->move($read['resource'], $read['destination']);
+        self::assertSame(['HEAD', 'GET', 'PATCH'], array_map(static fn ($x) => $x->method, $this->t->requests));
+        $patch = $this->t->last();
+        self::assertSame([$read['linksetUrl'], 'application/json-patch+json', '"meta-v3"'],
+            [$patch->url, $patch->headers->first('content-type'), $patch->headers->first('if-match')]);
+        self::assertSame($read['expected'], json_decode((string) $patch->body, true));
+        $e = $answer['expected'];
+        self::assertSame([200, $e['location'], $e['linkset'], false, $e['etag']],
+            [$moved->status, $moved->location, $moved->linkset, $moved->identifierPreserved, $moved->etag]);
+        self::assertSame(200, $moved->metadata->status);
+        self::assertSame(['/alice/archive/'], $moved->document?->hrefs('up'));
+        // ifMatch overrides the ETag the linkset was read with.
+        $client->move($read['resource'], $read['destination'], ifMatch: '"other"');
+        self::assertSame('"other"', $this->t->last()->headers->first('if-match'));
+        $client = $this->client($storage(409, ['Content-Type' => 'application/problem+json'], ['title' => 'Not a container']));
+        try {
+            $client->move($read['resource'], 'https://example.com/alice/notes/shoppinglist.txt');
+            self::fail('No 409');
+        } catch (ConflictException $e) {
+            self::assertSame('Not a container', $e->problem?->title);
+        }
+        // A linkset without an up link of the resource: nothing is sent.
+        $client = $this->client(static fn (HttpRequest $r): HttpResponse => $r->method === 'HEAD'
+            ? FakeTransport::response($r, 200, ['Link' => '<a.meta>; rel="linkset"'])
+            : FakeTransport::response($r, 200, ['Content-Type' => 'application/linkset+json'], ['linkset' => [['anchor' => '/b', 'up' => [['href' => '/']]]]]));
+        try {
+            $client->move(self::S . 'a', self::S . 'c/');
+            self::fail('Moved without an up link');
+        } catch (ProtocolException) {
+            self::assertSame(['HEAD', 'GET'], array_map(static fn ($x) => $x->method, $this->t->requests));
+        }
+        $this->expectException(\InvalidArgumentException::class);
+        $client->move(self::S . 'a', '/c/');
+    }
+
     public function testSubscriptions(): void
     {
         $sd = Fixtures::load('responses/storage-description.json');

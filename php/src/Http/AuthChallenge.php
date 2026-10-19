@@ -35,13 +35,19 @@ final class AuthChallenge
         return $this->params[strtolower($name)] ?? null;
     }
 
-    /** The LWS `as_uri` parameter: the authorization server to obtain a token from. */
+    /** The `resource_metadata` parameter (RFC 9728): the URL of the requested resource's protected resource metadata. */
+    public function resourceMetadata(): ?string
+    {
+        return $this->params['resource_metadata'] ?? null;
+    }
+
+    /** The `as_uri` parameter of the drafts before 19 October 2026: the authorization server to obtain a token from. */
     public function asUri(): ?string
     {
         return $this->params['as_uri'] ?? null;
     }
 
-    /** The `realm` parameter: the protection space the token is for. */
+    /** The `realm` parameter: the protection space (in the drafts before 19 October 2026, the storage the token is for). */
     public function realm(): ?string
     {
         return $this->params['realm'] ?? null;

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Ebremer\Lws\Exception;
 
 /**
- * The LWS authorization flow failed: the request is outside the challenge realm, the authorization server is
- * insecure or rejected, its metadata is wrong, or the token exchange was refused (then `oauthError` and
- * `oauthErrorDescription` carry the RFC 6749 `error` and `error_description`, and `status` the HTTP status).
+ * The LWS authorization flow failed: a discovery check failed (the protected resource metadata is on another
+ * origin, cannot be read or describes another URL; the storage root is on another origin), the request is outside
+ * the realm of a challenge of the drafts before 19 October 2026, the authorization server is insecure or rejected,
+ * its metadata is wrong, or the token exchange was refused (then `oauthError` and `oauthErrorDescription` carry the
+ * RFC 6749 `error` and `error_description`, and `status` the HTTP status).
  */
 class AuthenticationException extends LwsException
 {
