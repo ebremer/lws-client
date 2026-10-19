@@ -277,6 +277,72 @@ TEST(ClientLinkset, ReadUpdatePatch) {
     EXPECT_EQ(transport->requests().back().headers.get("content-type"), "application/linkset+json");
 }
 
+TEST(ClientMove, PatchesTheUpLinkAndReportsTheNewIdentifier) {
+    const auto f = fixture("move.json");
+    const auto& moved = f["responses"][1];  // 200 with the linkset under a new identifier
+    const std::string resource = moved["resource"];
+    const std::string linkset_url = moved["linksetUrl"];
+    nlohmann::json linkset = {{"linkset", {{{"anchor", resource},
+                                            {"up", {{{"href", "/alice/notes/"}}}},
+                                            {"describedby", {{{"href", "https://example.org/shapes/list"}}}}}}}};
+    auto [client, transport] = mock_client([&](const HttpRequest& r) {
+        if (r.url == resource && r.method == "HEAD")
+            return make_response(200, {{"Link", "<shoppinglist.txt.meta>; rel=\"linkset\"; type=\"application/linkset+json\""}});
+        if (r.url == linkset_url && r.method == "GET")
+            return json_response(200, linkset, "application/linkset+json", {{"ETag", "\"meta-v3\""}});
+        if (r.url == linkset_url && r.method == "PATCH") {
+            if (r.headers.get("if-match") == "\"stale\"") return make_response(412);
+            auto response = lws::test::response_from_fixture(moved);
+            response.url = linkset_url;
+            return response;
+        }
+        if (r.url == "https://example.com/alice/a.txt" && r.method == "HEAD")
+            return make_response(200, {{"Link", "</alice/a.txt.meta>; rel=\"linkset\""}});
+        if (r.url == "https://example.com/alice/a.txt.meta")
+            return json_response(200, {{"linkset", {{{"anchor", "/alice/a.txt"}}}}}, "application/linkset+json");
+        return make_response(404);
+    });
+    const auto result = client.move(resource, "https://example.com/alice/archive/");
+    EXPECT_EQ(result.status, 200);
+    EXPECT_EQ(result.location, moved["expected"]["location"].get<std::string>());
+    EXPECT_EQ(result.linkset, moved["expected"]["linkset"].get<std::string>());
+    EXPECT_FALSE(result.identifier_preserved);
+    EXPECT_EQ(result.etag, "\"meta-v4\"");
+    ASSERT_TRUE(result.document);
+    const auto patch = transport->requests().back();
+    EXPECT_EQ(patch.method, "PATCH");
+    EXPECT_EQ(patch.headers.get("content-type"), "application/json-patch+json");
+    EXPECT_EQ(patch.headers.get("if-match"), "\"meta-v3\"");
+    EXPECT_EQ(nlohmann::json::parse(patch.body), nlohmann::json::parse(R"([
+        {"op": "test", "path": "/linkset/0/up/0/href", "value": "/alice/notes/"},
+        {"op": "replace", "path": "/linkset/0/up/0/href", "value": "https://example.com/alice/archive/"}])"));
+
+    // If-Match given by the caller overrides the linkset's ETag.
+    EXPECT_THROW(client.move(resource, "https://example.com/alice/archive/", {.if_match = "\"stale\""}),
+                 PreconditionFailedError);
+    EXPECT_EQ(transport->requests().back().headers.get("if-match"), "\"stale\"");
+
+    // No up link to replace: nothing is sent.
+    transport->clear();
+    EXPECT_THROW(client.move("https://example.com/alice/a.txt", "https://example.com/alice/archive/"), ProtocolError);
+    EXPECT_EQ(transport->count("PATCH"), 0u);
+}
+
+TEST(ClientMove, RefusedMoveIsConflict) {
+    auto [client, transport] = mock_client([](const HttpRequest& r) {
+        if (r.method == "HEAD") return make_response(200, {{"Link", "<.meta>; rel=\"linkset\""}});
+        if (r.method == "GET")
+            return json_response(200, {{"linkset", {{{"anchor", kBase + "/c/"}, {"up", {{{"href", kBase + "/"}}}}}}}},
+                                 "application/linkset+json");
+        return json_response(409, {{"title", "Cannot move a container into one of its own descendants"}, {"status", 409}},
+                             "application/problem+json");
+    });
+    EXPECT_THROW(client.move(kBase + "/c/", kBase + "/c/d/"), ConflictError);
+    const auto patch = transport->requests().back();
+    EXPECT_EQ(patch.url, kBase + "/c/.meta");
+    EXPECT_FALSE(patch.headers.contains("if-match"));  // the linkset had no ETag
+}
+
 TEST(ClientNotifications, SubscribeListGetUnsubscribe) {
     const auto f = fixture("responses/subscription.json");
     const auto sd = StorageDescription::from_json(fixture("responses/storage-description.json")["body"], kBase + "/");

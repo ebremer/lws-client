@@ -19,6 +19,8 @@
 #include <nlohmann/json.hpp>
 
 #include "lws/http.hpp"
+#include "lws/link.hpp"
+#include "lws/models.hpp"
 
 namespace lws {
 
@@ -32,6 +34,9 @@ public:
     /// HTTP it needs). Returns true when the request should be retried once.
     virtual bool handle_challenge(const HttpRequest& request, const HttpResponse& response,
                                   HttpTransport& transport) = 0;
+    /// Called on that retry, once for every handle_challenge that returned true; may add an
+    /// Authorization header. Defaults to authorize().
+    virtual void authorize_retry(HttpRequest& request) { authorize(request); }
 };
 
 /// Sends a known access token. With a `realm`, the token is only attached to URLs inside it.
@@ -65,10 +70,21 @@ struct AuthorizationServerMetadata {
     static AuthorizationServerMetadata from_json(const nlohmann::json& json);
 };
 
+/// Protected resource metadata (RFC 9728), named by the `resource_metadata` parameter of a 401.
+struct ProtectedResourceMetadata {
+    std::string resource{};                         ///< the protected resource, as the metadata names it
+    std::vector<std::string> authorization_servers{};  ///< issuer identifiers, in order
+    nlohmann::json raw{};
+
+    /// Parses and validates (design/client-api.md §6.2 step 4): `resource` must be a string and
+    /// `authorization_servers` a non-empty array of strings. Throws AuthenticationError otherwise.
+    static ProtectedResourceMetadata from_json(const nlohmann::json& json);
+};
+
 /// Context handed to a CredentialProvider when a subject token is needed.
 struct CredentialContext {
-    std::string issuer{};  ///< the authorization server (as_uri) — the audience of the credential
-    std::string realm{};
+    std::string issuer{};   ///< the authorization server — the audience of the credential
+    std::string storage{};  ///< the storage the access token is for (the token request's resource)
     AuthorizationServerMetadata metadata{};
 };
 
@@ -122,8 +138,10 @@ private:
 struct TokenExchangeOptions {
     /// Allow plain-http authorization servers on non-loopback hosts (testing only).
     bool allow_insecure_http = false;
-    /// Optional policy deciding whether credentials may be sent to an authorization server.
-    std::function<bool(std::string_view as_uri, std::string_view realm)> authorization_server_filter;
+    /// Optional policy deciding whether credentials may be sent to an authorization server, for a
+    /// token for `storage`. Of the servers the protected resource metadata names, the first that
+    /// passes is used.
+    std::function<bool(std::string_view issuer, std::string_view storage)> authorization_server_filter;
     /// Lifetime assumed when neither expires_in nor a JWT exp is available.
     std::chrono::seconds default_token_lifetime{300};
     /// Tokens are refreshed this long before they expire.
@@ -138,13 +156,20 @@ struct AccessToken {
     std::string token_type{};
     std::chrono::system_clock::time_point expires_at{};
     std::string issuer{};
-    std::string realm{};
+    std::string storage{};  ///< the storage it is for (the token request's resource)
+    /// URLs, each treated as a directory, the token is sent to without waiting for a 401: the storage
+    /// and its storage root (the realm, for the challenge of the drafts before 19 October 2026). Only
+    /// the retry of a request whose 401 passed the discovery checks carries it outside them.
+    std::vector<std::string> scopes{};
 };
 
 /// The LWS authorization flow (design/client-api.md §6.2): on a 401 Bearer challenge with
-/// as_uri/realm it validates the realm, discovers the authorization server metadata, exchanges a
-/// subject token from the CredentialProvider for an access token (RFC 8693) and retries.
-/// Tokens are cached per (issuer, realm) and sent proactively to URLs inside the realm.
+/// resource_metadata it reads the protected resource metadata (RFC 9728) and the description of the
+/// storage the 401 links to, makes the three discovery checks, discovers the authorization server
+/// metadata, exchanges a subject token from the CredentialProvider for an access token (RFC 8693)
+/// and retries. The as_uri/realm challenge of the drafts before 19 October 2026 is still followed.
+/// Tokens are cached per (issuer, storage) and sent proactively to URLs inside the storage and its
+/// storage root; the retry of the request that drew the 401 carries the token wherever it is.
 class TokenExchangeAuthenticator final : public Authenticator {
 public:
     explicit TokenExchangeAuthenticator(std::shared_ptr<CredentialProvider> credentials,
@@ -152,8 +177,12 @@ public:
 
     void authorize(HttpRequest& request) override;
     bool handle_challenge(const HttpRequest& request, const HttpResponse& response, HttpTransport& transport) override;
+    /// Sends the token handle_challenge obtained or reused for this request, even when its URL lies
+    /// outside the token's scope: it has just passed the discovery checks (design/client-api.md
+    /// §6.2 step 14). Later requests there get no token up front.
+    void authorize_retry(HttpRequest& request) override;
 
-    /// Drops all cached access tokens and metadata.
+    /// Drops all cached access tokens, authorization server metadata and storage descriptions.
     void clear();
     /// A snapshot of the cached access tokens.
     std::vector<AccessToken> cached_tokens() const;
@@ -161,15 +190,29 @@ public:
     AuthorizationServerMetadata metadata(std::string_view issuer, HttpTransport& transport);
 
 private:
+    /// Where a 401 leads: the authorization server, the storage the token is for and the token's scopes.
+    struct Discovery {
+        std::string issuer;
+        std::string storage;
+        std::vector<std::string> scopes;
+    };
+
     std::chrono::system_clock::time_point now() const;
     std::optional<AccessToken> find_token(std::string_view url) const;
+    bool acceptable_issuer(std::string_view issuer, std::string_view storage) const;
+    Discovery discover(const HttpRequest& request, const HttpResponse& response, const AuthChallenge& challenge,
+                       HttpTransport& transport);
+    Discovery discover_legacy(const HttpRequest& request, const AuthChallenge& challenge) const;
+    StorageDescription storage_description(const std::string& storage_url, HttpTransport& transport);
 
     std::shared_ptr<CredentialProvider> credentials_;
     TokenExchangeOptions options_;
-    mutable std::mutex mutex_;          // guards tokens_ and metadata_
+    mutable std::mutex mutex_;          // guards tokens_, metadata_, descriptions_ and retries_
     std::mutex exchange_mutex_;         // serialises token exchanges
     std::vector<AccessToken> tokens_;
     std::map<std::string, AuthorizationServerMetadata, std::less<>> metadata_;
+    std::map<std::string, StorageDescription, std::less<>> descriptions_;
+    std::vector<std::pair<std::string, std::string>> retries_;  // (request URL, token) for authorize_retry
 };
 
 /// Decodes the payload of a JWT without verifying it. Returns std::nullopt if malformed.

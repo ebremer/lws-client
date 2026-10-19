@@ -67,7 +67,7 @@ struct HttpRequest {
 };
 
 /// An HTTP response returned by an HttpTransport. Transports must NOT follow redirects; the
-/// client follows them itself so that credentials are never forwarded outside their realm.
+/// client follows them itself so that credentials are never forwarded outside their scope.
 struct HttpResponse {
     int status = 0;
     std::string url{};  ///< URL the response was obtained from

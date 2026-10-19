@@ -35,8 +35,8 @@ int main(int argc, char** argv) {
 
         lws::TokenExchangeOptions auth_options;
         // Only send credentials to authorization servers you trust (optional policy).
-        auth_options.authorization_server_filter = [](std::string_view as_uri, std::string_view realm) {
-            std::cout << "token exchange with " << as_uri << " for realm " << realm << "\n";
+        auth_options.authorization_server_filter = [](std::string_view issuer, std::string_view storage) {
+            std::cout << "token exchange with " << issuer << " for storage " << storage << "\n";
             return true;
         };
         auto authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(credentials, auth_options);
@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
         const auto page = client.read_container(argv[1]);
         std::cout << "container " << page.id << " has " << page.total_items.value_or(0) << " member(s)\n";
         for (const auto& token : authenticator->cached_tokens())
-            std::cout << "cached access token for " << token.realm << " (issuer " << token.issuer << ")\n";
+            std::cout << "cached access token for " << token.storage << " (issuer " << token.issuer << ")\n";
 
         // An HTTPS agent instead publishes this controlled identifier document at its URI and uses
         // SelfSignedCredentials::for_agent("https://id.example/bot", key, "key-1").

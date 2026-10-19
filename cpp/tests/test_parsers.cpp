@@ -66,13 +66,21 @@ TEST(WwwAuthenticate, ConformanceFixtures) {
 }
 
 TEST(WwwAuthenticate, Accessors) {
-    const auto ch = parse_www_authenticate(R"(Bearer as_uri="https://as.example", realm="https://s.example/", error="invalid_token")");
+    const auto ch = parse_www_authenticate(
+        R"(Bearer resource_metadata="https://s.example/.well-known/oauth-protected-resource/a", error="invalid_token")");
     ASSERT_EQ(ch.size(), 1u);
     EXPECT_TRUE(ch[0].is_scheme("bearer"));
-    EXPECT_EQ(ch[0].as_uri(), "https://as.example");
-    EXPECT_EQ(ch[0].realm(), "https://s.example/");
+    EXPECT_EQ(ch[0].resource_metadata(), "https://s.example/.well-known/oauth-protected-resource/a");
     EXPECT_EQ(ch[0].error(), "invalid_token");
     EXPECT_FALSE(ch[0].error_description());
+    EXPECT_FALSE(ch[0].as_uri());
+
+    // The challenge of the drafts before 19 October 2026.
+    const auto legacy = parse_www_authenticate(R"(Bearer as_uri="https://as.example", realm="https://s.example/")");
+    ASSERT_EQ(legacy.size(), 1u);
+    EXPECT_EQ(legacy[0].as_uri(), "https://as.example");
+    EXPECT_EQ(legacy[0].realm(), "https://s.example/");
+    EXPECT_FALSE(legacy[0].resource_metadata());
 }
 
 // ---- Structured fields ----------------------------------------------------------------------
@@ -191,7 +199,7 @@ TEST(TypeQuery, ConformanceFixtures) {
     }
 }
 
-// ---- URLs, realms, metadata URLs --------------------------------------------------------------
+// ---- URLs, realms, origins, metadata URLs -----------------------------------------------------
 
 TEST(Url, Rfc3986ReferenceResolution) {
     const std::string base = "http://a/b/c/d;p?q";
@@ -235,6 +243,21 @@ TEST(Url, RealmChecksAndMetadataUrls) {
     }
     for (const auto& c : f["metadataUrls"])
         EXPECT_EQ(authorization_server_metadata_url(c["issuer"].get<std::string>()), c["url"].get<std::string>());
+}
+
+TEST(Url, OriginAndResourceChecks) {
+    const auto f = fixture("responses/oauth.json");
+    for (const auto& c : f["originChecks"]) {
+        const auto a = c["a"].get<std::string>();
+        const auto b = c["b"].get<std::string>();
+        EXPECT_EQ(same_origin(a, b), c["sameOrigin"].get<bool>()) << a << " / " << b;
+        EXPECT_EQ(same_origin(b, a), c["sameOrigin"].get<bool>()) << b << " / " << a;
+    }
+    for (const auto& c : f["resourceChecks"]) {
+        const auto requested = c["requested"].get<std::string>();
+        const auto resource = c["resource"].get<std::string>();
+        EXPECT_EQ(same_resource(requested, resource), c["identical"].get<bool>()) << requested << " / " << resource;
+    }
 }
 
 // ---- Encodings ----------------------------------------------------------------------------

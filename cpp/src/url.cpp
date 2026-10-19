@@ -224,6 +224,23 @@ bool url_within_realm(std::string_view url, std::string_view realm) {
     return path.starts_with(realm_path);
 }
 
+bool same_origin(std::string_view a, std::string_view b) {
+    auto x = Url::parse(a);
+    auto y = Url::parse(b);
+    if (!x || !y || !x->is_absolute() || !y->is_absolute()) return false;
+    return x->scheme == y->scheme && x->host == y->host && x->effective_port() == y->effective_port();
+}
+
+bool same_resource(std::string_view requested, std::string_view resource) {
+    auto x = Url::parse(requested);
+    auto y = Url::parse(resource);
+    if (!x || !y || !x->is_absolute() || !y->is_absolute()) return false;
+    // Url::parse lower-cases scheme and host; drop the scheme's default port, keep everything else.
+    for (Url* u : {&*x, &*y})
+        if (!u->port.empty() && u->effective_port() == default_port(u->scheme)) u->port.clear();
+    return x->str() == y->str();
+}
+
 std::string authorization_server_metadata_url(std::string_view issuer) {
     auto u = Url::parse(issuer);
     if (!u || !u->is_absolute()) return std::string(issuer) + std::string(oauth::well_known_lws_configuration);

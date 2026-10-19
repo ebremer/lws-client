@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include "lws/http.hpp"
+#include "lws/json_patch.hpp"
 #include "lws/link.hpp"
 
 namespace lws {
@@ -125,6 +126,21 @@ struct Capability {
     bool has_type(std::string_view type) const noexcept;
 };
 
+/// The MoveResource capability of a storage description: the storage lets clients move resources
+/// between containers by changing their `up` link (lws10-core "Moving Resources").
+struct MoveCapability {
+    /// The `appliesTo` values as received (a single string normalised to a list); ["DataResource"]
+    /// when the capability does not say, which means data resources only.
+    std::vector<std::string> applies_to{};
+    /// Whether moved resources keep their identifiers; absent when the capability does not say, and
+    /// then a client must not assume they do.
+    std::optional<bool> preserves_identifier{};
+    nlohmann::json raw{};
+
+    bool moves_data_resources() const noexcept;
+    bool moves_containers() const noexcept;
+};
+
 /// A verification method of a controlled identifier document.
 struct VerificationMethod {
     std::string id{};  ///< as written (may be relative, e.g. "#key-1")
@@ -158,6 +174,9 @@ struct StorageDescription {
     const Service* access_grant_service() const noexcept;
     const Service* type_index_service() const noexcept;
     const Service* type_search_service() const noexcept;
+    /// The storage's MoveResource capability, or nullopt when it describes none: then the `up` link
+    /// is not modifiable.
+    std::optional<MoveCapability> move_capability() const;
     /// Finds a verification method by full id, fragment ("#frag" / "frag") or relative id.
     const VerificationMethod* verification_method(std::string_view id_or_fragment) const;
     /// True when `method_id` (any of the forms above) is referenced from `authentication`.
@@ -229,6 +248,33 @@ struct LinksetDocument {
     std::vector<std::string> accept_patch{};
     ResourceMetadata metadata{};
 };
+
+/// Result of Client::move() (design/client-api.md §5.7).
+struct MoveResult {
+    int status = 0;
+    std::string location{};  ///< absolute URL of the resource after the move
+    std::string linkset{};   ///< absolute URL of its linkset resource after the move
+    bool identifier_preserved = false;  ///< location is the URL the resource was moved from
+    std::optional<std::string> etag{};  ///< of the linkset resource
+    ResourceMetadata metadata{};
+    std::optional<Linkset> document{};  ///< the updated linkset in a 200's body
+
+    /// Interprets the answer to the PATCH of `linkset_url` that moved `resource_url`. A 200 with a
+    /// linkset gives the new identifier as the anchor of its first context with an `up` link
+    /// (resolved against Content-Location, else `linkset_url`), and the linkset's new URL as
+    /// Content-Location; otherwise both are unchanged. Throws ProtocolError for a body that is not
+    /// a linkset.
+    static MoveResult from_response(std::string_view resource_url, std::string_view linkset_url,
+                                    const HttpResponse& response);
+};
+
+/// The JSON Patch that moves `resource_url` to the container `destination_url` (design/client-api.md
+/// §5.7), given its linkset as read from `linkset_url`: a `test` that the `up` link still holds the
+/// href as read, then a `replace` of it. The link context is the first whose anchor resolves to
+/// `resource_url`, or the only one when it has no anchor. Throws ProtocolError when the linkset has
+/// no such context, or it has no `up` link.
+JsonPatch move_patch(const Linkset& linkset, std::string_view linkset_url, std::string_view resource_url,
+                     std::string_view destination_url);
 
 /// Normalises a JSON `type` member (string or array) to a list of strings.
 std::vector<std::string> json_types(const nlohmann::json& value);

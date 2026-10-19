@@ -1,9 +1,9 @@
 # lws-client for C++
 
 A C++20 client for the [W3C Linked Web Storage (LWS)](https://www.w3.org/TR/lws10-core/) protocol,
-tracking the LWS Working Group specifications as of **2026-10-05** (core protocol editor's draft,
-OpenID Connect / SAML 2.0 / self-signed CID authentication suites, webhook notifications,
-type index and type search). It is one of six sibling clients in
+tracking the LWS Working Group specifications as of **2026-10-19** (the core protocol Working Draft
+of 19 October 2026, `w3c/lws-protocol` 9a08ff6; OpenID Connect / SAML 2.0 / self-signed CID
+authentication suites, webhook notifications, type index and type search). It is one of six sibling clients in
 [ebremer/lws-client](https://github.com/ebremer/lws-client) that share one API contract
 ([`design/client-api.md`](../design/client-api.md)) and one conformance suite.
 
@@ -12,7 +12,8 @@ type index and type search). It is one of six sibling clients in
 * **Pluggable HTTP.** The core depends only on [nlohmann/json]; HTTP goes through the abstract
   `lws::HttpTransport` (bring Boost.Beast, cpp-httplib, Qt, …). A libcurl transport is built in.
 * **Full LWS feature set.** Discovery, CRUD, lazy container pagination (a C++20 input range),
-  linksets (RFC 9264) with JSON Patch, the OAuth 2.0 token-exchange authorization flow,
+  linksets (RFC 9264) with JSON Patch, moving resources between containers, the OAuth 2.0
+  token-exchange authorization flow with protected resource metadata discovery (RFC 9728),
   OpenID / SAML / self-signed (`did:key` and HTTPS) credentials, webhook subscriptions and
   RFC 9421 signature verification, access requests and grants, type index and HTTP `QUERY` search.
 
@@ -114,9 +115,22 @@ client.remove(folder.location, {.recursive = true});     // Depth: infinity
 
 ### Authentication
 
-On the first `401`, `TokenExchangeAuthenticator` validates the `realm`, discovers the authorization
-server (`/.well-known/lws-configuration`), exchanges a credential for an access token (RFC 8693)
-and retries; tokens are cached per realm and sent proactively afterwards.
+On the first `401`, `TokenExchangeAuthenticator` reads the protected resource metadata (RFC 9728)
+that the challenge's `resource_metadata` names, and the description of the storage the `401` links
+to. Before it asks for a token it makes the three checks of lws10-core "Discovery Validation by a
+Client": the metadata is on the requested origin, it describes the very URL requested, and the
+storage's root is on the requested origin too. A challenge that fails one is not acted on (an
+`AuthenticationError`), and a token the client already holds is kept. The authenticator then takes
+the first authorization server the metadata names that uses https (loopback hosts excepted) and
+passes the optional filter, discovers its metadata (`/.well-known/lws-configuration`), exchanges a
+credential for an access token for the storage (RFC 8693, `resource` = the storage) and retries.
+None of these discovery requests carries credentials or follows a redirect. Tokens are cached per
+(issuer, storage) and sent proactively to URLs inside the storage and its storage root (the longest
+match wins). The retry of the request that drew the `401` carries the token even outside them, as
+that URL has just passed the checks; later requests there get no token up front, and their `401`
+reuses the cached token without a new exchange. Storage descriptions are cached until `clear()`. The `as_uri`/`realm` challenge of the
+drafts before 19 October 2026 is still followed: the realm must contain the URL, and is the token's
+resource and scope.
 
 ```cpp
 // Self-signed identity (lws10-authn-ssi-cid) with a did:key agent:
@@ -129,8 +143,8 @@ auto creds = lws::SelfSignedCredentials::did_key(key);              // creds->ag
 // SAML 2.0:       std::make_shared<lws::SamlCredentials>(lws::SamlCredentials::from_xml(assertion))
 
 lws::TokenExchangeOptions auth_options;
-auth_options.authorization_server_filter = [](std::string_view as, std::string_view) {
-    return as == "https://auth.example";                            // optional trust policy
+auth_options.authorization_server_filter = [](std::string_view issuer, std::string_view storage) {
+    return issuer == "https://auth.example";                        // optional trust policy
 };
 lws::Client client({.authenticator = std::make_shared<lws::TokenExchangeAuthenticator>(creds, auth_options)});
 ```
@@ -147,6 +161,21 @@ client.patch_linkset(doc.url,
     {.if_match = doc.etag});
 ```
 
+### Moving resources
+
+A storage that lets clients move resources describes a `MoveResource` capability; `move` reads the
+resource's linkset and PATCHes its `up` link (a `test` of the link as read, then a `replace`),
+conditional on the linkset's ETag:
+
+```cpp
+if (auto move = storage.move_capability(); move && move->moves_data_resources()) {
+    auto archive = client.create_container(root, {.slug = "archive"});
+    lws::MoveResult moved = client.move(note.location, archive.location);
+    // A storage that does not keep identifiers (preserves_identifier false or absent) answers with the
+    // new ones: moved.location, moved.linkset; moved.identifier_preserved says which happened.
+}
+```
+
 ### Notifications and webhook verification
 
 ```cpp
@@ -157,7 +186,7 @@ client.unsubscribe(sub.subscription);
 // In the inbox handler (any HTTP server):
 lws::WebhookVerifier verifier(lws::Client{}, {.trusted_storages = {storage.id}});
 lws::VerifiedNotification n = verifier.verify("POST", "https://me.example/inbox", headers, body);
-for (const lws::Activity& a : n.notification.activities) { /* a.is_update(), a.object.id … */ }
+for (const lws::Activity& a : n.notification.activities) { /* a.is_update(), a.is_move(), a.object.id … */ }
 ```
 
 ### Access requests, type index and search
@@ -181,16 +210,17 @@ for (const auto& hit : client.search_all(storage.type_search_service()->service_
 | Area | API |
 |---|---|
 | Client | `Client(ClientOptions)`; `ClientOptions{transport, authenticator, user_agent, default_headers, timeout, max_redirects}` |
-| Discovery | `discover_storage(url)`, `get_storage_description(url)` → `StorageDescription{id, types, services, capabilities, verification_methods, authentication}` with `storage_root()`, `service(type)`, `notification_service()`, `access_request_service()`, `access_grant_service()`, `type_index_service()`, `type_search_service()`, `capability(type)`, `verification_method(id)` |
+| Discovery | `discover_storage(url)`, `get_storage_description(url)` → `StorageDescription{id, types, services, capabilities, verification_methods, authentication}` with `storage_root()`, `service(type)`, `notification_service()`, `access_request_service()`, `access_grant_service()`, `type_index_service()`, `type_search_service()`, `capability(type)`, `move_capability()` → `MoveCapability{applies_to, preserves_identifier}` with `moves_data_resources()`, `moves_containers()`, `verification_method(id)` |
 | Read | `head(url)` → `ResourceMetadata`; `read(url, ReadOptions{accept, range, if_none_match, if_modified_since, prefer})` → `Resource` (`body`, `text()`, `json()`, `not_modified`, `content_range`); `read_container(url)` → `ContainerPage`; `list_container(url)` → `ContainerRange` |
 | Write | `create(container, body, content_type, CreateOptions{slug, links, types})`, `create_json`, `create_container` → `CreateResult{location, metadata}`; `update(url, body, type, UpdateOptions{if_match, if_none_match, links, set_linkset})`, `patch(url, JsonPatch)`, `patch(url, body, type)` → `UpdateResult`; `remove(url, DeleteOptions{if_match, recursive})` |
 | Linksets | `linkset_url`, `read_linkset` → `LinksetDocument{url, etag, linkset, allow, accept_patch}`, `update_linkset`, `patch_linkset`; `Linkset` with `links()`, `targets()`, `add()`, `remove()` |
-| Auth | `Authenticator`, `BearerTokenAuthenticator`, `TokenExchangeAuthenticator(TokenExchangeOptions{allow_insecure_http, authorization_server_filter, …})`, `CredentialProvider`, `OpenIdCredentials`, `SamlCredentials`, `SelfSignedCredentials::{did_key, for_agent}` |
+| Moves | `move(url, destination, MoveOptions{if_match})` → `MoveResult{status, location, linkset, identifier_preserved, etag, metadata, document}`; `move_patch()`, `MoveResult::from_response()` |
+| Auth | `Authenticator` (`authorize`, `handle_challenge`, `authorize_retry`), `BearerTokenAuthenticator`, `TokenExchangeAuthenticator(TokenExchangeOptions{allow_insecure_http, authorization_server_filter, …})` with `cached_tokens()` → `AccessToken{issuer, storage, scopes, …}` and `clear()`, `ProtectedResourceMetadata`, `CredentialProvider` (`CredentialContext{issuer, storage, metadata}`), `OpenIdCredentials`, `SamlCredentials`, `SelfSignedCredentials::{did_key, for_agent}` |
 | Keys | `PrivateKey::{generate, from_jwk, from_pem}`, `public_jwk()`, `private_jwk()`, `to_pem()`, `sign()`, `did_key()`; `PublicKey::{from_jwk, verify}`; `did_key_from_public_jwk()`, `controlled_identifier_document()`; `sign_jwt`, `verify_jwt`, `decode_jwt_payload` |
-| Notifications | `subscribe(service_url or StorageDescription, WebhookSubscriptionRequest{topics, inbox, expires})` → `Subscription`; `list_subscriptions`, `get_subscription`, `unsubscribe`; `parse_notification()` → `Notification{storage, activities}`; `WebhookVerifier(Client or fetcher, WebhookVerifierOptions)` `.verify(...)` → `VerifiedNotification` |
+| Notifications | `subscribe(service_url or StorageDescription, WebhookSubscriptionRequest{topics, inbox, expires})` → `Subscription`; `list_subscriptions`, `get_subscription`, `unsubscribe`; `parse_notification()` → `Notification{storage, activities}` (`is_create()`, `is_update()`, `is_delete()`, `is_move()`); `WebhookVerifier(Client or fetcher, WebhookVerifierOptions)` `.verify(...)` → `VerifiedNotification` |
 | Access | `request_access`, `list_access_requests`, `get_access_request`, `cancel_access_request`, `grant_access`, `list_access_grants`, `get_access_grant`, `revoke_access_grant`; `AccessRequest`, `AccessGrant`, `AccessPolicy`, `AccessTarget`, `Constraint::{purpose, client, format, type, not_before, not_after, …}` |
 | Types | `read_type_index`, `list_types` → `TypeRange`; `search_types(url, TypeQuery)` (HTTP `QUERY`) → `SearchPage`; `search_all`; `accepted_query_formats` |
-| Low level | `execute(HttpRequest)`, `execute_checked(HttpRequest)`, `parse_link_header(s)`, `parse_www_authenticate`, `sf::parse_dictionary`, `JsonPointer`, `resolve_url`, `url_within_realm` |
+| Low level | `execute(HttpRequest)`, `execute_checked(HttpRequest)`, `parse_link_header(s)`, `parse_www_authenticate`, `sf::parse_dictionary`, `JsonPointer`, `resolve_url`, `url_within_realm`, `same_origin`, `same_resource` |
 | Errors | `Error` ← `HttpError` (← `BadRequestError`, `UnauthorizedError`, `ForbiddenError`, `NotFoundError`, `MethodNotAllowedError`, `NotAcceptableError`, `ConflictError`, `GoneError`, `PreconditionFailedError`, `UnsupportedMediaTypeError`, `UnprocessableContentError`, `NotImplementedError`, `InsufficientStorageError`), `AuthenticationError`, `ProtocolError` (← `ParseError`), `SignatureVerificationError`, `TransportError` |
 
 Naming follows C++ conventions (`snake_case`); `delete` is a keyword, so the delete operation is
@@ -198,11 +228,14 @@ Naming follows C++ conventions (`snake_case`); `delete` is a keyword, so the del
 
 ## Tests and interop
 
-`ctest` runs 73 tests: every parser and model against the shared fixtures in
-[`../conformance/fixtures`](../conformance) (including all 13 RFC 9421 webhook vectors and the
-did:key/JWT vectors), every client operation against an in-process mock transport, the full
-401 → metadata → token exchange → retry flow, and the end-to-end interop scenario, which runs when
-`LWS_TEST_SERVER` points at the [mock server](../testing/mock-server):
+`ctest` runs 88 tests: every parser and model against the shared fixtures in
+[`../conformance/fixtures`](../conformance) (including all 13 RFC 9421 webhook vectors, the
+did:key/JWT vectors and the moves of `move.json`), every client operation against an in-process mock
+transport, the full 401 → protected resource metadata → storage description → authorization server
+metadata → token exchange → retry flow with all 17 cases of `discovery.json` (for two https origins
+and for two loopback origins), and the end-to-end interop scenario, which runs when
+`LWS_TEST_SERVER` points at the [mock server](../testing/mock-server) (start it with
+`--legacy-challenge` to run it through the `as_uri`/`realm` challenge of the earlier drafts):
 
 ```sh
 node testing/mock-server/server.mjs --port 8787 &

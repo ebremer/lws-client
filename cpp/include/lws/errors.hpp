@@ -57,7 +57,8 @@ public:
     using ProtocolError::ProtocolError;
 };
 
-/// Token exchange, realm validation or authorization server metadata failure.
+/// Token exchange, discovery check (protected resource metadata, storage root), realm check or
+/// authorization server metadata failure.
 class AuthenticationError : public Error {
 public:
     explicit AuthenticationError(const std::string& message, std::optional<std::string> oauth_error = {},

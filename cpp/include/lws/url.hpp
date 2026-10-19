@@ -49,8 +49,18 @@ std::string strip_fragment(std::string_view url);
 bool is_loopback(std::string_view url);
 
 /// Returns true if `url` is logically contained within `realm` (design/client-api.md §6.2):
-/// same scheme, host and port, and the path equals the realm path or lies below it.
+/// same scheme, host and port, and the path equals the realm path or lies below it. This is also
+/// how an access token's scope contains a URL.
 bool url_within_realm(std::string_view url, std::string_view realm);
+
+/// True when the absolute URLs `a` and `b` have the same scheme and authority: scheme and host
+/// compared case-insensitively, the port after the scheme's default is applied
+/// (design/client-api.md §6.2 step 2).
+bool same_origin(std::string_view a, std::string_view b);
+
+/// True when `resource` identifies `requested` itself: the two are compared after lower-casing
+/// scheme and host and dropping a default port, and nothing else (design/client-api.md §6.2 step 5).
+bool same_resource(std::string_view requested, std::string_view resource);
 
 /// The RFC 8414 §3.1 metadata URL for an authorization server issuer, using the
 /// `/.well-known/lws-configuration` suffix.

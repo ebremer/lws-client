@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Erich Bremer and the lws-client contributors
 //
 // Shared constants of the W3C Linked Web Storage protocol (lws10-core and companion specs,
-// as of 2026-10-05). See design/client-api.md §2.
+// as of 2026-10-19). See design/client-api.md §2.
 #pragma once
 
 #include <string_view>
@@ -13,6 +13,9 @@ namespace lws {
 namespace ns {
 inline constexpr std::string_view lws = "https://www.w3.org/ns/lws#";
 inline constexpr std::string_view lws_context = "https://www.w3.org/ns/lws/v1";
+/// The "LWS profile": the media type parameter profile="…" of an RDF representation isomorphic to the
+/// application/lws+json one.
+inline constexpr std::string_view lws_profile = "https://www.w3.org/ns/lws/v1";
 inline constexpr std::string_view cid_context = "https://www.w3.org/ns/cid/v1";
 inline constexpr std::string_view activitystreams_context = "https://www.w3.org/ns/activitystreams";
 }  // namespace ns
@@ -63,6 +66,11 @@ inline constexpr std::string_view type_index = "TypeIndexService";
 inline constexpr std::string_view type_search = "TypeSearchService";
 }  // namespace service
 
+/// Capability types found in a storage description's "capability" array.
+namespace capability {
+inline constexpr std::string_view move_resource = "MoveResource";
+}  // namespace capability
+
 /// Notification subscription types.
 namespace subscription {
 inline constexpr std::string_view webhook = "WebhookSubscription";
@@ -76,6 +84,8 @@ inline constexpr std::string_view token_type_saml2 = "urn:ietf:params:oauth:toke
 inline constexpr std::string_view token_type_jwt = "urn:ietf:params:oauth:token-type:jwt";
 inline constexpr std::string_view token_type_access_token = "urn:ietf:params:oauth:token-type:access_token";
 inline constexpr std::string_view well_known_lws_configuration = "/.well-known/lws-configuration";
+/// Protected resource metadata (RFC 9728 §3).
+inline constexpr std::string_view well_known_oauth_protected_resource = "/.well-known/oauth-protected-resource";
 inline constexpr std::string_view openid_provider_service = "https://www.w3.org/ns/lws#OpenIdProvider";
 }  // namespace oauth
 
@@ -112,6 +122,7 @@ namespace activity {
 inline constexpr std::string_view create = "Create";
 inline constexpr std::string_view update = "Update";
 inline constexpr std::string_view remove = "Delete";
+inline constexpr std::string_view move = "Move";
 }  // namespace activity
 
 /// Returns true if two type values denote the same type, treating `Term`, `lws:Term` and

@@ -29,8 +29,8 @@ struct Activity {
     std::vector<std::string> types{};
     ActivityObject object{};
     std::optional<std::string> actor{};
-    std::optional<std::string> target{};  ///< container a resource was added to (Create)
-    std::optional<std::string> origin{};  ///< container a resource was removed from (Delete)
+    std::optional<std::string> target{};  ///< container a resource was added to (Create, Move)
+    std::optional<std::string> origin{};  ///< container a resource was removed from (Delete, Move)
     std::string published_raw{};
     std::optional<TimePoint> published{};
     nlohmann::json raw{};
@@ -39,6 +39,8 @@ struct Activity {
     bool is_create() const noexcept { return has_type("Create"); }
     bool is_update() const noexcept { return has_type("Update"); }
     bool is_delete() const noexcept { return has_type("Delete"); }
+    /// A resource moved between containers: `object` is the resource as it is after the move.
+    bool is_move() const noexcept { return has_type("Move"); }
 };
 
 /// A notification envelope.

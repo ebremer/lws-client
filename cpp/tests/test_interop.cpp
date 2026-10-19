@@ -33,8 +33,9 @@ TEST(Interop, Scenario) {
 
     // 1. Authenticate + discover
     auto creds = SelfSignedCredentials::did_key(PrivateKey::generate(KeyAlgorithm::ES256));
+    auto authenticator = std::make_shared<TokenExchangeAuthenticator>(creds);
     ClientOptions options;
-    options.authenticator = std::make_shared<TokenExchangeAuthenticator>(creds);
+    options.authenticator = authenticator;
     Client client(options);
     const auto sd = client.discover_storage(base + "/root/");
     EXPECT_EQ(sd.id, base + "/");
@@ -44,6 +45,16 @@ TEST(Interop, Scenario) {
     ASSERT_NE(sd.access_grant_service(), nullptr);
     ASSERT_NE(sd.type_index_service(), nullptr);
     ASSERT_NE(sd.type_search_service(), nullptr);
+    const auto move_capability = sd.move_capability();
+    ASSERT_TRUE(move_capability);
+    EXPECT_TRUE(move_capability->moves_data_resources());
+    EXPECT_TRUE(move_capability->moves_containers());
+    EXPECT_EQ(move_capability->preserves_identifier, false);
+    // The first authenticated request went through the protected resource metadata (RFC 9728).
+    const auto tokens = authenticator->cached_tokens();
+    ASSERT_EQ(tokens.size(), 1u);
+    EXPECT_EQ(tokens[0].storage, base + "/");
+    EXPECT_EQ(tokens[0].issuer, base);
 
     // 2. Container
     const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -143,7 +154,23 @@ TEST(Interop, Scenario) {
     client.revoke_access_grant(grant_url);
     client.cancel_access_request(request_url);
 
-    // 13. Delete
+    // 13. Move
+    const auto D = client.create_container(C, {.slug = "archive"}).location;
+    const auto M = client.create(C, "Move me", "text/plain", {.slug = "move-me.txt"}).location;
+    const auto moved = client.move(M, D);
+    EXPECT_EQ(moved.location, D + "move-me.txt");
+    EXPECT_FALSE(moved.identifier_preserved);
+    EXPECT_EQ(moved.linkset, moved.location + ".meta");
+    EXPECT_EQ(client.read(moved.location).text(), "Move me");
+    std::vector<std::string> archived;
+    for (const auto& item : client.list_container(D)) archived.push_back(item.id);
+    EXPECT_TRUE(contains(archived, moved.location));
+    std::vector<std::string> remaining;
+    for (const auto& item : client.list_container(C)) remaining.push_back(item.id);
+    EXPECT_FALSE(contains(remaining, M));
+    EXPECT_THROW(client.move(C, D), ConflictError);
+
+    // 14. Delete
     EXPECT_THROW(client.remove(C), ConflictError);
     client.remove(C, {.recursive = true});
     EXPECT_THROW(client.read(H), NotFoundError);

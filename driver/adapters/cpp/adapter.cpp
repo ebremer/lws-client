@@ -319,6 +319,17 @@ ojson update_result(const lws::UpdateResult& u) {
     return r;
 }
 
+ojson moved_result(const lws::MoveResult& m) {
+    ojson r = ojson::object();
+    r["status"] = m.status;
+    r["location"] = m.location;
+    r["linkset"] = m.linkset;
+    r["identifierPreserved"] = m.identifier_preserved;
+    put(r, "etag", m.etag);
+    r["metadata"] = metadata_result(m.metadata);
+    return r;
+}
+
 ojson created_result(const lws::CreateResult& c) {
     ojson r = ojson::object();
     r["location"] = c.location;
@@ -354,6 +365,12 @@ ojson storage_result(const lws::StorageDescription& s) {
         methods.push_back(std::move(o));
     }
     r["verificationMethods"] = std::move(methods);
+    if (const auto move = s.move_capability()) {
+        ojson o = ojson::object();
+        o["appliesTo"] = move->applies_to;
+        put(o, "preservesIdentifier", move->preserves_identifier);
+        r["moveCapability"] = std::move(o);
+    }
     r["raw"] = from_library(s.raw);
     return r;
 }
@@ -518,6 +535,7 @@ public:
             {"read_linkset", &Adapter::read_linkset, true},
             {"update_linkset", &Adapter::update_linkset, true},
             {"patch_linkset", &Adapter::patch_linkset, true},
+            {"move", &Adapter::move, true},
             {"subscribe", &Adapter::subscribe, true},
             {"list_subscriptions", &Adapter::list_subscriptions, true},
             {"get_subscription", &Adapter::get_subscription, true},
@@ -711,7 +729,7 @@ private:
         return empty();
     }
 
-    // ---- linksets -------------------------------------------------------------------------
+    // ---- linksets and moves ---------------------------------------------------------------
 
     ojson linkset_url(const ojson& args) {
         ojson r = ojson::object();
@@ -749,6 +767,14 @@ private:
         lws::UpdateOptions options;
         options.if_match = optional_string(args, "ifMatch");
         return update_result(client_.patch_linkset(url, patch, options));
+    }
+
+    ojson move(const ojson& args) {
+        const std::string url = required_target(args, "url");
+        const std::string destination = required_target(args, "destination");
+        lws::MoveOptions options;
+        options.if_match = optional_string(args, "ifMatch");
+        return moved_result(client_.move(url, destination, options));
     }
 
     // ---- notifications --------------------------------------------------------------------

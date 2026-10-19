@@ -44,6 +44,35 @@ TEST(StorageDescriptionModel, ParsesDiscoveryExample) {
     EXPECT_NE(d.capability("https://feature.example/PatchSupport"), nullptr);
     EXPECT_EQ(d.capability("https://feature.example/Nope"), nullptr);
     EXPECT_TRUE(d.service("https://www.w3.org/ns/lws#StorageRoot"));
+    const auto move = d.move_capability();
+    ASSERT_TRUE(move);
+    EXPECT_EQ(move->applies_to, e["moveCapability"]["appliesTo"].get<std::vector<std::string>>());
+    EXPECT_EQ(move->preserves_identifier, e["moveCapability"]["preservesIdentifier"].get<bool>());
+    EXPECT_EQ(move->moves_data_resources(), e["moveCapability"]["movesDataResources"].get<bool>());
+    EXPECT_EQ(move->moves_containers(), e["moveCapability"]["movesContainers"].get<bool>());
+}
+
+TEST(StorageDescriptionModel, MoveCapabilities) {
+    const auto f = fixture("responses/storage-description.json");
+    for (const auto& c : f["moveCapabilities"]) {
+        SCOPED_TRACE(c["name"].get<std::string>());
+        nlohmann::json body = {{"id", "https://storage.example/"}, {"type", "Storage"}};
+        if (!c["capability"].is_null()) body["capability"] = c["capability"];
+        const auto move = StorageDescription::from_json(body, "https://storage.example/").move_capability();
+        const auto& x = c["expected"];
+        if (x.is_null()) {
+            EXPECT_FALSE(move);
+            continue;
+        }
+        ASSERT_TRUE(move);
+        EXPECT_EQ(move->applies_to, x["appliesTo"].get<std::vector<std::string>>());
+        if (x["preservesIdentifier"].is_null())
+            EXPECT_FALSE(move->preserves_identifier);
+        else
+            EXPECT_EQ(move->preserves_identifier, x["preservesIdentifier"].get<bool>());
+        EXPECT_EQ(move->moves_data_resources(), x["movesDataResources"].get<bool>());
+        EXPECT_EQ(move->moves_containers(), x["movesContainers"].get<bool>());
+    }
 }
 
 TEST(StorageDescriptionModel, RejectsInvalidDocuments) {
@@ -154,9 +183,9 @@ TEST(LinksetModel, MetadataFromResponse) {
     EXPECT_EQ(meta.media_type(), "application/linkset+json");
 }
 
-TEST(NotificationModel, SingleBatchAndInvalid) {
+TEST(NotificationModel, SingleBatchMoveAndInvalid) {
     const auto f = fixture("responses/notification.json");
-    for (const char* kind : {"single", "batch"}) {
+    for (const char* kind : {"single", "batch", "move"}) {
         SCOPED_TRACE(kind);
         const auto n = parse_notification(f[kind].dump());
         const auto& e = f[std::string(kind) + "Expected"];
@@ -172,13 +201,16 @@ TEST(NotificationModel, SingleBatchAndInvalid) {
                 EXPECT_EQ(a.object.types, x["objectTypes"].get<std::vector<std::string>>());
             }
             if (x.contains("isCreate")) {
-                EXPECT_TRUE(a.is_create());
+                EXPECT_EQ(a.is_create(), x["isCreate"].get<bool>());
             }
             if (x.contains("isUpdate")) {
-                EXPECT_TRUE(a.is_update());
+                EXPECT_EQ(a.is_update(), x["isUpdate"].get<bool>());
             }
             if (x.contains("isDelete")) {
-                EXPECT_TRUE(a.is_delete());
+                EXPECT_EQ(a.is_delete(), x["isDelete"].get<bool>());
+            }
+            if (x.contains("isMove")) {
+                EXPECT_EQ(a.is_move(), x["isMove"].get<bool>());
             }
             if (x.contains("target")) {
                 EXPECT_EQ(a.target, x["target"].get<std::string>());
@@ -197,6 +229,48 @@ TEST(NotificationModel, SingleBatchAndInvalid) {
     }
     EXPECT_THROW(Notification::from_json(f["invalid"]), ProtocolError);
     EXPECT_THROW(parse_notification("{not json"), ParseError);
+}
+
+TEST(MoveModel, PatchesFromFixtures) {
+    const auto f = fixture("move.json");
+    for (const auto& c : f["patches"]) {
+        SCOPED_TRACE(c["name"].get<std::string>());
+        const auto linkset = Linkset::from_json(c["linkset"]);
+        const auto build = [&] {
+            return move_patch(linkset, c["linksetUrl"].get<std::string>(), c["resource"].get<std::string>(),
+                              c["destination"].get<std::string>());
+        };
+        if (c.contains("error")) {
+            EXPECT_EQ(c["error"], "ProtocolError");
+            EXPECT_THROW(build(), ProtocolError);
+        } else {
+            EXPECT_EQ(build().to_json(), c["expected"]);
+        }
+    }
+}
+
+TEST(MoveModel, ResponsesFromFixtures) {
+    const auto f = fixture("move.json");
+    for (const auto& c : f["responses"]) {
+        SCOPED_TRACE(c["name"].get<std::string>());
+        auto fields = c;
+        fields["url"] = c["linksetUrl"];
+        if (c["body"].is_null()) fields.erase("body");
+        const auto response = response_from_fixture(fields);
+        const auto r = MoveResult::from_response(c["resource"].get<std::string>(), c["linksetUrl"].get<std::string>(), response);
+        const auto& x = c["expected"];
+        EXPECT_EQ(r.status, c["status"].get<int>());
+        EXPECT_EQ(r.location, x["location"].get<std::string>());
+        EXPECT_EQ(r.linkset, x["linkset"].get<std::string>());
+        EXPECT_EQ(r.identifier_preserved, x["identifierPreserved"].get<bool>());
+        EXPECT_EQ(r.etag, opt(x["etag"]));
+        EXPECT_EQ(r.document.has_value(), !c["body"].is_null());
+        EXPECT_EQ(r.metadata.status, c["status"].get<int>());
+    }
+    // A 200 whose body is not a linkset breaks the specification.
+    auto garbage = test::make_response(200, {{"Content-Type", "application/linkset+json"}}, "{not json");
+    garbage.url = "https://storage.example/a.txt.meta";
+    EXPECT_THROW(MoveResult::from_response("https://storage.example/a.txt", garbage.url, garbage), ProtocolError);
 }
 
 TEST(AccessModel, ParseAndBuild) {

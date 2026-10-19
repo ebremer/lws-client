@@ -43,6 +43,9 @@ struct AuthChallenge {
 
     bool is_scheme(std::string_view name) const noexcept;
     std::optional<std::string> param(std::string_view name) const;
+    /// The protected resource metadata URL (RFC 9728 §5.1) of the LWS challenge.
+    std::optional<std::string> resource_metadata() const { return param("resource_metadata"); }
+    /// as_uri and realm: the LWS challenge of the drafts before 19 October 2026.
     std::optional<std::string> as_uri() const { return param("as_uri"); }
     std::optional<std::string> realm() const { return param("realm"); }
     std::optional<std::string> error() const { return param("error"); }

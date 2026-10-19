@@ -86,6 +86,12 @@ struct DeleteOptions {
     bool recursive = false;  ///< sends "Depth: infinity"
 };
 
+/// Options of move().
+struct MoveOptions {
+    HttpHeaders headers{};
+    std::optional<std::string> if_match{};  ///< overrides the ETag of the linkset as read
+};
+
 /// A lazy, single-pass range over items spread across pages. Pages are fetched on demand
 /// while iterating, so it works in range-for and with std::ranges algorithms:
 ///
@@ -212,6 +218,13 @@ public:
                                 const UpdateOptions& options = {}) const;
     UpdateResult patch_linkset(std::string_view linkset_url, const JsonPatch& patch,
                                const UpdateOptions& options = {}) const;
+
+    // ---- Moving (§5.7) -----------------------------------------------------------------
+    /// Moves a resource (a container with everything in it) into the container `destination_url`:
+    /// reads its linkset and PATCHes the `up` link, conditional on the linkset's ETag. Check the
+    /// storage's move_capability() first; a storage without one refuses (409 → ConflictError).
+    MoveResult move(std::string_view resource_url, std::string_view destination_url,
+                    const MoveOptions& options = {}) const;
 
     // ---- Notifications (§7) -----------------------------------------------------------
     Subscription subscribe(std::string_view service_url, const WebhookSubscriptionRequest& request,

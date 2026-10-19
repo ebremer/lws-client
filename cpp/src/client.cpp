@@ -102,7 +102,7 @@ HttpResponse Client::execute(HttpRequest request) const {
         if (response.status == 401 && opts.authenticator &&
             opts.authenticator->handle_challenge(attempt, response, transport)) {
             attempt = request;
-            opts.authenticator->authorize(attempt);
+            opts.authenticator->authorize_retry(attempt);
             response = transport.send(attempt);
             if (response.url.empty()) response.url = attempt.url;
         }
@@ -283,6 +283,21 @@ UpdateResult Client::update_linkset(std::string_view linkset_url, const Linkset&
 UpdateResult Client::patch_linkset(std::string_view linkset_url, const JsonPatch& patch,
                                    const UpdateOptions& options) const {
     return this->patch(linkset_url, patch, options);
+}
+
+// ---- Moving ---------------------------------------------------------------------------------
+
+MoveResult Client::move(std::string_view resource_url, std::string_view destination_url,
+                        const MoveOptions& options) const {
+    // JSON Patch addresses the up link by its position, and the request is conditional on the linkset as read.
+    const auto doc = read_linkset(resource_url, {.headers = options.headers});
+    const auto patch = move_patch(doc.linkset, doc.url, resource_url, destination_url);
+    auto req = make_request("PATCH", doc.url);
+    req.body = patch.dump();
+    req.headers.set("Content-Type", std::string(media::json_patch));
+    set_if(req.headers, "If-Match", options.if_match ? options.if_match : doc.etag);
+    merge_headers(req.headers, options.headers);
+    return MoveResult::from_response(resource_url, doc.url, execute_checked(req));
 }
 
 // ---- Notifications --------------------------------------------------------------------------

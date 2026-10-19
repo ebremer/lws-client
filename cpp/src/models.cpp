@@ -194,6 +194,9 @@ std::vector<std::string> Service::strings(std::string_view member) const {
 
 bool Capability::has_type(std::string_view type) const noexcept { return any_type(types, type); }
 
+bool MoveCapability::moves_data_resources() const noexcept { return any_type(applies_to, lws::types::data_resource); }
+bool MoveCapability::moves_containers() const noexcept { return any_type(applies_to, lws::types::container); }
+
 StorageDescription StorageDescription::from_json(const nlohmann::json& json, std::string_view base) {
     if (!json.is_object()) throw ProtocolError("storage description is not a JSON object");
     StorageDescription d;
@@ -271,6 +274,21 @@ const Service* StorageDescription::access_request_service() const noexcept { ret
 const Service* StorageDescription::access_grant_service() const noexcept { return service(lws::service::access_grant); }
 const Service* StorageDescription::type_index_service() const noexcept { return service(lws::service::type_index); }
 const Service* StorageDescription::type_search_service() const noexcept { return service(lws::service::type_search); }
+
+std::optional<MoveCapability> StorageDescription::move_capability() const {
+    const Capability* c = capability(lws::capability::move_resource);
+    if (!c) return std::nullopt;
+    MoveCapability m;
+    m.raw = c->raw;
+    // Without appliesTo the capability is for data resources only (lws10-core "Storage Description Capabilities").
+    if (auto it = c->raw.find("appliesTo"); it != c->raw.end() && !it->is_null())
+        m.applies_to = json_types(*it);
+    else
+        m.applies_to = {"DataResource"};
+    if (auto it = c->raw.find("preservesIdentifier"); it != c->raw.end() && it->is_boolean())
+        m.preserves_identifier = it->get<bool>();
+    return m;
+}
 
 namespace {
 // Does the (possibly relative / fragment-only) identifier `candidate` denote `target`?
@@ -438,6 +456,57 @@ Linkset& Linkset::remove(std::string_view anchor, std::string_view rel, std::opt
         }
     }
     return *this;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Moves
+// ---------------------------------------------------------------------------------------------
+
+JsonPatch move_patch(const Linkset& linkset, std::string_view linkset_url, std::string_view resource_url,
+                     std::string_view destination_url) {
+    // JSON Patch addresses the up link by position: the resource's link context, then its first up target.
+    std::optional<std::size_t> context;
+    for (std::size_t i = 0; i < linkset.contexts.size() && !context; ++i) {
+        const auto& anchor = linkset.contexts[i].anchor;
+        if (anchor && same_resource(resolve_url(linkset_url, *anchor), resource_url)) context = i;
+    }
+    if (!context && linkset.contexts.size() == 1 && !linkset.contexts[0].anchor) context = 0;
+    if (!context)
+        throw ProtocolError("the linkset at " + std::string(linkset_url) + " has no link context for " +
+                            std::string(resource_url));
+    const auto* up = linkset.contexts[*context].relation(lws::rel::up);
+    std::optional<std::size_t> target;
+    for (std::size_t j = 0; up && j < up->size() && !target; ++j)
+        if (!(*up)[j].href.empty()) target = j;
+    if (!target)
+        throw ProtocolError("the linkset at " + std::string(linkset_url) + " has no up link for " +
+                            std::string(resource_url));
+    const std::string path = "/linkset/" + std::to_string(*context) + "/up/" + std::to_string(*target) + "/href";
+    return JsonPatch{}.test(path, (*up)[*target].href).replace(path, resolve_url(resource_url, destination_url));
+}
+
+MoveResult MoveResult::from_response(std::string_view resource_url, std::string_view linkset_url,
+                                     const HttpResponse& response) {
+    MoveResult r;
+    r.status = response.status;
+    r.etag = response.headers.get("etag");
+    r.metadata = ResourceMetadata::from_response(response);
+    r.location = std::string(resource_url);
+    r.linkset = std::string(linkset_url);
+    // A storage that does not keep identifiers answers 200 with the linkset under the new ones.
+    if (response.status == 200 && !response.body.empty()) {
+        r.document = Linkset::from_json(parse_json_body(response, "linkset of the moved resource"));
+        if (auto content_location = response.headers.get("content-location"))
+            r.linkset = resolve_url(linkset_url, *content_location);
+        for (const auto& ctx : r.document->contexts) {
+            const auto* up = ctx.relation(lws::rel::up);
+            if (!up || up->empty()) continue;
+            if (ctx.anchor) r.location = resolve_url(r.linkset, *ctx.anchor);
+            break;
+        }
+    }
+    r.identifier_preserved = same_resource(resource_url, r.location);
+    return r;
 }
 
 }  // namespace lws
