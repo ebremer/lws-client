@@ -25,11 +25,18 @@ impl AuthChallenge {
     pub fn is_bearer(&self) -> bool {
         self.scheme.eq_ignore_ascii_case("bearer")
     }
-    /// The LWS `as_uri` parameter (authorization server).
+    /// The RFC 9728 `resource_metadata` parameter: the URL of the requested resource's protected
+    /// resource metadata, which names its authorization servers.
+    pub fn resource_metadata(&self) -> Option<&str> {
+        self.param("resource_metadata")
+    }
+    /// The `as_uri` parameter: the authorization server, in the challenge of the LWS drafts
+    /// before 19 October 2026.
     pub fn as_uri(&self) -> Option<&str> {
         self.param("as_uri")
     }
-    /// The `realm` parameter (protection scope; the token audience in LWS).
+    /// The `realm` parameter: the protection scope, the token audience in the challenge of the
+    /// LWS drafts before 19 October 2026.
     pub fn realm(&self) -> Option<&str> {
         self.param("realm")
     }
@@ -55,8 +62,11 @@ fn is_token68(c: char) -> bool {
 ///
 /// ```
 /// use lws_client::headers::parse_www_authenticate;
-/// let c = parse_www_authenticate([r#"Bearer as_uri="https://as.example", realm="https://s.example/""#]);
-/// assert_eq!(c[0].as_uri(), Some("https://as.example"));
+/// let c = parse_www_authenticate([
+///     r#"Bearer resource_metadata="https://s.example/.well-known/oauth-protected-resource/a", error="invalid_token""#,
+/// ]);
+/// assert_eq!(c[0].resource_metadata(), Some("https://s.example/.well-known/oauth-protected-resource/a"));
+/// assert_eq!(c[0].error(), Some("invalid_token"));
 /// ```
 pub fn parse_www_authenticate<'a, I>(values: I) -> Vec<AuthChallenge>
 where

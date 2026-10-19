@@ -27,7 +27,7 @@ use crate::error::{Error, HttpError, Result};
 use crate::headers::{Link, ProblemDetails, encode_slug, parse_list, parse_www_authenticate};
 use crate::index::{SearchPage, TypeIndexPage, TypeQuery};
 use crate::model::{
-    ContainedResource, ContainerPage, CreateResult, Linkset, LinksetDocument, Resource,
+    ContainedResource, ContainerPage, CreateResult, Linkset, LinksetDocument, MoveResult, Resource,
     ResourceMetadata, StorageDescription, StreamingResource, UpdateResult,
 };
 use crate::notification::{Subscription, WebhookSubscriptionRequest};
@@ -42,7 +42,9 @@ pub type LwsStream<T> = Pin<Box<dyn Stream<Item = Result<T>> + Send + 'static>>;
 
 const ACCEPT_JSON_LD: &str =
     "application/lws+json, application/ld+json;q=0.9, application/json;q=0.8";
-const ACCEPT_CID: &str = "application/lws+cid, application/ld+json;q=0.9, application/json;q=0.8";
+/// The `Accept` of a storage description request (the token exchange's too).
+pub(crate) const ACCEPT_CID: &str =
+    "application/lws+cid, application/ld+json;q=0.9, application/json;q=0.8";
 const QUERY: &str = "QUERY";
 /// Maximum number of redirects followed for one request.
 const MAX_REDIRECTS: usize = 5;
@@ -208,7 +210,7 @@ impl ClientBuilder {
     ///
     /// The built-in client disables `reqwest`'s automatic redirects and follows redirects
     /// itself, re-running the [`Authenticator`] for every hop so that a token is only ever
-    /// sent to URLs inside its realm. With your own client, **its** redirect policy applies
+    /// sent to URLs inside its scope. With your own client, **its** redirect policy applies
     /// instead (note that `reqwest`'s default policy strips `Authorization` only when the host
     /// or port changes); build it with `reqwest::redirect::Policy::none()` to disable
     /// redirects entirely.
@@ -617,6 +619,44 @@ impl DeleteRequest<'_> {
     }
 }
 
+/// Move request builder; see [`Client::move_resource`].
+#[must_use = "requests do nothing unless awaited"]
+pub struct MoveRequest<'a> {
+    client: &'a Client,
+    opts: Options,
+    destination: Result<Url>,
+}
+request_builder!(MoveRequest, MoveResult);
+
+impl MoveRequest<'_> {
+    /// `If-Match` for the linkset `PATCH`, instead of the entity tag of the linkset as read; a
+    /// mismatch yields [`Error::PreconditionFailed`].
+    pub fn if_match(mut self, etag: impl AsRef<str>) -> Self {
+        self.opts.set(IF_MATCH, etag.as_ref());
+        self
+    }
+    /// Sends the requests: reads the resource's linkset, then patches its `up` link.
+    pub async fn send(self) -> Result<MoveResult> {
+        let destination = self.destination?;
+        let mut req = self.opts.into_prepared(Method::PATCH)?;
+        let resource = req.url.clone();
+        let doc = self.client.read_linkset(resource.clone()).await?;
+        let patch = doc.linkset.move_patch(&doc.url, &resource, &destination)?;
+        req.url = doc.url;
+        if !req.headers.contains_key(IF_MATCH) {
+            if let Some(etag) = &doc.etag {
+                req = req.header(IF_MATCH, etag)?;
+            }
+        }
+        req = req.header(CONTENT_TYPE, media_type::JSON_PATCH)?;
+        req.body = Some(patch.to_vec().into());
+        let resp = self.client.execute(req).await?;
+        let metadata = metadata_of(&resp);
+        let body = resp.bytes().await?;
+        MoveResult::from_response(&resource, metadata, &body)
+    }
+}
+
 fn metadata_of(resp: &Response) -> ResourceMetadata {
     ResourceMetadata::from_parts(resp.url().clone(), resp.status(), resp.headers().clone())
 }
@@ -696,7 +736,7 @@ impl Client {
                     if !user_auth {
                         parts.headers.remove(AUTHORIZATION);
                     }
-                    auth.authorize(parts).await?;
+                    auth.authorize_retry(parts).await?;
                     return self.dispatch(parts, bytes.map(transport::body)).await;
                 }
             }
@@ -706,7 +746,7 @@ impl Client {
 
     /// Sends a request through the authenticator (with the single 401 retry), follows
     /// redirects hop by hop (re-authorizing for every new URL, so tokens never leave their
-    /// realm) and maps error statuses to [`Error`].
+    /// scope) and maps error statuses to [`Error`].
     async fn execute(&self, req: Prepared) -> Result<Response> {
         let mut headers = self.inner.default_headers.clone();
         for (name, value) in req.headers.iter() {
@@ -744,7 +784,10 @@ impl Client {
                                 url: resp.url().clone(),
                                 headers: resp.headers().clone(),
                             };
-                            let _ = auth.handle_challenge(&head, &rp).await;
+                            // The request itself is the retry of the probe.
+                            if let Ok(true) = auth.handle_challenge(&head, &rp).await {
+                                auth.authorize_retry(&mut parts).await?;
+                            }
                         }
                     }
                 }
@@ -792,7 +835,7 @@ impl Client {
                 )));
             }
             // Credentials are re-evaluated for every hop: the authenticator only attaches a
-            // token when the new URL lies inside a cached realm. An explicitly supplied
+            // token when the new URL lies inside a cached token's scope. An explicitly supplied
             // `Authorization` header survives same-origin redirects only.
             let same_origin = location.origin() == parts.url.origin();
             if !(user_auth && same_origin) {
@@ -863,7 +906,9 @@ impl Client {
         }
     }
 
-    /// Reads one page of a container listing (`Accept: application/lws+json`).
+    /// Reads one page of a container listing (`Accept: application/lws+json`, the container
+    /// media type every server honours; an `application/ld+json` or `application/json` answer is
+    /// read as one too).
     pub async fn read_container(&self, url: impl IntoUrl) -> Result<ContainerPage> {
         let req =
             Prepared::new(Method::GET, url.into_url()?).header(ACCEPT, media_type::LWS_JSON)?;
@@ -1033,6 +1078,29 @@ impl Client {
     /// `PATCH` a linkset with JSON Patch.
     pub fn patch_linkset(&self, linkset_url: impl IntoUrl, patch: &JsonPatch) -> PatchRequest<'_> {
         self.patch(linkset_url, patch)
+    }
+
+    // ------------------------------------------------------------------ moving
+
+    /// Moves a resource (a container with everything in it) into the container
+    /// `destination_url` (lws10-core "Moving Resources"): reads the resource's linkset, then
+    /// `PATCH`es its `up` link to the destination ([`Linkset::move_patch`]), conditional on the
+    /// linkset's entity tag. The result says where the resource is now: a storage that does not
+    /// keep identifiers gives it a new URL.
+    ///
+    /// Whether the storage allows moves is [`StorageDescription::move_capability`]; one that does
+    /// not refuses the patch, as it does a destination that is not a container or a container
+    /// moved into itself (`409` → [`Error::Conflict`]).
+    pub fn move_resource(
+        &self,
+        resource_url: impl IntoUrl,
+        destination_url: impl IntoUrl,
+    ) -> MoveRequest<'_> {
+        MoveRequest {
+            client: self,
+            opts: Options::new(resource_url),
+            destination: destination_url.into_url(),
+        }
     }
 
     // ------------------------------------------------------------------ JSON helpers

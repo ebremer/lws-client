@@ -5,7 +5,10 @@ The Rust client of [`../rust`](../rust) built as a **WebAssembly component** for
 language that can host components: Rust, Python, Go and .NET through
 [Wasmtime](https://wasmtime.dev/), and JavaScript through [jco](https://github.com/bytecodealliance/jco).
 
-It is the same client as the Rust crate, with the same behaviour on the wire. The difference is the
+It is the same client as the Rust crate, with the same behaviour on the wire, and tracks the same
+specifications: the W3C LWS Working Draft of 19 October 2026 (`w3c/lws-protocol` commit `9a08ff6`),
+with authorization server discovery through protected resource metadata (RFC 9728) and moving
+resources between containers. The difference is the
 transport: on `wasm32-wasip2` the crate sends its requests through the host's `wasi:http` instead of
 reqwest (see `rust/src/transport/`). The host does TLS, and decides which hosts the component may
 reach.
@@ -30,10 +33,10 @@ needs no files and no sockets.
 
 | Interface | What |
 |---|---|
-| `types` | the values: `metadata`, `read-result`, `page`, `item`, `storage-description`, `linkset-document`, `subscription`, `patch-operation`, `type-query`, and `error` with its `error-kind` |
-| `client` (export) | the `client` resource and the operations of the [API contract](../design/client-api.md), from `discover-storage` to `search-all`; the lazy listings are the `items` and `type-iris` resources |
+| `types` | the values: `metadata`, `read-result`, `page`, `item`, `storage-description` (with its `move-capability`), `linkset-document`, `moved`, `subscription`, `patch-operation`, `type-query`, and `error` with its `error-kind` |
+| `client` (export) | the `client` resource and the operations of the [API contract](../design/client-api.md), from `discover-storage` to `search-all` (`move` among them); the lazy listings are the `items` and `type-iris` resources |
 | `webhook` (export) | the `verifier` resource: verifies signed notification deliveries (RFC 9421, RFC 9530) |
-| `token-source` (import) | subject tokens from the host, for an `openid` or `saml` client created with `subject-token.host` |
+| `token-source` (import) | subject tokens from the host, for an `openid` or `saml` client created with `subject-token.host`: for a token exchange at `issuer`, for an access token to `storage` |
 
 URLs are strings. JSON-LD documents (storage descriptions, access requests and grants, linksets,
 notifications) cross as JSON text, `type json = string`. Everything else is typed. Every operation
@@ -52,8 +55,8 @@ it a `token-source` module, even one that has no tokens:
 
 ```js
 // token-source.js
-export function subjectToken(kind, issuer, realm) {
-  throw `no ${kind} token for ${realm}`;
+export function subjectToken(kind, issuer, storage) {
+  throw `no ${kind} token for ${storage}`;
 }
 ```
 
@@ -80,6 +83,12 @@ try {
     { ifMatch: '"stale"', links: [], setLinkset: false, headers: [] });
 } catch (e) {
   console.log(e.payload.kind, e.payload.http?.status); // precondition-failed 412
+}
+
+if (storage.moveCapability?.movesDataResources) {
+  const archive = lws.createContainer(notes, { slug: "archive", types: [], links: [], headers: [] }).location;
+  const moved = lws.move(hello, archive, { headers: [] });
+  console.log(moved.location, moved.identifierPreserved); // the new URL, unless the storage keeps identifiers
 }
 ```
 
@@ -119,7 +128,7 @@ through every operation against the mock server.
 ```sh
 cargo build --release --manifest-path ../driver/adapters/wasm/Cargo.toml
 node ../driver/adapters/check.mjs -- ../driver/adapters/wasm/target/release/lws-driver-adapter-wasm target/wasm32-wasip2/release/lws_client.wasm
-# wasm: 35 passed, 0 failed, 0 skipped
+# wasm: 37 passed, 0 failed, 0 skipped
 ```
 
 ## Differences from the Rust crate

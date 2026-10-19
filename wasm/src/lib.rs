@@ -29,14 +29,14 @@ use serde_json::Value;
 
 use crate::bindings::ebremer::lws::token_source::{self, TokenKind};
 use crate::bindings::ebremer::lws::types::{
-    Created, Error, Header, Item, Json, LinksetDocument, Metadata, Page, PatchOperation,
+    Created, Error, Header, Item, Json, LinksetDocument, Metadata, Moved, Page, PatchOperation,
     ReadResult, StorageDescription, Subscription, SubscriptionRequest, TypeIndexPage, TypeQuery,
     Updated,
 };
 use crate::bindings::exports::ebremer::lws::client::{
     Auth, Client, CreateOptions, DeleteOptions, Guest as ClientGuest, GuestClient, GuestItems,
-    GuestTypeIris, Identity, Items, KeyAlgorithm, Options, ReadOptions, SubjectToken, TypeIris,
-    UpdateOptions,
+    GuestTypeIris, Identity, Items, KeyAlgorithm, MoveOptions, Options, ReadOptions, SubjectToken,
+    TypeIris, UpdateOptions,
 };
 use crate::bindings::exports::ebremer::lws::webhook::{
     Activity, ClientBorrow, Guest as WebhookGuest, GuestVerifier, VerifiedNotification, Verifier,
@@ -100,7 +100,7 @@ struct LwsClient {
 
 /// A subject token from the host's `token-source`.
 async fn host_token(kind: TokenKind, context: CredentialContext) -> lws_client::Result<String> {
-    token_source::subject_token(kind, &context.issuer, &context.realm).map_err(|message| {
+    token_source::subject_token(kind, &context.issuer, &context.storage).map_err(|message| {
         LwsError::Authentication {
             message: format!("the host has no subject token: {message}"),
             error: None,
@@ -420,6 +420,22 @@ impl GuestClient for LwsClient {
             &options,
         )?;
         run(request.send(), |u| convert::updated(&u))
+    }
+
+    fn move_(
+        &self,
+        url: String,
+        destination: String,
+        options: MoveOptions,
+    ) -> Result<Moved, Error> {
+        let mut request = self
+            .client
+            .move_resource(url.as_str(), destination.as_str());
+        if let Some(etag) = &options.if_match {
+            request = request.if_match(etag);
+        }
+        let request = with_headers(request, &options.headers, |r, n, v| r.header(n, v));
+        run(request.send(), |m| convert::moved(&m))
     }
 
     fn subscribe(

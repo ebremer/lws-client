@@ -51,9 +51,9 @@ async fn main() -> Result<()> {
     );
     if let Some(token) = auth.cached_token(&metadata.url) {
         println!(
-            "access token from {} for realm {} (expires {})",
+            "access token from {} for storage {} (expires {})",
             token.issuer,
-            token.realm,
+            token.storage,
             lws_client::datetime::format_rfc3339(token.expires_at)
         );
     }

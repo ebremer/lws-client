@@ -25,15 +25,15 @@ pub struct ActivityObject {
 pub struct Activity {
     /// Activity identifier.
     pub id: String,
-    /// Activity types (`Create`, `Update`, `Delete`, …).
+    /// Activity types (`Create`, `Update`, `Delete`, `Move`, …).
     pub types: Vec<String>,
     /// The affected resource.
     pub object: ActivityObject,
     /// The agent that performed the action.
     pub actor: Option<String>,
-    /// Container the resource was added to (Create).
+    /// Container the resource was added to (Create, Move).
     pub target: Option<String>,
-    /// Container the resource was removed from (Delete).
+    /// Container the resource was removed from (Delete, Move).
     pub origin: Option<String>,
     /// When the activity occurred, when parseable.
     pub published: Option<SystemTime>,
@@ -91,6 +91,11 @@ impl Activity {
     /// `true` for `Delete`.
     pub fn is_delete(&self) -> bool {
         self.has_type(activity::DELETE)
+    }
+    /// `true` for `Move`: the resource left `origin` for `target`, and `object` is the resource
+    /// as it is after the move.
+    pub fn is_move(&self) -> bool {
+        self.has_type(activity::MOVE)
     }
 }
 

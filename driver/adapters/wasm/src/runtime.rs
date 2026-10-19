@@ -52,7 +52,7 @@ impl token_source::Host for Host {
         &mut self,
         _kind: TokenKind,
         _issuer: String,
-        _realm: String,
+        _storage: String,
     ) -> Result<String, String> {
         Err("the driver gives subject tokens to configure, not on demand".to_owned())
     }

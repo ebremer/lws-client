@@ -98,13 +98,20 @@ async fn interop_scenario() -> Result<()> {
     // 1. Authenticate + discover.
     let credentials = SelfSignedCredentials::did_key(SigningKey::generate_p256()?);
     let agent = credentials.agent().to_owned();
-    let client = Client::builder()
-        .authenticator(TokenExchangeAuthenticator::new(credentials))
-        .build()?;
+    let auth = TokenExchangeAuthenticator::new(credentials);
+    let client = Client::builder().authenticator(auth.clone()).build()?;
     let storage = client.discover_storage(format!("{base}/root/")).await?;
     let root = storage.storage_root()?.clone();
     assert_eq!(root.as_str(), format!("{base}/root/"));
     assert_eq!(storage.id.as_str(), storage_id);
+    let moves = storage.move_capability().expect("MoveResource capability");
+    assert!(moves.moves_data_resources() && moves.moves_containers());
+    assert_eq!(moves.preserves_identifier, Some(false));
+    // The token came through the protected resource metadata: it is for the storage the 401
+    // linked to, and sent ahead to the storage and its root.
+    let token = auth.cached_token(&root).expect("a token for the root");
+    assert_eq!(token.storage, storage_id);
+    assert_eq!(token.scopes, [storage.id.clone(), root.clone()]);
     let notifications = storage
         .notification_service()
         .expect("NotificationService")
@@ -338,7 +345,29 @@ async fn interop_scenario() -> Result<()> {
     client.revoke_access_grant(&grant_url).await?;
     client.cancel_access_request(&req_url).await?;
 
-    // 13. Delete.
+    // 13. Move.
+    let d = client.create_container(&c).slug("archive").await?.location;
+    let m = client
+        .create(&c, "Move me", "text/plain")
+        .slug("move-me.txt")
+        .await?
+        .location;
+    let moved = client.move_resource(&m, &d).await?;
+    assert_eq!(moved.location, d.join("move-me.txt").unwrap());
+    assert!(!moved.identifier_preserved);
+    assert_eq!(moved.linkset.as_str(), format!("{}.meta", moved.location));
+    assert_eq!(client.read(&moved.location).await?.text()?, "Move me");
+    let archived: Vec<ContainedResource> = client.list_container(&d).try_collect().await?;
+    assert!(
+        archived.iter().any(|i| i.id == moved.location),
+        "{archived:?}"
+    );
+    let left: Vec<ContainedResource> = client.list_container(&c).try_collect().await?;
+    assert!(left.iter().all(|i| i.id != m), "{left:?}");
+    let into_itself = client.move_resource(&c, &d).await.unwrap_err();
+    assert!(into_itself.is_conflict(), "{into_itself}");
+
+    // 14. Delete.
     assert!(client.delete(&c).await.unwrap_err().is_conflict());
     client.delete(&c).recursive(true).await?;
     assert!(client.read(&h).await.unwrap_err().is_not_found());

@@ -3,7 +3,8 @@
 An async Rust client for the W3C **Linked Web Storage (LWS) Protocol 1.0** and its companion
 specifications — authentication suites (OpenID Connect, SAML 2.0, self-signed controlled
 identifiers / `did:key`), webhook notifications, access requests/grants, and the Search and Type
-Index services — tracking the Working Group drafts as of **2026-10-05**.
+Index services — tracking the Working Group drafts as of **2026-10-19** (the Working Draft of
+19 October 2026, `w3c/lws-protocol` commit `9a08ff6`).
 
 Part of the [lws-client](https://github.com/ebremer/lws-client) family (Java, JavaScript, C++, Rust,
 Go, Python). MIT licensed — see the repository [LICENSE](../LICENSE).
@@ -11,7 +12,9 @@ Go, Python). MIT licensed — see the repository [LICENSE](../LICENSE).
 * Async on Tokio + `reqwest` (HTTP/2, rustls by default); `Client` is `Clone + Send + Sync`.
 * Request builders you can `.await` directly: `client.read(url).if_none_match(etag).await?`.
 * Lazy pagination as `futures` streams; every returned URL is absolute.
-* Automatic LWS OAuth 2.0 token exchange on `401`, with per-realm token caching.
+* Automatic LWS OAuth 2.0 token exchange on `401`: authorization server discovery through protected
+  resource metadata (RFC 9728), checked against the URL requested; tokens cached per issuer and storage.
+* Moving resources between containers (`move_resource`), with the storage's `MoveResource` capability.
 * Self-signed ES256 / EdDSA identities (`did:key` or HTTPS agents) — no OIDC provider needed for bots.
 * RFC 9421 / RFC 9530 webhook signature verification.
 * `#![forbid(unsafe_code)]`, minimal dependencies (RustCrypto for crypto, no date/time crate in the API).
@@ -54,7 +57,8 @@ async fn main() -> lws_client::Result<()> {
         .build()?;
 
     // HEAD → rel="https://www.w3.org/ns/lws#storage" → storage description.
-    // The 401 → metadata → token exchange → retry dance happens automatically.
+    // The 401 → protected resource metadata → checks → token exchange → retry dance happens
+    // automatically.
     let storage = client.discover_storage("https://storage.example/root/").await?;
     let root = storage.storage_root()?.clone();
 
@@ -96,6 +100,7 @@ storage.notification_service();          // Option<&Service>
 storage.type_search_service();
 storage.service("DataSharingService");   // any service type; terms and full IRIs both match
 storage.capability("https://feature.example/PatchSupport");
+storage.move_capability();               // Option<MoveCapability>: moves_data_resources(), moves_containers(), preserves_identifier
 ```
 
 ### Reading
@@ -145,6 +150,26 @@ ls.add(anchor, "describedby", "https://example.org/shape", None);
 client.update_linkset(&doc.url, &ls).if_match(&etag).await?;   // only if Allow lists PUT
 ```
 
+### Moving resources
+
+A resource moves to another container by a change of the `up` link in its linkset; a container moves
+with everything in it. Check that the storage allows it first:
+
+```rust
+let can_move = storage.move_capability().is_some_and(|m| m.moves_data_resources());
+let moved = client.move_resource(&resource, &archive).await?;  // MoveResult
+moved.location;               // where the resource is now: a new URL unless the storage keeps identifiers
+moved.identifier_preserved;   // location == resource
+moved.linkset;                // its linkset's URL after the move
+```
+
+`move_resource` reads the linkset, then `PATCH`es it with a JSON Patch that `test`s the current `up`
+link and `replace`s it with the destination (`Linkset::move_patch`), conditional on the linkset's
+`ETag` (`.if_match(etag)` overrides it). It reads the new identifier from the answer: the anchor of the
+returned linkset and its `Content-Location` (`MoveResult::from_response`). Moving a container into
+itself or one of its descendants, or into something that is not a container, is `Error::Conflict`; a
+storage that does not allow moves refuses the patch with a `4xx` too.
+
 ### Authentication
 
 | Need | Use |
@@ -155,18 +180,27 @@ client.update_linkset(&doc.url, &ls).if_match(&etag).await?;   // only if Allow 
 | A token you already have | `BearerTokenAuthenticator::new(token).with_realm(storage_url)` |
 | Something else (DPoP, cookies, mTLS) | implement `auth::Authenticator` |
 
-`TokenExchangeAuthenticator` implements the LWS flow: on `401` with
-`WWW-Authenticate: Bearer as_uri="…", realm="…"` it verifies the request URL lies inside the realm,
-fetches `/.well-known/lws-configuration` (RFC 8414, issuer checked), exchanges the subject token
-(RFC 8693, `resource = realm`), caches the access token per realm and retries once. Later requests
-inside the realm send the cached token up front; a rejected token is dropped and re-exchanged once.
-`http` authorization servers are refused except on loopback (or with `allow_insecure_http`), and
-`authorization_server_filter` lets you pin trusted authorization servers.
+`TokenExchangeAuthenticator` implements the LWS flow. On `401` with
+`WWW-Authenticate: Bearer resource_metadata="…"` and a `Link` to the storage, it makes the three
+checks of lws10-core "Discovery Validation by a Client" before it asks for a token: the protected
+resource metadata (RFC 9728) is on the origin of the URL requested, its `resource` is that URL, and the
+`StorageRoot` of the storage's description is on that origin too. Then it takes the first authorization
+server of the metadata that passes the transport check and your filter, fetches its
+`/.well-known/lws-configuration` (RFC 8414, issuer checked), exchanges the subject token (RFC 8693,
+`resource` = the storage), caches the access token per issuer and storage and retries once. The
+metadata, storage description and token requests follow no redirect; storage descriptions are cached
+until `clear_cache()`. Later requests inside the token's scope (the storage and its root) send it up
+front; a rejected token is dropped and re-exchanged once. A `401` that fails a check is not acted on,
+and a cached token it answered is kept. The `as_uri`/`realm` challenge of the drafts before 19 October
+2026 is still followed, after its realm check. `http` authorization servers are refused except on
+loopback (or with `allow_insecure_http`), and `authorization_server_filter(issuer, storage)` lets you pin
+trusted authorization servers. Credential providers see the storage as `CredentialContext::storage`.
 
 Redirects are followed by the client itself (at most 5 hops): `GET`/`HEAD`/`OPTIONS`/`QUERY` follow
 301/302/303/307/308, other methods only 307/308 (with a replayable body), and 303 becomes `GET`.
-Credentials are re-evaluated on every hop, so an access token is only sent to URLs inside its realm
-and an explicit `Authorization` header never crosses origins. If you pass your own `reqwest::Client`
+Credentials are re-evaluated on every hop, so an access token is only sent to URLs inside its scope
+(and in the retry of a request whose `401` passed the checks), and an explicit `Authorization` header
+never crosses origins. If you pass your own `reqwest::Client`
 via `http_client`, its redirect policy applies instead.
 
 Key helpers (`crypto` module): `SigningKey::generate_p256/generate_ed25519`, `to_jwk`/`from_jwk`,
@@ -186,6 +220,7 @@ let verifier = WebhookVerifier::builder().client(Client::new()).trusted_storage(
 let verified = verifier.verify("POST", &inbox_url, &headers, &body).await?;   // or verify_request(&inbox_url, &http_request)
 for a in &verified.notification.activities {
     if a.is_update() { println!("{} changed", a.object.id); }
+    if a.is_move() { println!("{} moved from {:?} to {:?}", a.object.id, a.origin, a.target); }
 }
 ```
 
@@ -258,7 +293,9 @@ LWS_TEST_SERVER=http://localhost:8787 cargo test --test interop -- --nocapture
 
 The `fixtures` test runs the shared, language-neutral vectors in
 [`conformance/fixtures`](../conformance/fixtures) (Link / WWW-Authenticate / structured-field
-parsing, JSON Patch, type queries, did:key, JWTs, 13 RFC 9421 webhook vectors and response models).
+parsing, JSON Patch, moves, type queries, did:key, JWTs, 13 RFC 9421 webhook vectors and response
+models, protected resource metadata and the discovery checks). The `http` test runs every case of
+`discovery.json` through the authenticator against two loopback servers.
 
 ## License
 

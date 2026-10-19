@@ -40,13 +40,13 @@ mod bindings {
 /// The component's types, in one place.
 pub(crate) mod lws {
     pub(crate) use crate::bindings::ebremer::lws::types::{
-        Created, Error, ErrorKind, Item, Link, Metadata, Page, PatchOp, PatchOperation, QueryGroup,
-        RelationFilter, StorageDescription, Subscription, SubscriptionRequest, TypeIndexPage,
-        TypeQuery, Updated,
+        Created, Error, ErrorKind, Item, Link, Metadata, Moved, Page, PatchOp, PatchOperation,
+        QueryGroup, RelationFilter, StorageDescription, Subscription, SubscriptionRequest,
+        TypeIndexPage, TypeQuery, Updated,
     };
     pub(crate) use crate::bindings::exports::ebremer::lws::client::{
-        Auth, BearerToken, CreateOptions, DeleteOptions, KeyAlgorithm, Options, ReadOptions,
-        SelfSignedKey, SubjectToken, UpdateOptions,
+        Auth, BearerToken, CreateOptions, DeleteOptions, KeyAlgorithm, MoveOptions, Options,
+        ReadOptions, SelfSignedKey, SubjectToken, UpdateOptions,
     };
 }
 

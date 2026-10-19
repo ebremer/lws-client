@@ -9,12 +9,17 @@
 pub const LWS_NS: &str = "https://www.w3.org/ns/lws#";
 /// The LWS JSON-LD context.
 pub const LWS_CONTEXT: &str = "https://www.w3.org/ns/lws/v1";
+/// The LWS profile: the `profile` parameter of an RDF media type whose representation is RDF
+/// isomorphic to the `application/lws+json` one (`text/turtle;profile="…"`).
+pub const LWS_PROFILE: &str = "https://www.w3.org/ns/lws/v1";
 /// The W3C Controlled Identifiers JSON-LD context.
 pub const CID_CONTEXT: &str = "https://www.w3.org/ns/cid/v1";
 /// The Activity Streams 2.0 JSON-LD context.
 pub const ACTIVITYSTREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
 /// The `.well-known` path of LWS authorization server metadata (RFC 8414 style).
 pub const WELL_KNOWN_LWS_CONFIGURATION: &str = "/.well-known/lws-configuration";
+/// The `.well-known` path of OAuth 2.0 protected resource metadata (RFC 9728).
+pub const WELL_KNOWN_OAUTH_PROTECTED_RESOURCE: &str = "/.well-known/oauth-protected-resource";
 
 /// Link relation types used by LWS.
 pub mod rel {
@@ -89,6 +94,12 @@ pub mod service {
     pub const SUBSCRIPTION_WEBHOOK: &str = "WebhookSubscription";
 }
 
+/// Capability types found in a storage description's `capability` array.
+pub mod capability {
+    /// Resources move between containers by a change of their `up` link.
+    pub const MOVE_RESOURCE: &str = "MoveResource";
+}
+
 /// OAuth 2.0 / authentication suite identifiers.
 pub mod oauth {
     /// RFC 8693 token exchange grant type.
@@ -161,6 +172,8 @@ pub mod activity {
     pub const UPDATE: &str = "Update";
     /// A resource was deleted.
     pub const DELETE: &str = "Delete";
+    /// A resource moved to another container.
+    pub const MOVE: &str = "Move";
 }
 
 /// Default `User-Agent` sent by [`crate::Client`].

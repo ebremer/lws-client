@@ -4,7 +4,7 @@
 use serde_json::{Map, Value};
 use url::Url;
 
-use crate::constants::{service, types as lws_types};
+use crate::constants::{capability, service, types as lws_types};
 use crate::error::{Error, Result};
 use crate::types::{has_type, string_list, type_matches};
 
@@ -65,6 +65,43 @@ impl Capability {
     /// An extension property.
     pub fn property(&self, name: &str) -> Option<&Value> {
         self.raw.get(name)
+    }
+}
+
+/// The `MoveResource` capability of a storage: resources move between containers by a change of
+/// their `up` link (lws10-core "Storage Description Capabilities").
+#[derive(Debug, Clone, PartialEq)]
+pub struct MoveCapability {
+    /// The resource types that can be moved, as received (a single string as a list);
+    /// `["DataResource"]` when the capability does not say.
+    pub applies_to: Vec<String>,
+    /// Whether a moved resource keeps its identifier; `None` when the capability does not say,
+    /// and then a client must not assume it does.
+    pub preserves_identifier: Option<bool>,
+    /// The raw capability object.
+    pub raw: Map<String, Value>,
+}
+
+impl MoveCapability {
+    fn from_capability(c: &Capability) -> Self {
+        // lws10-core: without `appliesTo` the capability is for data resources only.
+        let applies_to = match c.raw.get("appliesTo") {
+            None | Some(Value::Null) => vec!["DataResource".to_owned()],
+            v => string_list(v),
+        };
+        Self {
+            applies_to,
+            preserves_identifier: c.raw.get("preservesIdentifier").and_then(Value::as_bool),
+            raw: c.raw.clone(),
+        }
+    }
+    /// `true` when data resources can be moved.
+    pub fn moves_data_resources(&self) -> bool {
+        has_type(&self.applies_to, lws_types::DATA_RESOURCE)
+    }
+    /// `true` when containers can be moved (with everything in them).
+    pub fn moves_containers(&self) -> bool {
+        has_type(&self.applies_to, lws_types::CONTAINER)
     }
 }
 
@@ -248,6 +285,13 @@ impl StorageDescription {
         self.capabilities
             .iter()
             .find(|c| c.has_type(capability_type))
+    }
+
+    /// The `MoveResource` capability; `None` when the storage describes none, and then the `up`
+    /// link is not modifiable.
+    pub fn move_capability(&self) -> Option<MoveCapability> {
+        self.capability(capability::MOVE_RESOURCE)
+            .map(MoveCapability::from_capability)
     }
 
     /// The `NotificationService`.

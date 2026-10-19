@@ -3,7 +3,7 @@
 //!
 //! An async Rust client for the W3C **Linked Web Storage (LWS) Protocol 1.0** and its companion
 //! specifications (authentication suites, webhook notifications, Search and Type Index
-//! services), as of the Working Group drafts of 2026-10-05.
+//! services), as of the Working Group drafts of 2026-10-19.
 //!
 //! | Area | Entry points |
 //! |---|---|
@@ -11,6 +11,7 @@
 //! | Read | [`Client::head`], [`Client::read`], [`Client::read_container`], [`Client::list_container`] |
 //! | Write | [`Client::create`], [`Client::create_container`], [`Client::update`], [`Client::patch`], [`Client::delete`] |
 //! | Metadata | [`Client::read_linkset`], [`Client::patch_linkset`], [`Client::update_linkset`], [`Linkset`] |
+//! | Move | [`Client::move_resource`], [`StorageDescription::move_capability`], [`MoveResult`] |
 //! | Auth | [`TokenExchangeAuthenticator`], [`SelfSignedCredentials`], [`OpenIdCredentials`], [`SamlCredentials`], [`BearerTokenAuthenticator`] |
 //! | Notifications | [`Client::subscribe`], [`WebhookVerifier`], [`Notification`] |
 //! | Access | [`Client::request_access`], [`Client::grant_access`], [`AccessRequest`], [`AccessGrant`] |
@@ -30,7 +31,8 @@
 //!     .authenticator(TokenExchangeAuthenticator::new(credentials))
 //!     .build()?;
 //!
-//! // 401 → authorization server metadata → token exchange → retry, all automatic.
+//! // 401 → protected resource metadata and storage description, checked → authorization
+//! // server metadata → token exchange → retry, all automatic.
 //! let storage = client.discover_storage("https://storage.example/root/").await?;
 //! let root = storage.storage_root()?.clone();
 //!
@@ -108,7 +110,7 @@ pub use auth::{
 };
 pub use client::{
     Body, Client, ClientBuilder, CreateRequest, DeleteRequest, HeadRequest, IntoUrl, LwsStream,
-    PatchRequest, ReadRequest, UpdateRequest,
+    MoveRequest, PatchRequest, ReadRequest, UpdateRequest,
 };
 #[cfg(target_os = "wasi")]
 pub use error::TransportError;
@@ -116,8 +118,8 @@ pub use error::{Error, HttpError, Result};
 pub use headers::Link;
 pub use index::{SearchPage, TypeIndexPage, TypeQuery};
 pub use model::{
-    ContainedResource, ContainerPage, CreateResult, Linkset, LinksetDocument, Resource,
-    ResourceMetadata, Service, StorageDescription, UpdateResult,
+    ContainedResource, ContainerPage, CreateResult, Linkset, LinksetDocument, MoveCapability,
+    MoveResult, Resource, ResourceMetadata, Service, StorageDescription, UpdateResult,
 };
 pub use notification::{
     Activity, Notification, Subscription, WebhookSubscriptionRequest, parse_notification,

@@ -15,8 +15,10 @@ use crate::error::Result;
 pub struct CredentialContext {
     /// The authorization server's issuer identifier (use it as the token audience).
     pub issuer: String,
-    /// The protection realm (the storage the access token will be valid for).
-    pub realm: String,
+    /// The storage the access token will be valid for: the token request's `resource` and the
+    /// token's audience (the protection realm, with a challenge of the drafts before
+    /// 19 October 2026).
+    pub storage: String,
     /// The authorization server metadata.
     pub metadata: Arc<AuthorizationServerMetadata>,
 }

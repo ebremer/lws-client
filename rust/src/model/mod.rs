@@ -8,8 +8,9 @@ mod storage;
 
 pub(crate) use container::parse_items;
 pub use container::{ContainedResource, ContainerPage, Pagination};
-pub use linkset::{LinkContext, LinkTarget, Linkset, LinksetDocument, LinksetLink};
+pub use linkset::{LinkContext, LinkTarget, Linkset, LinksetDocument, LinksetLink, MoveResult};
 pub use resource::{CreateResult, Resource, ResourceMetadata, StreamingResource, UpdateResult};
 pub use storage::{
-    Capability, Service, StorageDescription, VerificationMethod, VerificationRelationship,
+    Capability, MoveCapability, Service, StorageDescription, VerificationMethod,
+    VerificationRelationship,
 };

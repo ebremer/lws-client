@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //
 // The lws-client as a WebAssembly component: a client of the W3C Linked Web Storage (LWS)
-// Protocol 1.0 and its companion specifications, as of the Working Group drafts of 2026-10-05.
+// Protocol 1.0 and its companion specifications, as of the Working Group drafts of 2026-10-19.
 // It is the Rust client of ../rust, built for wasm32-wasip2; its requests go out through the
 // host's wasi:http, and the host does TLS.
 //
@@ -78,6 +78,22 @@ interface types {
         body: list<u8>,
     }
 
+    /// Where a moved resource is now.
+    record moved {
+        status: u16,
+        /// The resource after the move: a new URL when the storage does not keep identifiers.
+        location: string,
+        /// Its linkset after the move.
+        linkset: string,
+        /// `location` is the URL moved.
+        identifier-preserved: bool,
+        /// The linkset's new entity tag.
+        etag: option<string>,
+        metadata: metadata,
+        /// The updated linkset, as `application/linkset+json`, when the answer carried it.
+        document: option<json>,
+    }
+
     /// A member of a container, or a search result.
     record item {
         id: string,
@@ -134,6 +150,22 @@ interface types {
         public-key-jwk: option<json>,
     }
 
+    /// The `MoveResource` capability of a storage: resources move between containers by a change
+    /// of their `up` link.
+    record move-capability {
+        /// The resource types that can be moved, as described; `DataResource` when the capability
+        /// does not say.
+        applies-to: list<string>,
+        /// Whether a moved resource keeps its identifier; none when the capability does not say.
+        preserves-identifier: option<bool>,
+        /// `applies-to` includes data resources.
+        moves-data-resources: bool,
+        /// `applies-to` includes containers.
+        moves-containers: bool,
+        /// The capability's JSON-LD object.
+        raw: json,
+    }
+
     /// A storage description.
     record storage-description {
         id: string,
@@ -142,6 +174,9 @@ interface types {
         storage-root: option<string>,
         services: list<service>,
         verification-methods: list<verification-method>,
+        /// The `MoveResource` capability; none when the storage describes none, and then the `up`
+        /// link is not modifiable.
+        move-capability: option<move-capability>,
         /// The whole document.
         raw: json,
     }
@@ -223,7 +258,7 @@ interface types {
         insufficient-storage,
         /// An error response of another status.
         http,
-        /// Token exchange failed, or no credentials fit.
+        /// Token exchange or a discovery check failed, or no credentials fit.
         authentication,
         /// The server's answer breaks the protocol.
         protocol,
@@ -274,15 +309,15 @@ interface token-source {
     }
 
     /// A subject token for a token exchange at the authorization server `issuer`, for an access
-    /// token to `realm`; an error message when there is none.
-    subject-token: func(kind: token-kind, issuer: string, realm: string) -> result<string, string>;
+    /// token to `storage`; an error message when there is none.
+    subject-token: func(kind: token-kind, issuer: string, storage: string) -> result<string, string>;
 }
 
 /// The client.
 interface client {
     use types.{
-        json, header, link, metadata, read-result, created, updated, item, page, type-index-page,
-        storage-description, linkset-document, subscription-request, subscription,
+        json, header, link, metadata, read-result, created, updated, moved, item, page,
+        type-index-page, storage-description, linkset-document, subscription-request, subscription,
         patch-operation, type-query, error,
     };
 
@@ -387,6 +422,13 @@ interface client {
         headers: list<header>,
     }
 
+    record move-options {
+        /// For the linkset `PATCH`, instead of the entity tag of the linkset as read.
+        if-match: option<string>,
+        /// Sent with the linkset `PATCH`.
+        headers: list<header>,
+    }
+
     /// The library and its version: `lws-client-rust/<version>`.
     library: func() -> string;
 
@@ -424,6 +466,11 @@ interface client {
         read-linkset-document: func(linkset-url: string) -> result<linkset-document, error>;
         update-linkset: func(linkset-url: string, linkset: json, options: update-options) -> result<updated, error>;
         patch-linkset: func(linkset-url: string, patch: list<patch-operation>, options: update-options) -> result<updated, error>;
+
+        // Moving
+        /// Moves a resource (a container with everything in it) into the container `destination`:
+        /// reads its linkset, then patches its `up` link, conditional on the linkset's entity tag.
+        move: func(url: string, destination: string, options: move-options) -> result<moved, error>;
 
         // Notifications
         subscribe: func(service-url: string, request: subscription-request) -> result<subscription, error>;

@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 //! RFC 9264 linksets (`application/linkset+json`) — the LWS metadata resource format.
 
+use http::StatusCode;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 use url::Url;
 
+use crate::constants::rel;
 use crate::error::{Error, Result};
 use crate::headers::rel_eq;
 use crate::model::ResourceMetadata;
+use crate::patch::{JsonPatch, JsonPointer};
 
 /// A link target object (`{"href": …, "type": …, "title": …}`).
 #[derive(Debug, Clone, PartialEq)]
@@ -60,6 +63,24 @@ impl LinkContext {
             .iter()
             .filter(move |(r, _)| rel_eq(r, relation))
             .flat_map(|(_, t)| t.iter())
+    }
+
+    /// The first `up` target with a string `href`: the member's name, the target's index in it
+    /// and the `href` as written.
+    fn up_link(&self) -> Option<(&str, usize, &str)> {
+        if let Some((name, targets)) = self.relations.iter().find(|(r, _)| rel_eq(r, rel::UP)) {
+            return targets.first().map(|t| (name.as_str(), 0, t.href.as_str()));
+        }
+        // A relation with a target that has no string href is kept as it was received.
+        let (name, targets) = self
+            .extra
+            .iter()
+            .find(|(k, v)| rel_eq(k, rel::UP) && v.is_array())?;
+        targets
+            .as_array()?
+            .iter()
+            .enumerate()
+            .find_map(|(i, t)| Some((name.as_str(), i, t.get("href")?.as_str()?)))
     }
 }
 
@@ -265,6 +286,68 @@ impl Linkset {
         }
     }
 
+    /// The JSON Patch that moves `resource` into the container `destination` (lws10-core "Moving
+    /// Resources"), for this linkset as read from `linkset_url`: `test` that the resource's `up`
+    /// link still holds the target read, and `replace` it with `destination`.
+    ///
+    /// The resource's link context is the first whose `anchor` resolves to `resource`, or the only
+    /// one when it has no anchor; its `up` link is its first `up` target. Without either the
+    /// linkset gives nothing to change: [`Error::Protocol`].
+    ///
+    /// ```
+    /// use lws_client::{Linkset, Url};
+    /// let ls = Linkset::from_json(&serde_json::json!({"linkset": [
+    ///     {"anchor": "/alice/a.txt", "up": [{"href": "/alice/"}]}
+    /// ]})).unwrap();
+    /// let u = |s| Url::parse(s).unwrap();
+    /// let patch = ls
+    ///     .move_patch(&u("https://s.example/alice/a.txt.meta"), &u("https://s.example/alice/a.txt"), &u("https://s.example/bob/"))
+    ///     .unwrap();
+    /// assert_eq!(patch.to_json(), serde_json::json!([
+    ///     {"op": "test", "path": "/linkset/0/up/0/href", "value": "/alice/"},
+    ///     {"op": "replace", "path": "/linkset/0/up/0/href", "value": "https://s.example/bob/"}
+    /// ]));
+    /// ```
+    pub fn move_patch(
+        &self,
+        linkset_url: &Url,
+        resource: &Url,
+        destination: &Url,
+    ) -> Result<JsonPatch> {
+        let index = self
+            .contexts
+            .iter()
+            .position(|c| {
+                c.anchor
+                    .as_deref()
+                    .and_then(|a| linkset_url.join(a).ok())
+                    .is_some_and(|a| a == *resource)
+            })
+            .or_else(|| match self.contexts.as_slice() {
+                [only] if only.anchor.is_none() => Some(0),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                Error::Protocol(format!(
+                    "the linkset {linkset_url} has no link context for {resource}"
+                ))
+            })?;
+        let (name, target, href) = self.contexts[index].up_link().ok_or_else(|| {
+            Error::Protocol(format!(
+                "the linkset {linkset_url} has no up link for {resource}"
+            ))
+        })?;
+        let path = JsonPointer::root()
+            .push("linkset")
+            .push(index)
+            .push(name)
+            .push(target)
+            .push("href");
+        Ok(JsonPatch::new()
+            .test(path.clone(), href)
+            .replace(path, destination.as_str()))
+    }
+
     /// Removes links of a relation type from the context with the given anchor (all targets, or
     /// only `href`). Returns the number of removed links.
     pub fn remove(&mut self, anchor: &str, relation: &str, href: Option<&str>) -> usize {
@@ -316,4 +399,71 @@ pub struct LinksetDocument {
     pub accept_patch: Vec<String>,
     /// Response metadata.
     pub metadata: ResourceMetadata,
+}
+
+/// Result of [`Client::move_resource`](crate::Client::move_resource): where the resource is after
+/// the move.
+#[derive(Debug, Clone)]
+pub struct MoveResult {
+    /// Response status (200 or 204).
+    pub status: StatusCode,
+    /// Absolute URL of the resource after the move.
+    pub location: Url,
+    /// Absolute URL of its linkset after the move.
+    pub linkset: Url,
+    /// `true` when the resource kept its identifier (`location` is the URL moved).
+    pub identifier_preserved: bool,
+    /// The linkset's new entity tag, when returned.
+    pub etag: Option<String>,
+    /// Response metadata.
+    pub metadata: ResourceMetadata,
+    /// The updated linkset, when the response carried it.
+    pub document: Option<Linkset>,
+}
+
+impl MoveResult {
+    /// Interprets the answer to the linkset `PATCH` that moved `resource` (`metadata.url` is the
+    /// linkset patched). A storage that keeps identifiers answers `204` (or `200` with the
+    /// linkset). One that does not answers `200` with the updated linkset, whose `anchor` is the
+    /// new identifier, and `Content-Location`, the linkset's new URL: the location is the anchor of
+    /// the body's first context with an `up` link, resolved against `Content-Location` (else the
+    /// linkset patched).
+    pub fn from_response(resource: &Url, metadata: ResourceMetadata, body: &[u8]) -> Result<Self> {
+        let linkset = match metadata.header("content-location") {
+            Some(l) => metadata
+                .url
+                .join(l)
+                .map_err(|e| Error::Protocol(format!("invalid Content-Location: {e}")))?,
+            None => metadata.url.clone(),
+        };
+        let is_json = metadata.media_type().is_none_or(|t| t.ends_with("json"));
+        let document = if body.is_empty() || !is_json {
+            None
+        } else {
+            Some(Linkset::parse(body)?)
+        };
+        let anchor = document
+            .as_ref()
+            .and_then(|d| {
+                d.contexts
+                    .iter()
+                    .find(|c| c.targets(rel::UP).next().is_some())
+            })
+            .and_then(|c| c.anchor.as_deref());
+        let location = match anchor {
+            Some(a) => linkset
+                .join(a)
+                .map_err(|e| Error::Protocol(format!("invalid anchor {a:?}: {e}")))?,
+            None => resource.clone(),
+        };
+        Ok(Self {
+            status: metadata.status,
+            identifier_preserved: location == *resource,
+            location,
+            linkset,
+            etag: metadata.etag.clone(),
+            metadata,
+            document,
+        })
+    }
 }

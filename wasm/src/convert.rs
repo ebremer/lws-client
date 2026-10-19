@@ -6,15 +6,15 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use lws_client::headers::ProblemDetails;
 use lws_client::{
     ContainedResource, ContainerPage, CreateResult, Error as LwsError, JsonPatch, Link,
-    LinksetDocument, ResourceMetadata, SearchPage, StorageDescription, Subscription, TypeIndexPage,
-    UpdateResult, Url,
+    LinksetDocument, MoveResult, ResourceMetadata, SearchPage, StorageDescription, Subscription,
+    TypeIndexPage, UpdateResult, Url,
 };
 use serde_json::{Map, Value};
 
 use crate::bindings::ebremer::lws::types::{
     Created, Error, ErrorKind, Header, HttpError, Item, Link as WitLink,
-    LinksetDocument as WitLinkset, Metadata, Page, PatchOp, PatchOperation, QueryGroup, Service,
-    StorageDescription as WitStorage, Subscription as WitSubscription,
+    LinksetDocument as WitLinkset, Metadata, MoveCapability, Moved, Page, PatchOp, PatchOperation,
+    QueryGroup, Service, StorageDescription as WitStorage, Subscription as WitSubscription,
     TypeIndexPage as WitTypeIndexPage, TypeQuery, Updated, VerificationMethod,
 };
 
@@ -348,6 +348,18 @@ pub(crate) fn updated(u: &UpdateResult) -> Updated {
     }
 }
 
+pub(crate) fn moved(m: &MoveResult) -> Moved {
+    Moved {
+        status: m.status.as_u16(),
+        location: url_text(&m.location),
+        linkset: url_text(&m.linkset),
+        identifier_preserved: m.identifier_preserved,
+        etag: m.etag.clone(),
+        metadata: metadata(&m.metadata),
+        document: m.document.as_ref().map(|d| d.to_json().to_string()),
+    }
+}
+
 pub(crate) fn storage(s: &StorageDescription) -> WitStorage {
     WitStorage {
         id: url_text(&s.id),
@@ -380,6 +392,13 @@ pub(crate) fn storage(s: &StorageDescription) -> WitStorage {
                     .map(|jwk| Value::Object(jwk.clone()).to_string()),
             })
             .collect(),
+        move_capability: s.move_capability().map(|m| MoveCapability {
+            moves_data_resources: m.moves_data_resources(),
+            moves_containers: m.moves_containers(),
+            applies_to: m.applies_to,
+            preserves_identifier: m.preserves_identifier,
+            raw: Value::Object(m.raw).to_string(),
+        }),
         raw: s.raw.to_string(),
     }
 }

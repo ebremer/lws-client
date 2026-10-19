@@ -624,7 +624,192 @@ async fn linkset_read_patch_put() {
     );
 }
 
+// ---------------------------------------------------------------- moving
+
+/// A resource `/notes/a.txt` whose linkset `/notes/a.txt.meta` has its up link second, after a
+/// context for another resource; a storage that gives a moved resource a new identifier.
+async fn move_server() -> MockServer {
+    let server = MockServer::start().await;
+    let base = server.uri();
+    Mock::given(method("HEAD"))
+        .and(path("/notes/a.txt"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("link", "</notes/a.txt.meta>; rel=\"linkset\""),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/notes/a.txt.meta"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "\"ls1\"")
+                .set_body_raw(
+                    json!({"linkset": [
+                        {"anchor": format!("{base}/notes/"), "describedby": [{"href": "https://example.org/s"}]},
+                        {"anchor": "/notes/a.txt", "up": [{"href": "/notes/"}]},
+                    ]})
+                    .to_string(),
+                    "application/linkset+json",
+                ),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/notes/a.txt.meta"))
+        .and(header("if-match", "\"ls1\""))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "\"ls2\"")
+                .insert_header("content-location", "/archive/a.txt.meta")
+                .set_body_raw(
+                    json!({"linkset": [{"anchor": "/archive/a.txt", "up": [{"href": "/archive/"}]}]})
+                        .to_string(),
+                    "application/linkset+json",
+                ),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/notes/a.txt.meta"))
+        .respond_with(ResponseTemplate::new(412))
+        .mount(&server)
+        .await;
+    server
+}
+
+#[tokio::test]
+async fn move_patches_the_up_link_and_follows_the_new_identifier() {
+    let server = move_server().await;
+    let client = Client::new();
+    let moved = client
+        .move_resource(url(&server, "/notes/a.txt"), url(&server, "/archive/"))
+        .await
+        .unwrap();
+    assert_eq!(moved.status.as_u16(), 200);
+    assert_eq!(moved.location, url(&server, "/archive/a.txt"));
+    assert_eq!(moved.linkset, url(&server, "/archive/a.txt.meta"));
+    assert!(!moved.identifier_preserved);
+    assert_eq!(moved.etag.as_deref(), Some("\"ls2\""));
+    assert!(moved.document.is_some());
+
+    let reqs = requests(&server).await;
+    let patch = reqs.iter().find(|r| r.method.as_str() == "PATCH").unwrap();
+    assert_eq!(
+        header_str(patch, "content-type"),
+        Some("application/json-patch+json")
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&patch.body).unwrap(),
+        json!([
+            {"op": "test", "path": "/linkset/1/up/0/href", "value": "/notes/"},
+            {"op": "replace", "path": "/linkset/1/up/0/href", "value": format!("{}/archive/", server.uri())},
+        ])
+    );
+
+    // An If-Match of the caller's replaces the linkset's ETag.
+    let err = client
+        .move_resource(url(&server, "/notes/a.txt"), url(&server, "/archive/"))
+        .if_match("\"stale\"")
+        .await
+        .unwrap_err();
+    assert!(err.is_precondition_failed(), "{err:?}");
+}
+
+#[tokio::test]
+async fn move_without_an_up_link_sends_nothing() {
+    let server = MockServer::start().await;
+    Mock::given(method("HEAD"))
+        .and(path("/a"))
+        .respond_with(
+            ResponseTemplate::new(200).append_header("link", "</a.meta>; rel=\"linkset\""),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/a.meta"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            json!({"linkset": [{"anchor": "/a", "describedby": [{"href": "https://example.org/s"}]}]})
+                .to_string(),
+            "application/linkset+json",
+        ))
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .respond_with(ResponseTemplate::new(409))
+        .mount(&server)
+        .await;
+    let client = Client::new();
+    let err = client
+        .move_resource(url(&server, "/a"), url(&server, "/b/"))
+        .await
+        .unwrap_err();
+    assert!(err.is_protocol(), "{err:?}");
+    assert!(
+        requests(&server)
+            .await
+            .iter()
+            .all(|r| r.method.as_str() != "PATCH")
+    );
+    let err = client
+        .move_resource("not a url", url(&server, "/b/"))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::InvalidInput(_)), "{err:?}");
+}
+
 // ---------------------------------------------------------------- authentication
+
+const PRM: &str = "/.well-known/oauth-protected-resource";
+
+/// The `401` of the drafts of 19 October 2026 to a request for `path`: the resource's protected
+/// resource metadata (RFC 9728) and a Link to the storage at `/storage`.
+fn unauthorized(base: &str, path: &str) -> ResponseTemplate {
+    ResponseTemplate::new(401)
+        .insert_header(
+            "www-authenticate",
+            format!("Bearer resource_metadata=\"{base}{PRM}{path}\", error=\"invalid_token\"")
+                .as_str(),
+        )
+        .insert_header(
+            "link",
+            format!("<{base}/storage>; rel=\"https://www.w3.org/ns/lws#storage\"").as_str(),
+        )
+}
+
+/// What such a `401` leads to: the protected resource metadata of every resource, naming
+/// `authorization_servers`, and the description of the storage at `/storage`, whose root is
+/// `root`.
+async fn mount_discovery(server: &MockServer, root: &str, authorization_servers: Value) {
+    let base = server.uri();
+    let origin = base.clone();
+    Mock::given(method("GET"))
+        .and(path_prefix_matcher(
+            "/.well-known/oauth-protected-resource/",
+        ))
+        .respond_with(move |req: &Request| {
+            let resource = format!("{origin}{}", &req.url.path()[PRM.len()..]);
+            ResponseTemplate::new(200).set_body_json(
+                json!({"resource": resource, "authorization_servers": authorization_servers}),
+            )
+        })
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/storage"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            json!({
+                "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+                "id": format!("{base}/storage"),
+                "type": "Storage",
+                "service": [{"type": "StorageRoot", "serviceEndpoint": format!("{base}{root}")}],
+            })
+            .to_string(),
+            "application/lws+cid",
+        ))
+        .mount(server)
+        .await;
+}
 
 struct AuthServer {
     server: MockServer,
@@ -632,12 +817,13 @@ struct AuthServer {
 }
 
 /// A storage that requires `Bearer token-N` and an AS that issues `token-N` on each exchange,
-/// verifying the self-signed JWT.
-async fn auth_server(realm_path: &str, token_types: Value) -> AuthServer {
+/// verifying the self-signed JWT. Its `401`s lead to the authorization server through protected
+/// resource metadata, or, with `legacy_realm`, name it in the `as_uri` and `realm` of the drafts
+/// before 19 October 2026.
+async fn auth_server(legacy_realm: Option<&str>, token_types: Value) -> AuthServer {
     let server = MockServer::start().await;
     let base = server.uri();
     let exchanges = Arc::new(AtomicUsize::new(0));
-    let realm = format!("{base}{realm_path}");
     Mock::given(method("GET"))
         .and(path("/.well-known/lws-configuration"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -648,8 +834,12 @@ async fn auth_server(realm_path: &str, token_types: Value) -> AuthServer {
         })))
         .mount(&server)
         .await;
+    mount_discovery(&server, "/data/", json!([base])).await;
     let counter = exchanges.clone();
-    let expected_resource = realm.clone();
+    let expected_resource = match legacy_realm {
+        Some(realm) => format!("{base}{realm}"),
+        None => format!("{base}/storage"),
+    };
     let issuer = base.clone();
     Mock::given(method("POST"))
         .and(path("/token"))
@@ -676,10 +866,9 @@ async fn auth_server(realm_path: &str, token_types: Value) -> AuthServer {
         })
         .mount(&server)
         .await;
-    let challenge = format!("Bearer as_uri=\"{base}\", realm=\"{realm}\", error=\"invalid_token\"");
     // token-1 is revoked by the storage; token-2 and later are accepted.
     for t in ["token-2", "token-3"] {
-        Mock::given(path_prefix_matcher("/data/"))
+        Mock::given(protected_matcher())
             .and(header("authorization", format!("Bearer {t}").as_str()))
             .respond_with(
                 ResponseTemplate::new(200)
@@ -690,10 +879,16 @@ async fn auth_server(realm_path: &str, token_types: Value) -> AuthServer {
             .mount(&server)
             .await;
     }
-    Mock::given(path_prefix_matcher("/data/"))
-        .respond_with(
-            ResponseTemplate::new(401).insert_header("www-authenticate", challenge.as_str()),
-        )
+    let legacy = legacy_realm.map(|realm| {
+        format!("Bearer as_uri=\"{base}\", realm=\"{base}{realm}\", error=\"invalid_token\"")
+    });
+    Mock::given(protected_matcher())
+        .respond_with(move |req: &Request| match &legacy {
+            Some(challenge) => {
+                ResponseTemplate::new(401).insert_header("www-authenticate", challenge.as_str())
+            }
+            None => unauthorized(&base, req.url.path()),
+        })
         .mount(&server)
         .await;
     AuthServer { server, exchanges }
@@ -703,9 +898,19 @@ fn path_prefix_matcher(prefix: &'static str) -> impl wiremock::Match {
     move |req: &Request| req.url.path().starts_with(prefix)
 }
 
+/// The protected resources of [`auth_server`]: those in the root `/data/`, and services outside
+/// the storage and its root.
+fn protected_matcher() -> impl wiremock::Match {
+    |req: &Request| {
+        ["/data/", "/services/"]
+            .iter()
+            .any(|p| req.url.path().starts_with(p))
+    }
+}
+
 #[tokio::test]
 async fn token_exchange_flow_with_self_signed_did_key() {
-    let s = auth_server("/data/", json!(["urn:ietf:params:oauth:token-type:jwt"])).await;
+    let s = auth_server(None, json!(["urn:ietf:params:oauth:token-type:jwt"])).await;
     let creds = SelfSignedCredentials::did_key(SigningKey::generate_p256().unwrap());
     let auth = TokenExchangeAuthenticator::new(creds);
     let client = Client::builder()
@@ -718,7 +923,8 @@ async fn token_exchange_flow_with_self_signed_did_key() {
     assert!(err.is_unauthorized(), "{err:?}");
     assert_eq!(s.exchanges.load(Ordering::SeqCst), 1);
 
-    // 2nd request: proactive token-1 → 401 invalid_token → drop it, exchange (token-2) → 200.
+    // 2nd request: proactive token-1 → 401 naming the same issuer and storage → drop it,
+    // exchange (token-2) → 200.
     let r = client.read(url(&s.server, "/data/b")).await.unwrap();
     assert_eq!(r.text().unwrap(), "secret");
     assert_eq!(s.exchanges.load(Ordering::SeqCst), 2);
@@ -727,10 +933,14 @@ async fn token_exchange_flow_with_self_signed_did_key() {
     client.read(url(&s.server, "/data/c")).await.unwrap();
     client.head(url(&s.server, "/data/d")).await.unwrap();
     assert_eq!(s.exchanges.load(Ordering::SeqCst), 2);
+    let token = auth.cached_token(&url(&s.server, "/data/x")).unwrap();
+    assert_eq!(token.token, "token-2");
+    assert_eq!(token.storage, format!("{}/storage", s.server.uri()));
     assert_eq!(
-        auth.cached_token(&url(&s.server, "/data/x")).unwrap().token,
-        "token-2"
+        token.scopes,
+        [url(&s.server, "/storage"), url(&s.server, "/data/")]
     );
+    assert!(auth.cached_token(&url(&s.server, "/other/x")).is_none());
 
     let reqs = requests(&s.server).await;
     let data: Vec<&Request> = reqs
@@ -742,12 +952,64 @@ async fn token_exchange_flow_with_self_signed_did_key() {
         Some("Bearer token-2")
     );
     assert!(header_str(data[0], "authorization").is_none());
+    // The protected resource metadata is read for every 401 acted on, without credentials; the
+    // storage description once.
+    let metadata: Vec<&Request> = reqs
+        .iter()
+        .filter(|r| r.url.path().starts_with(PRM))
+        .collect();
+    assert_eq!(metadata.len(), 2);
+    assert!(
+        metadata
+            .iter()
+            .all(|r| header_str(r, "authorization").is_none())
+    );
+    assert_eq!(header_str(metadata[0], "accept"), Some("application/json"));
+    let descriptions: Vec<&Request> = reqs.iter().filter(|r| r.url.path() == "/storage").collect();
+    assert_eq!(descriptions.len(), 1);
+    assert!(
+        header_str(descriptions[0], "accept")
+            .unwrap()
+            .starts_with("application/lws+cid")
+    );
+
+    // A URL outside the token's scope gets no token up front; its 401 passes the checks, and
+    // the retry carries the cached token, with no new exchange.
+    for p in ["/services/inbox", "/services/other"] {
+        assert_eq!(
+            client
+                .read(url(&s.server, p))
+                .await
+                .unwrap()
+                .text()
+                .unwrap(),
+            "secret"
+        );
+        let sent: Vec<Option<String>> = requests(&s.server)
+            .await
+            .iter()
+            .filter(|r| r.url.path() == p)
+            .map(|r| header_str(r, "authorization").map(str::to_owned))
+            .collect();
+        assert_eq!(sent, [None, Some("Bearer token-2".to_owned())], "{p}");
+    }
+    assert_eq!(s.exchanges.load(Ordering::SeqCst), 2);
+
+    // clear_cache() forgets the description too.
+    auth.clear_cache();
+    client.read(url(&s.server, "/data/e")).await.unwrap();
+    let described = requests(&s.server)
+        .await
+        .iter()
+        .filter(|r| r.url.path() == "/storage")
+        .count();
+    assert_eq!(described, 2);
 }
 
 #[tokio::test]
 async fn token_exchange_with_ed25519_and_openid() {
     let s = auth_server(
-        "/data/",
+        None,
         json!([
             "urn:ietf:params:oauth:token-type:jwt",
             "urn:ietf:params:oauth:token-type:id_token"
@@ -789,8 +1051,56 @@ async fn token_exchange_with_ed25519_and_openid() {
 }
 
 #[tokio::test]
+async fn token_exchange_with_the_challenge_before_2026_10_19() {
+    let s = auth_server(
+        Some("/data/"),
+        json!(["urn:ietf:params:oauth:token-type:id_token"]),
+    )
+    .await;
+    let auth = TokenExchangeAuthenticator::new(OpenIdCredentials::new("id-token"));
+    let client = Client::builder()
+        .authenticator(auth.clone())
+        .build()
+        .unwrap();
+    // token-1 is revoked: the second request drops it and exchanges token-2.
+    assert!(
+        client
+            .read(url(&s.server, "/data/a"))
+            .await
+            .unwrap_err()
+            .is_unauthorized()
+    );
+    assert_eq!(
+        client
+            .read(url(&s.server, "/data/b"))
+            .await
+            .unwrap()
+            .text()
+            .unwrap(),
+        "secret"
+    );
+    let token = auth.cached_token(&url(&s.server, "/data/x")).unwrap();
+    assert_eq!(token.token, "token-2");
+    assert_eq!(token.storage, format!("{}/data/", s.server.uri()));
+    assert_eq!(token.scopes, [url(&s.server, "/data/")]);
+    assert!(auth.cached_token(&url(&s.server, "/storage")).is_none());
+    // No protected resource metadata or storage description is read.
+    assert!(
+        requests(&s.server)
+            .await
+            .iter()
+            .all(|r| !r.url.path().starts_with(PRM) && r.url.path() != "/storage")
+    );
+}
+
+/// A challenge of the drafts before 19 October 2026 must name a realm that contains the URL.
+#[tokio::test]
 async fn realm_check_rejects_foreign_realm() {
-    let s = auth_server("/other/", json!(["urn:ietf:params:oauth:token-type:jwt"])).await;
+    let s = auth_server(
+        Some("/other/"),
+        json!(["urn:ietf:params:oauth:token-type:jwt"]),
+    )
+    .await;
     let creds = SelfSignedCredentials::did_key(SigningKey::generate_p256().unwrap());
     let client = Client::builder()
         .authenticator(TokenExchangeAuthenticator::new(creds))
@@ -801,11 +1111,69 @@ async fn realm_check_rejects_foreign_realm() {
     assert_eq!(s.exchanges.load(Ordering::SeqCst), 0);
 }
 
-/// The metadata and token requests never follow a redirect: a 307 or 308 would carry the
-/// subject token on to its target.
+/// A token the request carried is kept when its `401` fails a discovery check: a storage can hold
+/// a resource whose `401` links elsewhere, and believing it would cost the client a valid token.
 #[tokio::test]
-async fn authorization_server_redirects_are_not_followed() {
-    for redirected in ["/.well-known/lws-configuration", "/token"] {
+async fn a_failed_check_keeps_the_cached_token() {
+    let s = auth_server(None, json!(["urn:ietf:params:oauth:token-type:id_token"])).await;
+    let base = s.server.uri();
+    // A decoy inside the token's scope: its 401 links to a storage whose root is on another
+    // origin.
+    Mock::given(path("/storage/decoy"))
+        .respond_with(unauthorized(&base, "/storage/decoy").insert_header(
+            "link",
+            format!("<{base}/vault>; rel=\"https://www.w3.org/ns/lws#storage\"").as_str(),
+        ))
+        .mount(&s.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/vault"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": format!("{base}/vault"),
+            "type": "Storage",
+            "service": [{"type": "StorageRoot", "serviceEndpoint": "https://elsewhere.example/vault/"}],
+        })))
+        .mount(&s.server)
+        .await;
+    let auth = TokenExchangeAuthenticator::new(OpenIdCredentials::new("id-token"));
+    let client = Client::builder()
+        .authenticator(auth.clone())
+        .build()
+        .unwrap();
+    let _ = client.read(url(&s.server, "/data/a")).await; // token-1, revoked
+    client.read(url(&s.server, "/data/b")).await.unwrap(); // token-2
+    let err = client
+        .read(url(&s.server, "/storage/decoy"))
+        .await
+        .unwrap_err();
+    assert!(
+        err.is_authentication() && err.to_string().contains("not on the origin"),
+        "{err}"
+    );
+    let decoy = requests(&s.server)
+        .await
+        .into_iter()
+        .find(|r| r.url.path() == "/storage/decoy")
+        .unwrap();
+    assert_eq!(header_str(&decoy, "authorization"), Some("Bearer token-2"));
+    assert_eq!(s.exchanges.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        auth.cached_token(&url(&s.server, "/data/x")).unwrap().token,
+        "token-2"
+    );
+}
+
+/// The metadata, storage description and token requests never follow a redirect: a 307 or 308
+/// would carry the subject token on to its target, and a redirected protected resource metadata
+/// or storage description would describe another origin.
+#[tokio::test]
+async fn discovery_and_authorization_server_redirects_are_not_followed() {
+    for redirected in [
+        "/.well-known/oauth-protected-resource/data/a",
+        "/storage",
+        "/.well-known/lws-configuration",
+        "/token",
+    ] {
         let server = MockServer::start().await;
         let thief = MockServer::start().await;
         let base = server.uri();
@@ -817,6 +1185,7 @@ async fn authorization_server_redirects_are_not_followed() {
             .with_priority(1)
             .mount(&server)
             .await;
+        mount_discovery(&server, "/data/", json!([base])).await;
         Mock::given(method("GET"))
             .and(path("/.well-known/lws-configuration"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -825,11 +1194,9 @@ async fn authorization_server_redirects_are_not_followed() {
             })))
             .mount(&server)
             .await;
+        let origin = base.clone();
         Mock::given(path_prefix_matcher("/data/"))
-            .respond_with(ResponseTemplate::new(401).insert_header(
-                "www-authenticate",
-                format!("Bearer as_uri=\"{base}\", realm=\"{base}/data/\"").as_str(),
-            ))
+            .respond_with(move |req: &Request| unauthorized(&origin, req.url.path()))
             .mount(&server)
             .await;
         let client = Client::builder()
@@ -849,11 +1216,7 @@ async fn authorization_server_redirects_are_not_followed() {
 
 #[tokio::test]
 async fn unsupported_subject_token_type_is_rejected() {
-    let s = auth_server(
-        "/data/",
-        json!(["urn:ietf:params:oauth:token-type:id_token"]),
-    )
-    .await;
+    let s = auth_server(None, json!(["urn:ietf:params:oauth:token-type:id_token"])).await;
     let creds = SelfSignedCredentials::did_key(SigningKey::generate_p256().unwrap());
     let client = Client::builder()
         .authenticator(TokenExchangeAuthenticator::new(creds))
@@ -866,38 +1229,63 @@ async fn unsupported_subject_token_type_is_rejected() {
 
 #[tokio::test]
 async fn insecure_authorization_server_and_policy_filter() {
-    let server = MockServer::start().await;
-    let realm = format!("{}/", server.uri());
-    Mock::given(method("GET"))
-        .and(path("/x"))
-        .respond_with(ResponseTemplate::new(401).insert_header(
-            "www-authenticate",
-            format!("Bearer as_uri=\"http://as.example\", realm=\"{realm}\"").as_str(),
-        ))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/y"))
-        .respond_with(ResponseTemplate::new(401).insert_header(
-            "www-authenticate",
-            format!("Bearer as_uri=\"{}\", realm=\"{realm}\"", server.uri()).as_str(),
-        ))
-        .mount(&server)
-        .await;
-    let auth = TokenExchangeAuthenticator::builder(OpenIdCredentials::new("t"))
-        .authorization_server_filter(|_, _| false)
-        .build();
-    let client = Client::builder().authenticator(auth).build().unwrap();
-    let err = client.read(url(&server, "/x")).await.unwrap_err();
-    assert!(err.to_string().contains("insecure"), "{err}");
-    let err = client.read(url(&server, "/y")).await.unwrap_err();
-    assert!(err.to_string().contains("policy"), "{err}");
+    for (authorization_servers, filter, why) in [
+        (json!(["http://as.example"]), true, "insecure"),
+        (json!(["SELF"]), false, "policy"),
+        // The first authorization server that passes both is the one asked.
+        (json!(["http://as.example", "SELF"]), true, ""),
+    ] {
+        let server = MockServer::start().await;
+        let base = server.uri();
+        let servers = authorization_servers.to_string().replace("SELF", &base);
+        mount_discovery(&server, "/", serde_json::from_str(&servers).unwrap()).await;
+        let origin = base.clone();
+        Mock::given(method("GET"))
+            .and(path("/x"))
+            .respond_with(move |req: &Request| unauthorized(&origin, req.url.path()))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/.well-known/lws-configuration"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "issuer": base,
+                "token_endpoint": format!("{base}/token"),
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                json!({"access_token": "tok", "token_type": "Bearer", "expires_in": 300}),
+            ))
+            .mount(&server)
+            .await;
+        let storage = url(&server, "/storage");
+        let auth = TokenExchangeAuthenticator::builder(OpenIdCredentials::new("t"))
+            .authorization_server_filter(move |_, s| filter && *s == storage)
+            .build();
+        let client = Client::builder()
+            .authenticator(auth.clone())
+            .build()
+            .unwrap();
+        let err = client.read(url(&server, "/x")).await.unwrap_err();
+        if why.is_empty() {
+            assert!(err.is_unauthorized(), "{err}");
+            assert!(auth.cached_token(&url(&server, "/x")).is_some());
+        } else {
+            assert!(
+                err.is_authentication() && err.to_string().contains(why),
+                "{err}"
+            );
+        }
+    }
 }
 
 #[tokio::test]
 async fn token_endpoint_errors_and_issuer_mismatch() {
     let server = MockServer::start().await;
     let base = server.uri();
+    mount_discovery(&server, "/", json!([])).await;
     Mock::given(method("GET"))
         .and(path("/.well-known/lws-configuration"))
         .respond_with(
@@ -920,13 +1308,18 @@ async fn token_endpoint_errors_and_issuer_mismatch() {
         ))
         .mount(&server)
         .await;
-    for (p, as_uri) in [("/a", base.clone()), ("/b", format!("{base}/evil"))] {
+    for (p, issuer) in [("/a", base.clone()), ("/b", format!("{base}/evil"))] {
+        Mock::given(method("GET"))
+            .and(path(format!("{PRM}{p}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                json!({"resource": format!("{base}{p}"), "authorization_servers": [issuer]}),
+            ))
+            .with_priority(1)
+            .mount(&server)
+            .await;
         Mock::given(method("GET"))
             .and(path(p))
-            .respond_with(ResponseTemplate::new(401).insert_header(
-                "www-authenticate",
-                format!("Bearer as_uri=\"{as_uri}\", realm=\"{base}/\"").as_str(),
-            ))
+            .respond_with(unauthorized(&base, p))
             .mount(&server)
             .await;
     }
@@ -957,10 +1350,202 @@ async fn token_endpoint_errors_and_issuer_mismatch() {
         .into_iter()
         .find(|r| r.url.path() == "/token")
         .unwrap();
-    assert!(String::from_utf8(form.body).unwrap().contains(&format!(
+    let form = String::from_utf8(form.body).unwrap();
+    assert!(form.contains(&format!(
         "subject_token={}",
         lws_client::auth::encode_saml_assertion(b"<saml/>")
     )));
+    assert!(form.contains(&format!(
+        "resource={}",
+        url::form_urlencoded::byte_serialize(format!("{base}/storage").as_bytes())
+            .collect::<String>()
+    )));
+}
+
+// ---------------------------------------------------------------- discovery.json
+
+fn fixture(name: &str) -> Value {
+    let path = format!(
+        "{}/../conformance/fixtures/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+}
+
+/// One origin of a `discovery.json` case, answering as the fixture's description says: the
+/// request `401` without the token and `200 ok` with it, the documents, `200 ok` for the later
+/// requests, the token endpoint, and `404` for anything else.
+struct CaseOrigin {
+    request: Option<String>,
+    challenge: Vec<(String, String)>,
+    documents: std::collections::HashMap<String, ResponseTemplate>,
+    then: Vec<String>,
+    token: Option<ResponseTemplate>,
+}
+
+impl wiremock::Respond for CaseOrigin {
+    fn respond(&self, req: &Request) -> ResponseTemplate {
+        let p = req.url.path();
+        if req.method.as_str() == "POST" {
+            return match &self.token {
+                Some(t) if p == "/as/token" => t.clone(),
+                _ => ResponseTemplate::new(404),
+            };
+        }
+        if self.request.as_deref() == Some(p) {
+            if header_str(req, "authorization") == Some("Bearer token-1") {
+                return ResponseTemplate::new(200).set_body_string("ok");
+            }
+            let mut r = ResponseTemplate::new(401);
+            for (name, value) in &self.challenge {
+                r = r.insert_header(name.as_str(), value.as_str());
+            }
+            return r;
+        }
+        if let Some(d) = self.documents.get(p) {
+            return d.clone();
+        }
+        if self.then.iter().any(|t| t == p) {
+            return ResponseTemplate::new(200).set_body_string("ok");
+        }
+        ResponseTemplate::new(404)
+    }
+}
+
+/// Runs every case of `conformance/fixtures/discovery.json` through the authenticator, with `{A}`
+/// and `{B}` two loopback servers.
+#[tokio::test]
+async fn discovery_fixture() {
+    let f = fixture("discovery.json");
+    for case in f["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let (a, b) = (MockServer::start().await, MockServer::start().await);
+        let (ua, ub) = (a.uri(), b.uri());
+        let fill =
+            |v: &Value| -> String { v.as_str().unwrap().replace("{A}", &ua).replace("{B}", &ub) };
+        let fill_url = |v: &Value| Url::parse(&fill(v)).unwrap();
+        // The server and path of a URL on {A} or {B}.
+        let locate = |u: &Url| -> Option<(&MockServer, String)> {
+            let origin = u.origin().ascii_serialization();
+            [(&a, &ua), (&b, &ub)]
+                .into_iter()
+                .find(|(_, o)| **o == origin)
+                .map(|(s, _)| (s, u.path().to_owned()))
+        };
+        let request = fill_url(&case["request"]);
+        for (server, origin) in [(&a, &ua), (&b, &ub)] {
+            let on_this = |u: &Url| u.origin().ascii_serialization() == *origin;
+            let mut documents = std::collections::HashMap::new();
+            for (u, doc) in case["documents"].as_object().into_iter().flatten() {
+                let u = fill_url(&json!(u));
+                if !on_this(&u) {
+                    continue;
+                }
+                let mut r = ResponseTemplate::new(doc["status"].as_u64().unwrap() as u16);
+                let mut content_type = "application/json".to_owned();
+                for (h, v) in doc["headers"].as_object().unwrap() {
+                    if h == "content-type" {
+                        content_type = fill(v);
+                    } else {
+                        r = r.insert_header(h.as_str(), fill(v).as_str());
+                    }
+                }
+                if !doc["body"].is_null() {
+                    let body = fill(&json!(doc["body"].to_string()));
+                    r = r.set_body_raw(body, &content_type);
+                }
+                documents.insert(u.path().to_owned(), r);
+            }
+            let then = case["expected"]["then"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|t| fill_url(&t["request"]))
+                .filter(|u| on_this(u))
+                .map(|u| u.path().to_owned())
+                .collect();
+            let token = (server.uri() == ua)
+                .then(|| ResponseTemplate::new(200).set_body_json(f["tokenResponse"].clone()));
+            Mock::given(wiremock::matchers::any())
+                .respond_with(CaseOrigin {
+                    request: on_this(&request).then(|| request.path().to_owned()),
+                    challenge: case["challenge"]
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .map(|(h, v)| (h.clone(), fill(v)))
+                        .collect(),
+                    documents,
+                    then,
+                    token,
+                })
+                .mount(server)
+                .await;
+        }
+
+        let auth = TokenExchangeAuthenticator::new(OpenIdCredentials::new("id-token"));
+        let client = Client::builder().authenticator(auth).build().unwrap();
+        let expected = &case["expected"];
+        let outcome = client.read(request.clone()).await;
+        match expected["outcome"].as_str().unwrap() {
+            "ok" => assert_eq!(outcome.unwrap().text().unwrap(), "ok", "{name}"),
+            "AuthenticationError" => {
+                let err = outcome.unwrap_err();
+                assert!(err.is_authentication(), "{name}: {err:?}");
+            }
+            "UnauthorizedError" => {
+                let err = outcome.unwrap_err();
+                assert!(err.is_unauthorized(), "{name}: {err:?}");
+            }
+            other => panic!("{name}: unknown outcome {other}"),
+        }
+
+        let mut token_requests = Vec::new();
+        for server in [&a, &b] {
+            for r in requests(server).await {
+                if r.method.as_str() == "POST" {
+                    let form: std::collections::HashMap<String, String> =
+                        url::form_urlencoded::parse(&r.body).into_owned().collect();
+                    let endpoint = format!("{}{}", server.uri(), r.url.path());
+                    token_requests.push((endpoint, form["resource"].clone()));
+                }
+            }
+        }
+        match &expected["tokenRequest"] {
+            Value::Null => assert!(token_requests.is_empty(), "{name}: {token_requests:?}"),
+            t => assert_eq!(
+                token_requests,
+                [(fill(&t["endpoint"]), fill(&t["resource"]))],
+                "{name}"
+            ),
+        }
+        for u in expected["notFetched"].as_array().unwrap() {
+            let u = fill_url(u);
+            // A URL on neither origin cannot be reached at all: the outcome shows it was not.
+            if let Some((server, p)) = locate(&u) {
+                assert!(
+                    requests(server).await.iter().all(|r| r.url.path() != p),
+                    "{name}: {u} was fetched"
+                );
+            }
+        }
+        for t in expected["then"].as_array().into_iter().flatten() {
+            let u = fill_url(&t["request"]);
+            let (server, p) = locate(&u).unwrap();
+            let before = requests(server).await.len();
+            client.read(u.clone()).await.unwrap();
+            let sent: Vec<Option<String>> = requests(server).await[before..]
+                .iter()
+                .filter(|r| r.url.path() == p)
+                .map(|r| header_str(r, "authorization").map(str::to_owned))
+                .collect();
+            let token = t["sendsToken"]
+                .as_bool()
+                .unwrap()
+                .then(|| "Bearer token-1".to_owned());
+            assert_eq!(sent, [token], "{name}: {u}");
+        }
+    }
 }
 
 #[tokio::test]
@@ -1358,9 +1943,10 @@ async fn webhook_verifier_fetches_and_caches_keys() {
 // ---------------------------------------------------------------- redirects
 
 #[tokio::test]
-async fn redirects_reauthorize_per_hop_and_keep_tokens_in_their_realm() {
+async fn redirects_reauthorize_per_hop_and_keep_tokens_in_their_scope() {
     let server = MockServer::start().await;
     let base = server.uri();
+    mount_discovery(&server, "/storage1/", json!([base])).await;
     Mock::given(method("GET"))
         .and(path("/.well-known/lws-configuration"))
         .respond_with(
@@ -1402,11 +1988,9 @@ async fn redirects_reauthorize_per_hop_and_keep_tokens_in_their_realm() {
         .with_priority(1)
         .mount(&server)
         .await;
-    let challenge = format!("Bearer as_uri=\"{base}\", realm=\"{base}/storage1/\"");
+    let origin = base.clone();
     Mock::given(path_prefix_matcher("/storage1/"))
-        .respond_with(
-            ResponseTemplate::new(401).insert_header("www-authenticate", challenge.as_str()),
-        )
+        .respond_with(move |req: &Request| unauthorized(&origin, req.url.path()))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -1430,11 +2014,11 @@ async fn redirects_reauthorize_per_hop_and_keep_tokens_in_their_realm() {
             .unwrap(),
         "a"
     );
-    // Redirect out of the realm (same origin): the token must not follow.
+    // Redirect out of the token's scope (same origin): the token must not follow.
     let out = client.read(url(&server, "/storage1/out")).await.unwrap();
     assert_eq!(out.text().unwrap(), "outside");
     assert_eq!(out.metadata.url, url(&server, "/storage2/x"));
-    // Redirect inside the realm: the token is attached again.
+    // Redirect inside the scope: the token is attached again.
     assert_eq!(
         client
             .read(url(&server, "/storage1/in"))

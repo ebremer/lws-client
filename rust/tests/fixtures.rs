@@ -5,7 +5,10 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
-use lws_client::auth::{AuthorizationServerMetadata, TokenResponse, metadata_url, realm_contains};
+use lws_client::auth::{
+    AuthorizationServerMetadata, ProtectedResourceMetadata, TokenResponse, metadata_url,
+    realm_contains, same_origin, same_resource,
+};
 use lws_client::crypto::{VerifyingKey, jwt};
 use lws_client::headers::structured::{BareItem, MemberValue, Parameters, parse_dictionary};
 use lws_client::headers::{ProblemDetails, parse_link_headers, parse_www_authenticate};
@@ -114,6 +117,18 @@ fn www_authenticate() {
                 "case {}",
                 case["name"]
             );
+            for (accessor, param) in [
+                (c.resource_metadata(), "resource_metadata"),
+                (c.as_uri(), "as_uri"),
+                (c.realm(), "realm"),
+            ] {
+                assert_eq!(
+                    accessor,
+                    e["params"].get(param).and_then(Value::as_str),
+                    "case {}: {param}",
+                    case["name"]
+                );
+            }
         }
     }
 }
@@ -386,6 +401,23 @@ fn storage_description() {
         .flat_map(|c| c.types.clone())
         .collect();
     assert_eq!(caps, strs(&e["capabilityTypes"]));
+    assert_move_capability(sd.move_capability(), &e["moveCapability"], "expected");
+    for case in f["moveCapabilities"].as_array().unwrap() {
+        let mut body = f["body"].clone();
+        match &case["capability"] {
+            Value::Null => body.as_object_mut().unwrap().remove("capability"),
+            c => body
+                .as_object_mut()
+                .unwrap()
+                .insert("capability".into(), c.clone()),
+        };
+        let sd = StorageDescription::from_json(&url, body).unwrap();
+        assert_move_capability(
+            sd.move_capability(),
+            &case["expected"],
+            case["name"].as_str().unwrap(),
+        );
+    }
     let custom = sd
         .service(e["customService"]["type"].as_str().unwrap())
         .unwrap();
@@ -408,6 +440,29 @@ fn storage_description() {
     );
     let no_root = StorageDescription::from_json(&url, f["invalid"]["noRoot"].clone()).unwrap();
     assert!(no_root.storage_root().unwrap_err().is_protocol());
+}
+
+fn assert_move_capability(got: Option<MoveCapability>, expected: &Value, name: &str) {
+    let Some(m) = got else {
+        assert!(expected.is_null(), "{name}: no MoveResource capability");
+        return;
+    };
+    assert_eq!(m.applies_to, strs(&expected["appliesTo"]), "{name}");
+    assert_eq!(
+        m.preserves_identifier,
+        expected["preservesIdentifier"].as_bool(),
+        "{name}"
+    );
+    assert_eq!(
+        m.moves_data_resources(),
+        expected["movesDataResources"].as_bool().unwrap(),
+        "{name}"
+    );
+    assert_eq!(
+        m.moves_containers(),
+        expected["movesContainers"].as_bool().unwrap(),
+        "{name}"
+    );
 }
 
 #[test]
@@ -516,7 +571,11 @@ fn linkset() {
 #[test]
 fn notifications() {
     let f = fixture("responses/notification.json");
-    for (doc, exp) in [("single", "singleExpected"), ("batch", "batchExpected")] {
+    for (doc, exp) in [
+        ("single", "singleExpected"),
+        ("batch", "batchExpected"),
+        ("move", "moveExpected"),
+    ] {
         let n = Notification::from_json(f[doc].clone()).unwrap();
         let e = &f[exp];
         assert_eq!(n.storage, e["storage"].as_str().unwrap());
@@ -533,6 +592,7 @@ fn notifications() {
                 ("isCreate", a.is_create()),
                 ("isUpdate", a.is_update()),
                 ("isDelete", a.is_delete()),
+                ("isMove", a.is_move()),
             ] {
                 if let Some(v) = x.get(flag) {
                     assert_eq!(v.as_bool().unwrap(), f);
@@ -658,6 +718,37 @@ fn oauth() {
         UNIX_EPOCH
             + Duration::from_secs(f["tokenResponseNoExpiry"]["expectedExp"].as_u64().unwrap())
     );
+    let prm = &f["protectedResourceMetadata"];
+    let m = ProtectedResourceMetadata::from_json(prm["body"].clone()).unwrap();
+    assert_eq!(m.resource, prm["expected"]["resource"].as_str().unwrap());
+    assert_eq!(
+        m.authorization_servers,
+        strs(&prm["expected"]["authorizationServers"])
+    );
+    assert_eq!(m.raw, prm["body"], "unknown members are kept");
+    for (name, body) in f["protectedResourceMetadataInvalid"].as_object().unwrap() {
+        if name == "description" {
+            continue;
+        }
+        let err = ProtectedResourceMetadata::from_json(body.clone()).unwrap_err();
+        assert!(err.is_authentication(), "{name}: {err:?}");
+    }
+    for c in f["originChecks"].as_array().unwrap() {
+        let a = Url::parse(c["a"].as_str().unwrap()).unwrap();
+        let b = Url::parse(c["b"].as_str().unwrap()).unwrap();
+        let expected = c["sameOrigin"].as_bool().unwrap();
+        assert_eq!(same_origin(&a, &b), expected, "{a} vs {b}");
+        assert_eq!(same_origin(&b, &a), expected, "{b} vs {a}");
+    }
+    for c in f["resourceChecks"].as_array().unwrap() {
+        let requested = Url::parse(c["requested"].as_str().unwrap()).unwrap();
+        let resource = c["resource"].as_str().unwrap();
+        assert_eq!(
+            same_resource(&requested, resource),
+            c["identical"].as_bool().unwrap(),
+            "{requested} vs {resource}"
+        );
+    }
     for c in f["realmChecks"].as_array().unwrap() {
         let realm = Url::parse(c["realm"].as_str().unwrap()).unwrap();
         let url = Url::parse(c["url"].as_str().unwrap()).unwrap();
@@ -666,6 +757,50 @@ fn oauth() {
             c["contained"].as_bool().unwrap(),
             "{realm} vs {url}"
         );
+    }
+}
+
+#[test]
+fn move_patches_and_responses() {
+    let f = fixture("move.json");
+    let url = |v: &Value| Url::parse(v.as_str().unwrap()).unwrap();
+    for case in f["patches"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let linkset = Linkset::from_json(&case["linkset"]).unwrap();
+        let patch = linkset.move_patch(
+            &url(&case["linksetUrl"]),
+            &url(&case["resource"]),
+            &url(&case["destination"]),
+        );
+        match case["error"].as_str() {
+            Some("ProtocolError") => assert!(patch.unwrap_err().is_protocol(), "{name}"),
+            Some(other) => panic!("{name}: unknown error {other}"),
+            None => assert_eq!(patch.unwrap().to_json(), case["expected"], "{name}"),
+        }
+    }
+    for case in f["responses"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let metadata = ResourceMetadata::from_parts(
+            url(&case["linksetUrl"]),
+            StatusCode::from_u16(case["status"].as_u64().unwrap() as u16).unwrap(),
+            headers_from(&case["headers"]),
+        );
+        let body = match &case["body"] {
+            Value::Null => Vec::new(),
+            b => b.to_string().into_bytes(),
+        };
+        let r = MoveResult::from_response(&url(&case["resource"]), metadata, &body).unwrap();
+        let e = &case["expected"];
+        assert_eq!(r.location.as_str(), e["location"], "{name}");
+        assert_eq!(r.linkset.as_str(), e["linkset"], "{name}");
+        assert_eq!(
+            r.identifier_preserved,
+            e["identifierPreserved"].as_bool().unwrap(),
+            "{name}"
+        );
+        assert_eq!(r.etag.as_deref(), e["etag"].as_str(), "{name}");
+        assert_eq!(r.status.as_u16() as u64, case["status"], "{name}");
+        assert_eq!(r.document.is_some(), !case["body"].is_null(), "{name}");
     }
 }
 

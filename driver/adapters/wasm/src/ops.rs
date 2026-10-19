@@ -13,8 +13,8 @@ use crate::args::{
 };
 use crate::errors::Failure;
 use crate::lws::{
-    Auth, BearerToken, CreateOptions, DeleteOptions, Error, Item, KeyAlgorithm, Link, Options,
-    ReadOptions, SelfSignedKey, SubjectToken, SubscriptionRequest, UpdateOptions,
+    Auth, BearerToken, CreateOptions, DeleteOptions, Error, Item, KeyAlgorithm, Link, MoveOptions,
+    Options, ReadOptions, SelfSignedKey, SubjectToken, SubscriptionRequest, UpdateOptions,
 };
 use crate::results::{self, Object};
 use crate::runtime::{Host, Instance, Runtime};
@@ -39,6 +39,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "read_linkset",
     "update_linkset",
     "patch_linkset",
+    "move",
     "subscribe",
     "list_subscriptions",
     "get_subscription",
@@ -283,6 +284,16 @@ impl State {
                 let options = update_options(optional_str(args, "ifMatch")?, None);
                 let u = self.call(|c, s, me| c.call_patch_linkset(s, me, url, &patch, &options))?;
                 Ok(results::update(&u))
+            }
+            "move" => {
+                let url = required_str(args, "url")?;
+                let destination = required_str(args, "destination")?;
+                let options = MoveOptions {
+                    if_match: optional_str(args, "ifMatch")?.map(str::to_owned),
+                    headers: Vec::new(),
+                };
+                let m = self.call(|c, s, me| c.call_move(s, me, url, destination, &options))?;
+                Ok(results::moved(&m))
             }
             "subscribe" => {
                 let service = required_str(args, "serviceUrl")?;

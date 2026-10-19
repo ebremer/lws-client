@@ -125,7 +125,8 @@ pub enum Error {
     /// Any other non-success status (5xx: "unknown error").
     #[error("HTTP error: {0}")]
     Http(Box<HttpError>),
-    /// Token exchange, realm check or authorization-server metadata failure.
+    /// Token exchange, discovery check (protected resource metadata, storage root), realm check
+    /// or authorization-server metadata failure.
     #[error("authentication failed: {message}")]
     Authentication {
         /// Human-readable description.

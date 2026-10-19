@@ -43,6 +43,7 @@ pub(crate) const OPERATIONS: &[&str] = &[
     "read_linkset",
     "update_linkset",
     "patch_linkset",
+    "move",
     "subscribe",
     "list_subscriptions",
     "get_subscription",
@@ -185,6 +186,15 @@ impl State {
                     request = request.if_match(etag);
                 }
                 Ok(results::update(&request.await?))
+            }
+            "move" => {
+                let url = required_str(args, "url")?;
+                let destination = required_str(args, "destination")?;
+                let mut request = c.move_resource(url, destination);
+                if let Some(etag) = optional_str(args, "ifMatch")? {
+                    request = request.if_match(etag);
+                }
+                Ok(results::moved(&request.await?))
             }
             "subscribe" => {
                 let service = required_str(args, "serviceUrl")?;

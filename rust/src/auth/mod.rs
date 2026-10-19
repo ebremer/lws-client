@@ -4,9 +4,10 @@
 //! * [`Authenticator`] — the pluggable hook the [`Client`](crate::Client) calls before each
 //!   request and on `401` responses.
 //! * [`BearerTokenAuthenticator`] — sends a known access token.
-//! * [`TokenExchangeAuthenticator`] — the LWS flow: `401` challenge (`as_uri`, `realm`) →
-//!   authorization server metadata → OAuth 2.0 token exchange with a subject token from a
-//!   [`CredentialProvider`] → retry.
+//! * [`TokenExchangeAuthenticator`] — the LWS flow: `401` challenge (`resource_metadata`) →
+//!   protected resource metadata (RFC 9728) and storage description, checked against the URL
+//!   requested → authorization server metadata → OAuth 2.0 token exchange with a subject token
+//!   from a [`CredentialProvider`] → retry.
 //! * Credential providers for the LWS authentication suites: [`OpenIdCredentials`],
 //!   [`SamlCredentials`] and (feature `crypto`) [`SelfSignedCredentials`].
 
@@ -30,8 +31,9 @@ pub use credentials::{
     encode_saml_assertion,
 };
 pub use exchange::{
-    AccessToken, AuthorizationServerMetadata, TokenExchangeAuthenticator,
-    TokenExchangeAuthenticatorBuilder, TokenResponse, metadata_url, realm_contains,
+    AccessToken, AuthorizationServerMetadata, ProtectedResourceMetadata,
+    TokenExchangeAuthenticator, TokenExchangeAuthenticatorBuilder, TokenResponse, metadata_url,
+    realm_contains, same_origin, same_resource,
 };
 
 /// A boxed, sendable future (used by the object-safe async traits in this module).
@@ -86,12 +88,19 @@ pub trait Authenticator: Send + Sync {
     fn authorize<'a>(&'a self, request: &'a mut RequestParts) -> BoxFuture<'a, Result<()>>;
 
     /// Called when a request returned `401`. Return `true` to retry the request once (after
-    /// [`authorize`](Self::authorize) is called again), `false` to surface the `401`.
+    /// [`authorize_retry`](Self::authorize_retry)), `false` to surface the `401`.
     fn handle_challenge<'a>(
         &'a self,
         request: &'a RequestParts,
         response: &'a ResponseParts,
     ) -> BoxFuture<'a, Result<bool>>;
+
+    /// Called before the retry of a request whose `401` [`handle_challenge`](Self::handle_challenge)
+    /// answered with `true` (its `Authorization` removed, unless the caller set it). The default is
+    /// [`authorize`](Self::authorize).
+    fn authorize_retry<'a>(&'a self, request: &'a mut RequestParts) -> BoxFuture<'a, Result<()>> {
+        self.authorize(request)
+    }
 }
 
 type TokenSupplier = Arc<dyn Fn() -> BoxFuture<'static, Result<String>> + Send + Sync>;

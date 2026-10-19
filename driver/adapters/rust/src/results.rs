@@ -4,7 +4,7 @@
 
 use base64::Engine as _;
 use lws_client::{
-    ContainedResource, ContainerPage, CreateResult, ResourceMetadata, SearchPage,
+    ContainedResource, ContainerPage, CreateResult, MoveResult, ResourceMetadata, SearchPage,
     StorageDescription, Subscription, UpdateResult, Url,
 };
 use serde_json::{Map, Value, json};
@@ -155,6 +155,18 @@ pub(crate) fn update(u: &UpdateResult) -> Value {
         .into()
 }
 
+/// Moved (`MoveResult`).
+pub(crate) fn moved(m: &MoveResult) -> Value {
+    Object::new()
+        .set("status", m.status.as_u16())
+        .set("location", url(&m.location))
+        .set("linkset", url(&m.linkset))
+        .set("identifierPreserved", m.identifier_preserved)
+        .opt("etag", m.etag.clone())
+        .set("metadata", metadata(&m.metadata))
+        .into()
+}
+
 /// Created (`CreateResult`).
 pub(crate) fn created(c: &CreateResult) -> Value {
     json!({"location": url(&c.location), "metadata": metadata(&c.metadata)})
@@ -189,6 +201,11 @@ pub(crate) fn storage(s: &StorageDescription) -> Value {
                 .into()
         })
         .collect();
+    let move_capability = s.move_capability().map(|m| {
+        Object::new()
+            .set("appliesTo", m.applies_to)
+            .opt("preservesIdentifier", m.preserves_identifier)
+    });
     Object::new()
         .set("id", url(&s.id))
         .set("types", s.types.clone())
@@ -196,6 +213,7 @@ pub(crate) fn storage(s: &StorageDescription) -> Value {
         .opt("storageRoot", s.storage_root().ok().map(url))
         .set("services", services)
         .set("verificationMethods", verification_methods)
+        .opt("moveCapability", move_capability)
         .set("raw", s.raw.clone())
         .into()
 }

@@ -6,7 +6,7 @@ use base64::Engine as _;
 use serde_json::{Map, Value, json};
 
 use crate::lws::{
-    Created, Item, Metadata, Page, StorageDescription, Subscription, TypeIndexPage, Updated,
+    Created, Item, Metadata, Moved, Page, StorageDescription, Subscription, TypeIndexPage, Updated,
 };
 
 /// A JSON object under construction that leaves absent members out.
@@ -149,6 +149,18 @@ pub(crate) fn update(u: &Updated) -> Value {
         .into()
 }
 
+/// Moved (`MoveResult`).
+pub(crate) fn moved(m: &Moved) -> Value {
+    Object::new()
+        .set("status", m.status)
+        .set("location", m.location.as_str())
+        .set("linkset", m.linkset.as_str())
+        .set("identifierPreserved", m.identifier_preserved)
+        .opt("etag", m.etag.clone())
+        .set("metadata", metadata(&m.metadata))
+        .into()
+}
+
 /// Created (`CreateResult`).
 pub(crate) fn created(c: &Created) -> Value {
     json!({"location": c.location, "metadata": metadata(&c.metadata)})
@@ -179,12 +191,18 @@ pub(crate) fn storage(s: &StorageDescription) -> Value {
                 .into()
         })
         .collect();
+    let move_capability = s.move_capability.as_ref().map(|m| {
+        Object::new()
+            .set("appliesTo", m.applies_to.clone())
+            .opt("preservesIdentifier", m.preserves_identifier)
+    });
     Object::new()
         .set("id", s.id.as_str())
         .set("types", s.types.clone())
         .opt("storageRoot", s.storage_root.clone())
         .set("services", services)
         .set("verificationMethods", verification_methods)
+        .opt("moveCapability", move_capability)
         .set("raw", json_text(&s.raw))
         .into()
 }
