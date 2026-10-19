@@ -88,7 +88,7 @@ func NewClient(opts ...Option) *Client {
 		} else if len(via) >= 10 {
 			return errors.New("lws: stopped after 10 redirects")
 		}
-		// Never forward credentials outside the realm they were issued for:
+		// Never forward credentials outside the scope they were issued for:
 		// drop the copied Authorization header and let the authenticator
 		// decide again for the new URL.
 		if c.auth != nil {
@@ -247,6 +247,9 @@ func (c *Client) newRequest(ctx context.Context, method, rawURL string, body io.
 func (c *Client) send(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
 	if c.auth != nil {
+		// HandleChallenge may leave the credential for the retry there.
+		ctx = withRetryGrant(ctx)
+		req = req.WithContext(ctx)
 		if req.Body != nil && req.Body != http.NoBody && req.GetBody == nil {
 			// A streaming body cannot be replayed after a 401: establish
 			// credentials first with a HEAD on the same URL.

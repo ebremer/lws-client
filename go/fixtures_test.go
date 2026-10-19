@@ -10,11 +10,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -137,6 +139,10 @@ func TestFixtureWWWAuthenticate(t *testing.T) {
 					if g.Params[k] != v {
 						t.Errorf("challenge %d param %s = %q, want %q", i, k, g.Params[k], v)
 					}
+				}
+				if g.ResourceMetadata() != w.Params["resource_metadata"] || g.AsURI() != w.Params["as_uri"] ||
+					g.Realm() != w.Params["realm"] || g.Error() != w.Params["error"] {
+					t.Errorf("challenge %d accessors = %q %q %q %q", i, g.ResourceMetadata(), g.AsURI(), g.Realm(), g.Error())
 				}
 			}
 		})
@@ -628,6 +634,11 @@ type responseFixture struct {
 func TestFixtureStorageDescription(t *testing.T) {
 	var f struct {
 		responseFixture
+		MoveCapabilities []struct {
+			Name       string
+			Capability json.RawMessage
+			Expected   json.RawMessage
+		}
 		Invalid struct {
 			NotStorage json.RawMessage
 			NoRoot     json.RawMessage
@@ -646,6 +657,7 @@ func TestFixtureStorageDescription(t *testing.T) {
 		AccessGrantService            string
 		ServiceCount                  int
 		CapabilityTypes               []string
+		MoveCapability                json.RawMessage
 		CustomService                 struct{ Type, ID, ServiceEndpoint string }
 	}
 	_ = json.Unmarshal(f.Expected, &want)
@@ -691,6 +703,19 @@ func TestFixtureStorageDescription(t *testing.T) {
 	if c, ok := sd.Capability("https://feature.example/PatchSupport"); !ok || c.Property("format", &format) != nil || len(format) != 2 {
 		t.Errorf("capability property: %v", format)
 	}
+	checkMoveCapability(t, "storage description", sd, want.MoveCapability)
+	for _, mc := range f.MoveCapabilities {
+		doc := map[string]any{"id": "https://storage.example/", "type": "Storage"}
+		if string(mc.Capability) != "null" {
+			doc["capability"] = mc.Capability
+		}
+		data, _ := json.Marshal(doc)
+		sd, err := ParseStorageDescription(data, "")
+		if err != nil {
+			t.Fatalf("%s: %v", mc.Name, err)
+		}
+		checkMoveCapability(t, mc.Name, sd, mc.Expected)
+	}
 	if _, err := ParseStorageDescription(f.Invalid.NotStorage, ""); err == nil {
 		t.Error("non-Storage document accepted")
 	} else {
@@ -705,6 +730,32 @@ func TestFixtureStorageDescription(t *testing.T) {
 	}
 	if _, err := noRoot.StorageRoot(); err == nil {
 		t.Error("missing StorageRoot not reported")
+	}
+}
+
+// checkMoveCapability compares sd.MoveCapability() with a fixture's
+// expectation (null: none).
+func checkMoveCapability(t *testing.T, name string, sd *StorageDescription, expected json.RawMessage) {
+	t.Helper()
+	m, ok := sd.MoveCapability()
+	if string(expected) == "null" {
+		if ok {
+			t.Errorf("%s: move capability %+v, want none", name, m)
+		}
+		return
+	}
+	var want struct {
+		AppliesTo                           []string
+		PreservesIdentifier                 *bool
+		MovesDataResources, MovesContainers bool
+	}
+	if err := json.Unmarshal(expected, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !ok || !reflect.DeepEqual([]string(m.AppliesTo), want.AppliesTo) || !reflect.DeepEqual(m.PreservesIdentifier, want.PreservesIdentifier) ||
+		m.MovesDataResources() != want.MovesDataResources || m.MovesContainers() != want.MovesContainers {
+		t.Errorf("%s: move capability %+v (found %v, data resources %v, containers %v), want %s",
+			name, m, ok, m.MovesDataResources(), m.MovesContainers(), expected)
 	}
 }
 
@@ -832,15 +883,16 @@ func TestFixtureLinkset(t *testing.T) {
 
 func TestFixtureNotification(t *testing.T) {
 	var f struct {
-		Single, Batch, Invalid        json.RawMessage
-		SingleExpected, BatchExpected json.RawMessage
+		Single, Batch, Move, Invalid                json.RawMessage
+		SingleExpected, BatchExpected, MoveExpected json.RawMessage
 	}
 	fixture(t, "responses/notification.json", &f)
 	type act struct {
 		ID, ObjectID, Target, Origin, Actor, Published string
 		Types, ObjectTypes                             []string
-		IsCreate, IsUpdate, IsDelete                   bool
+		IsCreate, IsUpdate, IsDelete, IsMove           *bool
 	}
+	is := func(want *bool, got bool) bool { return want == nil || *want == got }
 	check := func(data, exp json.RawMessage) {
 		var want struct {
 			Storage    string
@@ -866,13 +918,14 @@ func TestFixtureNotification(t *testing.T) {
 			if w.Published != "" && g.Published.UTC().Format(time.RFC3339) != w.Published {
 				t.Errorf("published %v", g.Published)
 			}
-			if (w.IsCreate && !g.IsCreate()) || (w.IsUpdate && !g.IsUpdate()) || (w.IsDelete && !g.IsDelete()) {
+			if !is(w.IsCreate, g.IsCreate()) || !is(w.IsUpdate, g.IsUpdate()) || !is(w.IsDelete, g.IsDelete()) || !is(w.IsMove, g.IsMove()) {
 				t.Errorf("activity predicates wrong for %+v", g)
 			}
 		}
 	}
 	check(f.Single, f.SingleExpected)
 	check(f.Batch, f.BatchExpected)
+	check(f.Move, f.MoveExpected)
 	if _, err := ParseNotification(f.Invalid); err == nil {
 		t.Error("invalid notification accepted")
 	}
@@ -997,12 +1050,52 @@ func TestFixtureOAuth(t *testing.T) {
 			Status int
 			Body   json.RawMessage
 		}
+		ProtectedResourceMetadata struct {
+			Body     json.RawMessage
+			Expected struct {
+				Resource             string
+				AuthorizationServers []string
+			}
+		}
+		ProtectedResourceMetadataInvalid map[string]json.RawMessage
+		OriginChecks                     []struct {
+			A, B       string
+			SameOrigin bool
+		}
+		ResourceChecks []struct {
+			Requested, Resource string
+			Identical           bool
+		}
 		RealmChecks []struct {
 			Realm, URL string
 			Contained  bool
 		}
 	}
 	fixture(t, "responses/oauth.json", &f)
+	prm, err := ParseProtectedResourceMetadata(f.ProtectedResourceMetadata.Body)
+	if want := f.ProtectedResourceMetadata.Expected; err != nil || prm.Resource != want.Resource ||
+		!reflect.DeepEqual(prm.AuthorizationServers, want.AuthorizationServers) || !jsonEqual(t, prm.Raw, f.ProtectedResourceMetadata.Body) {
+		t.Errorf("protected resource metadata = %+v %v", prm, err)
+	}
+	for name, body := range f.ProtectedResourceMetadataInvalid {
+		if name == "description" {
+			continue
+		}
+		var ae *AuthenticationError
+		if _, err := ParseProtectedResourceMetadata(body); !errors.As(err, &ae) {
+			t.Errorf("protected resource metadata %s: want AuthenticationError, got %v", name, err)
+		}
+	}
+	for _, o := range f.OriginChecks {
+		if got := SameOrigin(o.A, o.B); got != o.SameOrigin {
+			t.Errorf("SameOrigin(%s, %s) = %v", o.A, o.B, got)
+		}
+	}
+	for _, r := range f.ResourceChecks {
+		if got := SameResource(r.Requested, r.Resource); got != r.Identical {
+			t.Errorf("SameResource(%s, %s) = %v", r.Requested, r.Resource, got)
+		}
+	}
 	for _, m := range f.MetadataURLs {
 		got, err := AuthorizationServerMetadataURL(m.Issuer)
 		if err != nil || got != m.URL {
@@ -1040,6 +1133,266 @@ func TestFixtureOAuth(t *testing.T) {
 	var ae *AuthenticationError
 	if !errors.As(err, &ae) || ae.Code != "invalid_request" || ae.Description != "resource is not a known storage" || ae.StatusCode != 400 {
 		t.Errorf("token error = %#v", err)
+	}
+}
+
+// TestFixtureDiscovery runs every case of discovery.json through a
+// TokenExchangeAuthenticator with default options, against a loopback server
+// that is {A} as http://127.0.0.1:<port> and {B} as http://localhost:<port>.
+func TestFixtureDiscovery(t *testing.T) {
+	var f struct {
+		TokenResponse json.RawMessage
+		Cases         []struct {
+			Name      string
+			Request   string
+			Challenge map[string]string
+			Documents map[string]struct {
+				Status  int
+				Headers map[string]json.RawMessage
+				Body    json.RawMessage
+			}
+			Expected struct {
+				Outcome      string
+				TokenRequest *struct{ Endpoint, Resource string }
+				NotFetched   []string
+				Then         []struct {
+					Request    string
+					SendsToken bool
+				}
+			}
+		}
+	}
+	fixture(t, "discovery.json", &f)
+	for _, c := range f.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			var (
+				mu            sync.Mutex
+				requested     []string          // every URL requested, in order
+				authorization map[string]string // URL -> the Authorization it was last requested with
+				tokenRequests [][2]string       // endpoint, resource
+				sub           func(string) string
+				documents     map[string]cannedResponse
+				later         = map[string]bool{} // the URLs of expected.then
+			)
+			authorization = map[string]string{}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				u := "http://" + r.Host + r.URL.RequestURI()
+				mu.Lock()
+				requested = append(requested, u)
+				authorization[u] = r.Header.Get("Authorization")
+				mu.Unlock()
+				doc, isDocument := documents[u]
+				switch {
+				case r.Method == http.MethodPost && u == sub("{A}/as/token"):
+					_ = r.ParseForm()
+					mu.Lock()
+					tokenRequests = append(tokenRequests, [2]string{u, r.PostForm.Get("resource")})
+					mu.Unlock()
+					w.Header().Set("Content-Type", MediaJSON)
+					_, _ = w.Write(f.TokenResponse)
+				case r.Method == http.MethodGet && isDocument:
+					for k, vs := range doc.header {
+						w.Header()[k] = vs
+					}
+					w.WriteHeader(doc.status)
+					_, _ = w.Write(doc.body)
+				case u == sub(c.Request) && r.Header.Get("Authorization") != "Bearer token-1":
+					for k, v := range c.Challenge {
+						w.Header().Set(k, sub(v))
+					}
+					w.WriteHeader(http.StatusUnauthorized)
+				case r.Method == http.MethodGet && (u == sub(c.Request) || later[u]):
+					w.Header().Set("Content-Type", "text/plain")
+					_, _ = w.Write([]byte("ok"))
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer srv.Close()
+			sub = strings.NewReplacer("{A}", srv.URL, "{B}", strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)).Replace
+			documents = map[string]cannedResponse{}
+			for u, d := range c.Documents {
+				headers := map[string]json.RawMessage{}
+				for k, v := range d.Headers {
+					headers[k] = json.RawMessage(sub(string(v)))
+				}
+				var body []byte
+				if string(d.Body) != "null" {
+					body = []byte(sub(string(d.Body)))
+				}
+				documents[sub(u)] = canned(t, d.Status, headers, body)
+			}
+			for _, then := range c.Expected.Then {
+				later[sub(then.Request)] = true
+			}
+
+			client := NewClient(WithAuthenticator(NewTokenExchangeAuthenticator(NewOpenIDCredentials("id-token"), nil)))
+			res, err := client.Read(context.Background(), sub(c.Request))
+			var ae *AuthenticationError
+			switch c.Expected.Outcome {
+			case "ok":
+				if err != nil || res.Text() != "ok" {
+					t.Fatalf("want the retried request to succeed, got %v", err)
+				}
+			case "AuthenticationError":
+				if !errors.As(err, &ae) {
+					t.Fatalf("want AuthenticationError, got %v", err)
+				}
+			case "UnauthorizedError":
+				if !errors.Is(err, ErrUnauthorized) {
+					t.Fatalf("want UnauthorizedError, got %v", err)
+				}
+			default:
+				t.Fatalf("unknown outcome %s", c.Expected.Outcome)
+			}
+			mu.Lock()
+			if want := c.Expected.TokenRequest; want == nil && len(tokenRequests) != 0 {
+				t.Errorf("token requests %v, want none", tokenRequests)
+			} else if want != nil && (len(tokenRequests) != 1 || tokenRequests[0] != [2]string{sub(want.Endpoint), sub(want.Resource)}) {
+				t.Errorf("token requests %v, want one to %s for %s", tokenRequests, sub(want.Endpoint), sub(want.Resource))
+			}
+			for _, nf := range c.Expected.NotFetched {
+				if contains(requested, sub(nf)) {
+					t.Errorf("%s was requested", sub(nf))
+				}
+			}
+			mu.Unlock()
+			for _, then := range c.Expected.Then {
+				u := sub(then.Request)
+				if _, err := client.Read(context.Background(), u); err != nil {
+					t.Fatalf("then %s: %v", u, err)
+				}
+				mu.Lock()
+				if sent := authorization[u] == "Bearer token-1"; sent != then.SendsToken {
+					t.Errorf("then %s: token sent %v, want %v", u, sent, then.SendsToken)
+				}
+				mu.Unlock()
+			}
+		})
+	}
+}
+
+// roundTripFunc is an http.RoundTripper made of a function.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func respond(req *http.Request, status int, header http.Header, body []byte) *http.Response {
+	return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(bytes.NewReader(body)), Request: req}
+}
+
+// moveTransport serves a move of resource: its HEAD links to its linkset at
+// linksetURL, whose GET is linkset (ETag "ls-0") and whose PATCH is answered
+// with patched. It records every request and the PATCH's body.
+type moveTransport struct {
+	resource, linksetURL string
+	linkset              []byte
+	patched              cannedResponse
+	requests             []*http.Request
+	patch                []byte
+}
+
+func (m *moveTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	m.requests = append(m.requests, req)
+	switch u := req.URL.String(); {
+	case req.Method == http.MethodHead && u == m.resource:
+		return respond(req, 200, http.Header{"Link": {"<" + m.linksetURL + `>; rel="linkset"`}}, nil), nil
+	case req.Method == http.MethodGet && u == m.linksetURL:
+		return respond(req, 200, http.Header{"Content-Type": {MediaLinksetJSON}, "Etag": {`"ls-0"`}}, m.linkset), nil
+	case req.Method == http.MethodPatch && u == m.linksetURL:
+		m.patch, _ = io.ReadAll(req.Body)
+		return respond(req, m.patched.status, m.patched.header.Clone(), m.patched.body), nil
+	}
+	return respond(req, 404, http.Header{}, nil), nil
+}
+
+func TestFixtureMove(t *testing.T) {
+	var f struct {
+		Patches []struct {
+			Name, Resource, LinksetURL, Destination, Error string
+			Linkset, Expected                              json.RawMessage
+		}
+		Responses []struct {
+			Name, Resource, LinksetURL string
+			Status                     int
+			Headers                    map[string]json.RawMessage
+			Body                       json.RawMessage
+			Expected                   struct {
+				Location, Linkset   string
+				IdentifierPreserved bool
+				Etag                *string
+			}
+		}
+	}
+	fixture(t, "move.json", &f)
+	for _, p := range f.Patches {
+		t.Run(p.Name, func(t *testing.T) {
+			ls, err := ParseLinkset(p.Linkset)
+			if err != nil {
+				t.Fatal(err)
+			}
+			patch, err := MovePatch(ls, p.LinksetURL, p.Resource, p.Destination)
+			// Client.Move reads the linkset, then sends that patch on condition of
+			// its ETag, or nothing at all.
+			mt := &moveTransport{resource: p.Resource, linksetURL: p.LinksetURL, linkset: p.Linkset, patched: cannedResponse{status: 204, header: http.Header{}}}
+			_, moveErr := NewClient(WithHTTPClient(&http.Client{Transport: mt})).Move(context.Background(), p.Resource, p.Destination)
+			if p.Error != "" {
+				var pe, pe2 *ProtocolError
+				if !errors.As(err, &pe) || !errors.As(moveErr, &pe2) {
+					t.Fatalf("want ProtocolError, got %v and %v", err, moveErr)
+				}
+				if mt.patch != nil {
+					t.Errorf("a patch was sent: %s", mt.patch)
+				}
+				return
+			}
+			if err != nil || !jsonEqual(t, patch, p.Expected) {
+				out, _ := json.Marshal(patch)
+				t.Fatalf("patch = %s %v", out, err)
+			}
+			if moveErr != nil || !jsonEqual(t, mt.patch, p.Expected) {
+				t.Fatalf("sent patch %s: %v", mt.patch, moveErr)
+			}
+			last := mt.requests[len(mt.requests)-1]
+			if last.Header.Get("If-Match") != `"ls-0"` || last.Header.Get("Content-Type") != MediaJSONPatch {
+				t.Errorf("patch headers %v", last.Header)
+			}
+		})
+	}
+	for _, r := range f.Responses {
+		t.Run(r.Name, func(t *testing.T) {
+			linkset, _ := json.Marshal(map[string]any{"linkset": []any{map[string]any{
+				"anchor": r.Resource, "up": []any{map[string]string{"href": "https://storage.example/old/"}},
+			}}})
+			var body []byte
+			if string(r.Body) != "null" {
+				body = r.Body
+			}
+			mt := &moveTransport{resource: r.Resource, linksetURL: r.LinksetURL, linkset: linkset, patched: canned(t, r.Status, r.Headers, body)}
+			res, err := NewClient(WithHTTPClient(&http.Client{Transport: mt})).Move(context.Background(), r.Resource, "https://storage.example/new/", IfMatch(`"mine"`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := r.Expected
+			etag := ""
+			if want.Etag != nil {
+				etag = *want.Etag
+			}
+			if res.StatusCode != r.Status || res.Location != want.Location || res.Linkset != want.Linkset ||
+				res.IdentifierPreserved != want.IdentifierPreserved || res.ETag != etag || (res.Document != nil) != (body != nil) {
+				t.Errorf("move result %+v, want %+v", res, want)
+			}
+			if im := mt.requests[len(mt.requests)-1].Header.Get("If-Match"); im != `"mine"` {
+				t.Errorf("If-Match = %q, want the IfMatch option", im)
+			}
+		})
+	}
+	// A storage that refuses the move answers 409.
+	mt := &moveTransport{resource: "https://storage.example/a", linksetURL: "https://storage.example/a.meta",
+		linkset: []byte(`{"linkset":[{"anchor":"https://storage.example/a","up":[{"href":"https://storage.example/"}]}]}`),
+		patched: cannedResponse{status: 409, header: http.Header{}}}
+	if _, err := NewClient(WithHTTPClient(&http.Client{Transport: mt})).Move(context.Background(), mt.resource, "https://storage.example/a/b/"); !errors.Is(err, ErrConflict) {
+		t.Errorf("refused move: %v", err)
 	}
 }
 

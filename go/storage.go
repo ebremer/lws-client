@@ -251,6 +251,47 @@ func (sd *StorageDescription) Capability(typ string) (Capability, bool) {
 	return Capability{}, false
 }
 
+// MoveCapability is a storage's MoveResource capability (lws10-core "Storage
+// Description Capabilities"): the storage moves a resource into another
+// container when its up link changes (see [Client.Move]).
+type MoveCapability struct {
+	// AppliesTo lists the kinds of resource the storage moves, as received;
+	// ["DataResource"] when the capability does not say, which lws10-core
+	// makes mean data resources only.
+	AppliesTo TypeList
+	// PreservesIdentifier is nil when the capability does not say; then a
+	// client must not assume that a moved resource keeps its URL.
+	PreservesIdentifier *bool
+	Raw                 map[string]json.RawMessage
+}
+
+// MovesDataResources reports whether the storage moves data resources.
+func (m MoveCapability) MovesDataResources() bool { return m.AppliesTo.Has(TypeDataResource) }
+
+// MovesContainers reports whether the storage moves containers (with
+// everything in them).
+func (m MoveCapability) MovesContainers() bool { return m.AppliesTo.Has(TypeContainer) }
+
+// MoveCapability returns the storage's MoveResource capability. Without one,
+// the up link of a resource is not modifiable, and a client must not assume
+// it is.
+func (sd *StorageDescription) MoveCapability() (MoveCapability, bool) {
+	c, ok := sd.Capability(CapabilityMoveResource)
+	if !ok {
+		return MoveCapability{}, false
+	}
+	m := MoveCapability{AppliesTo: TypeList{"DataResource"}, Raw: c.Raw}
+	var appliesTo TypeList
+	if json.Unmarshal(c.Raw["appliesTo"], &appliesTo) == nil && appliesTo != nil {
+		m.AppliesTo = appliesTo
+	}
+	var preserves *bool
+	if json.Unmarshal(c.Raw["preservesIdentifier"], &preserves) == nil {
+		m.PreservesIdentifier = preserves
+	}
+	return m, true
+}
+
 // NotificationService returns the NotificationService, if advertised.
 func (sd *StorageDescription) NotificationService() (Service, bool) {
 	return sd.Service(ServiceNotification)
@@ -321,12 +362,16 @@ func (sd *StorageDescription) idMatches(candidate, want string) bool {
 	return absCandidate == absWant
 }
 
+// storageDescriptionAccept is the Accept header of a storage description
+// request.
+const storageDescriptionAccept = MediaLWSCID + ", " + MediaLDJSON + ";q=0.9, " + MediaJSON + ";q=0.8"
+
 // GetStorageDescription retrieves and parses the storage description at
 // storageURL.
 func (c *Client) GetStorageDescription(ctx context.Context, storageURL string, opts ...CallOption) (*StorageDescription, error) {
 	o := applyCallOptions(opts)
 	if o.accept == "" {
-		o.accept = MediaLWSCID + ", " + MediaLDJSON + ";q=0.9, " + MediaJSON + ";q=0.8"
+		o.accept = storageDescriptionAccept
 	}
 	resp, body, err := c.execute(ctx, http.MethodGet, storageURL, nil, "", o)
 	if err != nil {

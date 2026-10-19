@@ -16,10 +16,16 @@ type Challenge struct {
 	Token68 string
 }
 
-// AsURI returns the LWS "as_uri" parameter: the authorization server issuer.
+// ResourceMetadata returns the "resource_metadata" parameter (RFC 9728): the
+// URL of the requested resource's protected resource metadata.
+func (c Challenge) ResourceMetadata() string { return c.Params["resource_metadata"] }
+
+// AsURI returns the "as_uri" parameter of the LWS challenge of the drafts
+// before 19 October 2026: the authorization server issuer.
 func (c Challenge) AsURI() string { return c.Params["as_uri"] }
 
-// Realm returns the "realm" parameter: the scope of protection.
+// Realm returns the "realm" parameter: the scope of protection (the storage,
+// in the LWS challenge of the drafts before 19 October 2026).
 func (c Challenge) Realm() string { return c.Params["realm"] }
 
 // Error returns the OAuth "error" parameter (e.g. "invalid_token").

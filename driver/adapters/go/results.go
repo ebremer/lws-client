@@ -135,6 +135,22 @@ func updateResult(u *lws.UpdateResult) updateJSON {
 	return updateJSON{Status: u.StatusCode, ETag: u.ETag, Metadata: metadataResult(&u.Metadata)}
 }
 
+type movedJSON struct {
+	Status              int          `json:"status"`
+	Location            string       `json:"location"`
+	Linkset             string       `json:"linkset"`
+	IdentifierPreserved bool         `json:"identifierPreserved"`
+	ETag                string       `json:"etag,omitempty"`
+	Metadata            metadataJSON `json:"metadata"`
+}
+
+func movedResult(m *lws.MoveResult) movedJSON {
+	return movedJSON{
+		Status: m.StatusCode, Location: m.Location, Linkset: m.Linkset, IdentifierPreserved: m.IdentifierPreserved,
+		ETag: m.ETag, Metadata: metadataResult(&m.Metadata),
+	}
+}
+
 type createdJSON struct {
 	Location string       `json:"location"`
 	Metadata metadataJSON `json:"metadata"`
@@ -157,12 +173,18 @@ type verificationMethodJSON struct {
 	Controller string `json:"controller,omitempty"`
 }
 
+type moveCapabilityJSON struct {
+	AppliesTo           []string `json:"appliesTo"`
+	PreservesIdentifier *bool    `json:"preservesIdentifier,omitempty"`
+}
+
 type storageJSON struct {
 	ID                  string                   `json:"id"`
 	Types               []string                 `json:"types"`
 	StorageRoot         string                   `json:"storageRoot,omitempty"`
 	Services            []serviceJSON            `json:"services"`
 	VerificationMethods []verificationMethodJSON `json:"verificationMethods"`
+	MoveCapability      *moveCapabilityJSON      `json:"moveCapability,omitempty"`
 	Raw                 json.RawMessage          `json:"raw,omitempty"`
 }
 
@@ -185,6 +207,10 @@ func storageResult(s *lws.StorageDescription) storageJSON {
 	}
 	for _, vm := range s.VerificationMethods {
 		r.VerificationMethods = append(r.VerificationMethods, verificationMethodJSON{ID: vm.ID, Type: vm.Type, Controller: vm.Controller})
+	}
+	// moveCapability is omitted when the storage describes no MoveResource capability.
+	if m, ok := s.MoveCapability(); ok {
+		r.MoveCapability = &moveCapabilityJSON{AppliesTo: list([]string(m.AppliesTo)), PreservesIdentifier: m.PreservesIdentifier}
 	}
 	return r
 }

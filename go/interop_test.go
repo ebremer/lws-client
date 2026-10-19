@@ -58,6 +58,10 @@ func TestInterop(t *testing.T) {
 	if !(ok1 && ok2 && ok3 && ok4 && ok5) {
 		t.Fatalf("services missing: %+v", sd.Services)
 	}
+	move, ok := sd.MoveCapability()
+	if !ok || !move.MovesDataResources() || !move.MovesContainers() || move.PreservesIdentifier == nil || *move.PreservesIdentifier {
+		t.Fatalf("move capability %+v %v", move, ok)
+	}
 
 	// 2. Container.
 	step("create container")
@@ -331,7 +335,49 @@ func TestInterop(t *testing.T) {
 		t.Fatalf("HTTPS agent credentials: %v", err)
 	}
 
-	// 13. Delete.
+	// 13. Move.
+	step("move")
+	archive, err := c.CreateContainer(ctx, C, Slug("archive"))
+	if err != nil {
+		t.Fatalf("create archive: %v", err)
+	}
+	D := archive.Location
+	mc, err := c.Create(ctx, C, strings.NewReader("Move me"), "text/plain", Slug("move-me.txt"))
+	if err != nil {
+		t.Fatalf("create move-me: %v", err)
+	}
+	M := mc.Location
+	moved, err := c.Move(ctx, M, D)
+	if err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	if moved.Location != D+"move-me.txt" || moved.IdentifierPreserved || moved.Linkset != moved.Location+".meta" {
+		t.Fatalf("move result %+v", moved)
+	}
+	if r, err := c.Read(ctx, moved.Location); err != nil || r.Text() != "Move me" {
+		t.Fatalf("read moved: %v", err)
+	}
+	inArchive, inC := false, false
+	for item, err := range c.ListContainer(ctx, D) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		inArchive = inArchive || item.ID == moved.Location
+	}
+	for item, err := range c.ListContainer(ctx, C) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		inC = inC || item.ID == M
+	}
+	if !inArchive || inC {
+		t.Fatalf("after the move: in %s %v, in %s %v", D, inArchive, C, inC)
+	}
+	if _, err := c.Move(ctx, C, D); !errors.Is(err, ErrConflict) {
+		t.Fatalf("container into its own descendant: %v", err)
+	}
+
+	// 14. Delete.
 	step("delete")
 	if err := c.Delete(ctx, C); !errors.Is(err, ErrConflict) {
 		t.Fatalf("non-recursive delete: %v", err)

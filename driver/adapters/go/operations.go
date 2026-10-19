@@ -41,6 +41,7 @@ var operations = []struct {
 	{"read_linkset", (*adapter).readLinkset},
 	{"update_linkset", (*adapter).updateLinkset},
 	{"patch_linkset", (*adapter).patchLinkset},
+	{"move", (*adapter).move},
 	{"subscribe", (*adapter).subscribe},
 	{"list_subscriptions", (*adapter).listSubscriptions},
 	{"get_subscription", (*adapter).getSubscription},
@@ -672,6 +673,26 @@ func (a *adapter) patchLinkset(x args) (any, error) {
 		return nil, err
 	}
 	return updateResult(r), nil
+}
+
+func (a *adapter) move(x args) (any, error) {
+	u, err := x.url("url")
+	if err != nil {
+		return nil, err
+	}
+	destination, err := x.url("destination")
+	if err != nil {
+		return nil, err
+	}
+	options, err := conditions(x, false)
+	if err != nil {
+		return nil, err
+	}
+	r, err := a.client.Move(ctx, u, destination, options...)
+	if err != nil {
+		return nil, err
+	}
+	return movedResult(r), nil
 }
 
 // ---------------------------------------------------------------------------------------------

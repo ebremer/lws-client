@@ -20,9 +20,9 @@ import (
 
 // memServer is a small in-memory LWS server used by the tests. It implements
 // storage discovery, containers with pagination, CRUD with conditional
-// requests, linksets, JSON Patch, the token exchange authorization server,
-// notifications subscriptions, access requests/grants and the type
-// index/search services.
+// requests, linksets, JSON Patch, protected resource metadata, the token
+// exchange authorization server, notifications subscriptions, access
+// requests/grants and the type index/search services.
 type memServer struct {
 	t           *testing.T
 	srv         *httptest.Server
@@ -30,7 +30,10 @@ type memServer struct {
 	res         map[string]*memResource
 	pageSize    int
 	requireAuth bool
-	seq         int
+	// legacyChallenge makes a 401 carry the as_uri and realm challenge of the
+	// drafts before 19 October 2026 instead of resource_metadata.
+	legacyChallenge bool
+	seq             int
 
 	tokens        map[string]string // access token -> subject
 	tokenRequests int
@@ -103,30 +106,36 @@ func (s *memServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/.well-known/lws-configuration":
 		s.metadata(w)
 		return
+	case strings.HasPrefix(p, WellKnownOAuthProtectedResource+"/"):
+		writeJSON(w, 200, MediaJSON, map[string]any{
+			"resource":              s.srv.URL + strings.TrimPrefix(r.URL.RequestURI(), WellKnownOAuthProtectedResource),
+			"authorization_servers": []string{s.srv.URL},
+		})
+		return
 	case p == "/token":
 		s.token(w, r)
 		return
 	case p == "/" && r.Method == http.MethodGet:
 		s.description(w)
 		return
+	case p == "/vault/" && r.Method == http.MethodGet:
+		// The decoy's storage: its root is on another origin.
+		writeJSON(w, 200, MediaLWSCID, map[string]any{
+			"id": s.srv.URL + "/vault/", "type": "Storage",
+			"service": []map[string]any{{"type": ServiceStorageRoot, "serviceEndpoint": "https://vault.example/"}},
+		})
+		return
 	case p == "/root/decoy":
-		// Touchstone's decoy: a 401 whatever is sent, naming a realm that does
-		// not contain it.
-		c := fmt.Sprintf(`Bearer as_uri="%s", realm="%s/vault/"`, s.srv.URL, s.srv.URL)
-		if r.Header.Get("Authorization") != "" {
-			c += `, error="invalid_token"`
-		}
-		w.Header().Set("WWW-Authenticate", c)
-		w.WriteHeader(http.StatusUnauthorized)
+		// Touchstone's decoy: a 401 whatever is sent, linking to a storage
+		// whose root is elsewhere (or naming a realm that does not contain it).
+		s.challenge(w, r, "/vault/")
 		return
 	}
 	if s.requireAuth {
 		auth := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if _, ok := s.tokens[auth]; !ok {
 			s.challenges++
-			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer as_uri="%s", realm="%s/", error="invalid_token"`, s.srv.URL, s.srv.URL))
-			w.Header().Add("Link", fmt.Sprintf(`<%s/>; rel="%s"`, s.srv.URL, RelStorage))
-			w.WriteHeader(http.StatusUnauthorized)
+			s.challenge(w, r, "/")
 			return
 		}
 	}
@@ -142,6 +151,22 @@ func (s *memServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.resource(w, r)
 	}
+}
+
+// challenge answers 401 for the storage at the path storage: the protected
+// resource metadata of the URL requested and a Link to the storage, or the
+// realm of the drafts before 19 October 2026.
+func (s *memServer) challenge(w http.ResponseWriter, r *http.Request, storage string) {
+	c := fmt.Sprintf(`Bearer resource_metadata="%s%s%s"`, s.srv.URL, WellKnownOAuthProtectedResource, r.URL.RequestURI())
+	if s.legacyChallenge {
+		c = fmt.Sprintf(`Bearer as_uri="%s", realm="%s%s"`, s.srv.URL, s.srv.URL, storage)
+	}
+	if r.Header.Get("Authorization") != "" {
+		c += `, error="invalid_token"`
+	}
+	w.Header().Set("WWW-Authenticate", c)
+	w.Header().Add("Link", fmt.Sprintf(`<%s%s>; rel="%s"`, s.srv.URL, storage, RelStorage))
+	w.WriteHeader(http.StatusUnauthorized)
 }
 
 func writeJSON(w http.ResponseWriter, status int, ctype string, v any) {

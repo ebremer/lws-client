@@ -313,8 +313,19 @@ func TestLinksetOperations(t *testing.T) {
 }
 
 func TestTokenExchangeFlow(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		name := "resource-metadata"
+		if legacy {
+			name = "challenge-before-2026-10-19"
+		}
+		t.Run(name, func(t *testing.T) { testTokenExchangeFlow(t, legacy) })
+	}
+}
+
+func testTokenExchangeFlow(t *testing.T, legacy bool) {
 	s := newMemServer(t)
 	s.requireAuth = true
+	s.legacyChallenge = legacy
 	auth, creds := didKeyAuth(t)
 	c := NewClient(WithAuthenticator(auth))
 
@@ -333,6 +344,12 @@ func TestTokenExchangeFlow(t *testing.T) {
 	if claims["sub"] != creds.Agent() || hdr["kid"] != creds.KeyID() || hdr["alg"] != "ES256" || hdr["typ"] != "JWT" {
 		t.Errorf("credential header %v claims %v", hdr, claims)
 	}
+	// The 401 led through the protected resource metadata and the storage
+	// description (which DiscoverStorage then read as well).
+	prm, descriptions := s.count(http.MethodGet, WellKnownOAuthProtectedResource+"/root/"), s.count(http.MethodGet, "/")
+	if (!legacy && (prm != 1 || descriptions != 2)) || (legacy && (prm != 0 || descriptions != 1)) {
+		t.Errorf("protected resource metadata read %d times, storage description %d times", prm, descriptions)
+	}
 	root, _ := sd.StorageRoot()
 	// Proactive reuse: no further 401s or token requests.
 	for i := 0; i < 3; i++ {
@@ -346,7 +363,8 @@ func TestTokenExchangeFlow(t *testing.T) {
 	if s.challenges != 1 || s.tokenRequests != 1 {
 		t.Errorf("after reuse: challenges %d token requests %d", s.challenges, s.tokenRequests)
 	}
-	// The server forgets its tokens: the client re-exchanges once.
+	// The server forgets its tokens: the client re-exchanges once, with the
+	// storage description it already has.
 	s.mu.Lock()
 	s.tokens = map[string]string{}
 	s.mu.Unlock()
@@ -356,8 +374,22 @@ func TestTokenExchangeFlow(t *testing.T) {
 	if s.challenges != 2 || s.tokenRequests != 2 {
 		t.Errorf("after revocation: challenges %d token requests %d", s.challenges, s.tokenRequests)
 	}
-	// The storage description itself is public; no token is sent to other
-	// realms (an unrelated server).
+	if n := s.count(http.MethodGet, "/"); n != descriptions {
+		t.Errorf("storage description read again (%d times): not cached", n)
+	}
+	// ClearTokens forgets the tokens and the storage descriptions.
+	auth.ClearTokens()
+	if _, err := c.ReadContainer(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	if s.challenges != 3 || s.tokenRequests != 3 {
+		t.Errorf("after ClearTokens: challenges %d token requests %d", s.challenges, s.tokenRequests)
+	}
+	if n := s.count(http.MethodGet, "/"); !legacy && n != descriptions+1 {
+		t.Errorf("storage description read %d times after ClearTokens, want %d", n, descriptions+1)
+	}
+	// The storage description itself is public; no token is sent outside the
+	// token's scope (an unrelated server).
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
 			t.Error("token leaked to another origin")
@@ -413,23 +445,42 @@ func TestStreamingBodyPreflight(t *testing.T) {
 	}
 }
 
-// challengeServer returns a server that always answers 401 with the given
-// WWW-Authenticate header and serves AS metadata md (if not nil).
-func challengeServer(t *testing.T, challenge func(base string) string, md func(base string) map[string]any) (*httptest.Server, *int32) {
+// challengeServer returns a server that answers 401 with the given
+// WWW-Authenticate header (nil: resource_metadata naming the metadata of
+// /r) and a Link to its storage, unless the request carries the token "t".
+// The protected resource metadata names the authorization servers servers(base)
+// (nil: the server itself), the storage description puts the root at base/,
+// and md (if not nil) is the authorization server metadata at base.
+func challengeServer(t *testing.T, challenge func(base string) string, servers func(base string) []string, md func(base string) map[string]any) (*httptest.Server, *int32) {
 	var mdRequests int32
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/.well-known/lws-configuration" && md != nil {
+		base := srv.URL
+		switch {
+		case r.URL.Path == "/.well-known/lws-configuration" && md != nil:
 			atomic.AddInt32(&mdRequests, 1)
-			writeJSON(w, 200, MediaJSON, md(srv.URL))
-			return
-		}
-		if r.URL.Path == "/token" {
+			writeJSON(w, 200, MediaJSON, md(base))
+		case r.URL.Path == WellKnownOAuthProtectedResource+"/r":
+			as := []string{base}
+			if servers != nil {
+				as = servers(base)
+			}
+			writeJSON(w, 200, MediaJSON, map[string]any{"resource": base + "/r", "authorization_servers": as})
+		case r.URL.Path == "/":
+			writeJSON(w, 200, MediaLWSCID, map[string]any{"type": "Storage", "service": []map[string]any{{"type": ServiceStorageRoot, "serviceEndpoint": base + "/"}}})
+		case r.URL.Path == "/token":
 			writeJSON(w, 200, MediaJSON, map[string]any{"access_token": "t", "token_type": "Bearer"})
-			return
+		case r.Header.Get("Authorization") == "Bearer t":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			c := `Bearer resource_metadata="` + base + WellKnownOAuthProtectedResource + `/r"`
+			if challenge != nil {
+				c = challenge(base)
+			}
+			w.Header().Set("WWW-Authenticate", c)
+			w.Header().Set("Link", "<"+base+`/>; rel="`+RelStorage+`"`)
+			w.WriteHeader(401)
 		}
-		w.Header().Set("WWW-Authenticate", challenge(srv.URL))
-		w.WriteHeader(401)
 	}))
 	t.Cleanup(srv.Close)
 	return srv, &mdRequests
@@ -439,42 +490,58 @@ func TestTokenExchangeRejections(t *testing.T) {
 	goodMD := func(base string) map[string]any {
 		return map[string]any{"issuer": base, "token_endpoint": base + "/token"}
 	}
+	legacy := func(b string) string { return `Bearer as_uri="` + b + `", realm="` + b + `/"` }
+	var filtered [][2]string
 	cases := []struct {
 		name      string
 		challenge func(string) string
+		servers   func(string) []string
 		md        func(string) map[string]any
 		opts      *TokenExchangeOptions
-		wantAuth  bool
+		want      string // "ok", "auth" (AuthenticationError) or "unauthorized"
 		wantMD    int32
 	}{
-		{"realm-mismatch", func(b string) string { return `Bearer as_uri="` + b + `", realm="https://other.example/"` }, goodMD, nil, true, 0},
-		{"insecure-as", func(b string) string { return `Bearer as_uri="http://as.example", realm="` + b + `/"` }, goodMD, nil, true, 0},
-		{"filter", func(b string) string { return `Bearer as_uri="` + b + `", realm="` + b + `/"` }, goodMD,
-			&TokenExchangeOptions{AuthorizationServerFilter: func(string, string) bool { return false }}, true, 0},
-		{"issuer-mismatch", func(b string) string { return `Bearer as_uri="` + b + `", realm="` + b + `/"` },
-			func(b string) map[string]any {
-				return map[string]any{"issuer": "https://evil.example", "token_endpoint": b + "/token"}
-			}, nil, true, 1},
-		{"unsupported-token-type", func(b string) string { return `Bearer as_uri="` + b + `", realm="` + b + `/"` },
-			func(b string) map[string]any {
-				return map[string]any{"issuer": b, "token_endpoint": b + "/token", "subject_token_types_supported": []string{TokenTypeSAML2}}
-			}, nil, true, 1},
-		{"no-lws-challenge", func(string) string { return `Basic realm="x"` }, goodMD, nil, false, 0},
+		{"insecure-as", nil, func(string) []string { return []string{"http://as.example"} }, goodMD, nil, "auth", 0},
+		{"filter", nil, nil, goodMD,
+			&TokenExchangeOptions{AuthorizationServerFilter: func(string, string) bool { return false }}, "auth", 0},
+		{"first-acceptable-as", nil, func(b string) []string { return []string{"https://untrusted.example", b} }, goodMD,
+			&TokenExchangeOptions{AuthorizationServerFilter: func(issuer, storage string) bool {
+				filtered = append(filtered, [2]string{issuer, storage})
+				return issuer != "https://untrusted.example"
+			}}, "ok", 1},
+		{"issuer-mismatch", nil, nil, func(b string) map[string]any {
+			return map[string]any{"issuer": "https://evil.example", "token_endpoint": b + "/token"}
+		}, nil, "auth", 1},
+		{"insecure-token-endpoint", nil, nil, func(b string) map[string]any {
+			return map[string]any{"issuer": b, "token_endpoint": "http://as.example/token"}
+		}, nil, "auth", 1},
+		{"unsupported-token-type", nil, nil, func(b string) map[string]any {
+			return map[string]any{"issuer": b, "token_endpoint": b + "/token", "subject_token_types_supported": []string{TokenTypeSAML2}}
+		}, nil, "auth", 1},
+		{"legacy", legacy, nil, goodMD, nil, "ok", 1},
+		{"legacy-realm-mismatch", func(b string) string { return `Bearer as_uri="` + b + `", realm="https://other.example/"` }, nil, goodMD, nil, "auth", 0},
+		{"legacy-insecure-as", func(b string) string { return `Bearer as_uri="http://as.example", realm="` + b + `/"` }, nil, goodMD, nil, "auth", 0},
+		{"no-lws-challenge", func(string) string { return `Basic realm="x"` }, nil, goodMD, nil, "unauthorized", 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv, mdRequests := challengeServer(t, tc.challenge, tc.md)
+			srv, mdRequests := challengeServer(t, tc.challenge, tc.servers, tc.md)
 			key, _ := GenerateEd25519Key()
 			creds, _ := NewDIDKeyCredentials(key, nil)
 			c := NewClient(WithAuthenticator(NewTokenExchangeAuthenticator(creds, tc.opts)))
 			_, err := c.Head(ctx, srv.URL+"/r")
 			var ae *AuthenticationError
-			if tc.wantAuth {
+			var he *HTTPError
+			switch tc.want {
+			case "ok":
+				if err != nil {
+					t.Fatalf("want success, got %v", err)
+				}
+			case "auth":
 				if !errors.As(err, &ae) {
 					t.Fatalf("want AuthenticationError, got %v", err)
 				}
-			} else {
-				var he *HTTPError
+			default:
 				if !errors.Is(err, ErrUnauthorized) || !errors.As(err, &he) || len(he.Challenges) != 1 || he.Challenges[0].Realm() != "x" {
 					t.Fatalf("want 401 HTTPError with challenges, got %v", err)
 				}
@@ -484,35 +551,47 @@ func TestTokenExchangeRejections(t *testing.T) {
 			}
 		})
 	}
+	// The filter sees each authorization server with the storage, in order.
+	if len(filtered) != 2 || filtered[0][0] != "https://untrusted.example" || !strings.HasSuffix(filtered[0][1], "/") || filtered[1][1] != filtered[0][1] {
+		t.Errorf("filter calls = %v", filtered)
+	}
 }
 
-// A challenge whose realm does not contain the URL is refused, and costs the
-// client nothing: its token for the storage stays cached and in use.
+// A 401 that links to a storage whose root is elsewhere (or, in the
+// challenge of the drafts before 19 October 2026, whose realm does not contain
+// the URL) is refused, and costs the client nothing: its token for the storage
+// stays cached and in use.
 func TestDecoyChallengeKeepsToken(t *testing.T) {
-	s := newMemServer(t)
-	s.requireAuth = true
-	auth, _ := didKeyAuth(t)
-	c := NewClient(WithAuthenticator(auth))
-	root := s.URL("/root/")
-	if _, err := c.ReadContainer(ctx, root); err != nil {
-		t.Fatal(err)
-	}
-	var ae *AuthenticationError
-	if _, err := c.Head(ctx, s.URL("/root/decoy")); !errors.As(err, &ae) {
-		t.Fatalf("decoy: want AuthenticationError, got %v", err)
-	}
-	if _, err := c.ReadContainer(ctx, root); err != nil {
-		t.Fatal(err)
-	}
-	if s.challenges != 1 || s.tokenRequests != 1 {
-		t.Errorf("after the decoy: challenges %d token requests %d, want 1 and 1", s.challenges, s.tokenRequests)
+	for _, legacy := range []bool{false, true} {
+		s := newMemServer(t)
+		s.requireAuth = true
+		s.legacyChallenge = legacy
+		auth, _ := didKeyAuth(t)
+		c := NewClient(WithAuthenticator(auth))
+		root := s.URL("/root/")
+		if _, err := c.ReadContainer(ctx, root); err != nil {
+			t.Fatal(err)
+		}
+		var ae *AuthenticationError
+		_, err := c.Head(ctx, s.URL("/root/decoy"))
+		if want := map[bool]string{false: "https://vault.example/", true: "realm"}[legacy]; !errors.As(err, &ae) || !strings.Contains(err.Error(), want) {
+			t.Fatalf("legacy=%v decoy: want AuthenticationError about %s, got %v", legacy, want, err)
+		}
+		if _, err := c.ReadContainer(ctx, root); err != nil {
+			t.Fatal(err)
+		}
+		if s.challenges != 1 || s.tokenRequests != 1 {
+			t.Errorf("legacy=%v after the decoy: challenges %d token requests %d, want 1 and 1", legacy, s.challenges, s.tokenRequests)
+		}
 	}
 }
 
-// The authorization server's metadata and token requests never follow a
-// redirect: a 307 or 308 would carry the subject token on to its target.
+// The protected resource metadata, the storage description, the
+// authorization server's metadata and the token request never follow a
+// redirect: a 307 or 308 of the token request would carry the subject token
+// on to its target.
 func TestAuthorizationServerRedirectNotFollowed(t *testing.T) {
-	for _, redirected := range []string{"/.well-known/lws-configuration", "/token"} {
+	for _, redirected := range []string{WellKnownOAuthProtectedResource + "/r", "/", "/.well-known/lws-configuration", "/token"} {
 		t.Run(redirected, func(t *testing.T) {
 			var stolen atomic.Int32
 			thief := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -525,10 +604,15 @@ func TestAuthorizationServerRedirectNotFollowed(t *testing.T) {
 				case r.URL.Path == redirected:
 					w.Header().Set("Location", thief.URL+r.URL.Path)
 					w.WriteHeader(http.StatusTemporaryRedirect)
+				case r.URL.Path == WellKnownOAuthProtectedResource+"/r":
+					writeJSON(w, 200, MediaJSON, map[string]any{"resource": srv.URL + "/r", "authorization_servers": []string{srv.URL}})
+				case r.URL.Path == "/":
+					writeJSON(w, 200, MediaLWSCID, map[string]any{"type": "Storage", "service": []map[string]any{{"type": ServiceStorageRoot, "serviceEndpoint": srv.URL + "/"}}})
 				case r.URL.Path == "/.well-known/lws-configuration":
 					writeJSON(w, 200, MediaJSON, map[string]any{"issuer": srv.URL, "token_endpoint": srv.URL + "/token"})
 				default:
-					w.Header().Set("WWW-Authenticate", `Bearer as_uri="`+srv.URL+`", realm="`+srv.URL+`/"`)
+					w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+srv.URL+WellKnownOAuthProtectedResource+`/r"`)
+					w.Header().Set("Link", "<"+srv.URL+`/>; rel="`+RelStorage+`"`)
 					w.WriteHeader(http.StatusUnauthorized)
 				}
 			}))
@@ -543,6 +627,60 @@ func TestAuthorizationServerRedirectNotFollowed(t *testing.T) {
 				t.Errorf("the redirect target received %d requests", n)
 			}
 		})
+	}
+}
+
+// The retry after a 401 that passed the checks carries the token to the URL
+// that drew it (the last hop of a redirect), even outside the token's scope;
+// later requests there get no token up front, and their 401 reuses it.
+func TestRetryOutsideScope(t *testing.T) {
+	var mu sync.Mutex
+	var tokenRequests, challenges int
+	var oldAuthorization []string
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case WellKnownOAuthProtectedResource + "/services/inbox":
+			writeJSON(w, 200, MediaJSON, map[string]any{"resource": srv.URL + "/services/inbox", "authorization_servers": []string{srv.URL}})
+		case "/storage_1":
+			writeJSON(w, 200, MediaLWSCID, map[string]any{"type": "Storage", "service": []map[string]any{{"type": ServiceStorageRoot, "serviceEndpoint": srv.URL + "/storage_1/"}}})
+		case "/.well-known/lws-configuration":
+			writeJSON(w, 200, MediaJSON, map[string]any{"issuer": srv.URL, "token_endpoint": srv.URL + "/token"})
+		case "/token":
+			tokenRequests++
+			writeJSON(w, 200, MediaJSON, map[string]any{"access_token": "t", "token_type": "Bearer", "expires_in": 300})
+		case "/old":
+			oldAuthorization = append(oldAuthorization, r.Header.Get("Authorization"))
+			http.Redirect(w, r, "/services/inbox", http.StatusFound)
+		default:
+			if r.Header.Get("Authorization") == "Bearer t" {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			challenges++
+			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+srv.URL+WellKnownOAuthProtectedResource+`/services/inbox"`)
+			w.Header().Set("Link", "<"+srv.URL+`/storage_1>; rel="`+RelStorage+`"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer srv.Close()
+	auth, _ := didKeyAuth(t)
+	c := NewClient(WithAuthenticator(auth))
+	if _, err := c.Head(ctx, srv.URL+"/old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Head(ctx, srv.URL+"/services/inbox"); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if tokenRequests != 1 || challenges != 2 {
+		t.Errorf("token requests %d challenges %d, want 1 and 2", tokenRequests, challenges)
+	}
+	if len(oldAuthorization) != 2 || oldAuthorization[0] != "" || oldAuthorization[1] != "" {
+		t.Errorf("the redirecting URL, outside the scope, was sent %q", oldAuthorization)
 	}
 }
 
@@ -562,14 +700,14 @@ func TestRedirectDropsToken(t *testing.T) {
 	if _, err := c.Head(ctx, s.URL("/root/")); err != nil {
 		t.Fatal(err)
 	}
-	// A server inside the realm redirecting outside of it.
+	// A server inside the token's scope redirecting outside of it.
 	redirector := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, other.URL+"/target", http.StatusFound)
 	})
 	s.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/redirect" {
 			if r.Header.Get("Authorization") == "" {
-				t.Error("token not sent inside the realm")
+				t.Error("token not sent inside its scope")
 			}
 			redirector(w, r)
 			return
@@ -580,7 +718,7 @@ func TestRedirectDropsToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	if leaked.Load() {
-		t.Error("Authorization forwarded across realms on redirect")
+		t.Error("Authorization forwarded outside its scope on redirect")
 	}
 }
 
@@ -591,7 +729,12 @@ func TestOpenIDAndSAMLCredentials(t *testing.T) {
 		token     string
 	}{
 		{NewOpenIDCredentials("id-token-123"), TokenTypeIDToken, "id-token-123"},
-		{NewOpenIDCredentialsFunc(func(_ context.Context, cc CredentialContext) (string, error) { return "fresh-for-" + cc.Issuer, nil }), TokenTypeIDToken, "fresh-for-"},
+		{NewOpenIDCredentialsFunc(func(_ context.Context, cc CredentialContext) (string, error) {
+			if cc.Issuer == "" || cc.Storage == "" || cc.Metadata == nil {
+				return "", fmt.Errorf("credential context %+v", cc)
+			}
+			return "fresh-for-" + cc.Issuer, nil
+		}), TokenTypeIDToken, "fresh-for-"},
 		{NewSAMLCredentials(EncodeSAMLAssertion([]byte("<saml:Assertion/>"))), TokenTypeSAML2, "PHNhbWw6QXNzZXJ0aW9uLz4"},
 	} {
 		s := newMemServer(t)

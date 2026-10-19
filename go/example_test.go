@@ -54,9 +54,9 @@ func ExampleParseLinkHeader() {
 }
 
 func ExampleParseChallenges() {
-	ch := lws.ParseChallenges(`Bearer as_uri="https://authorization.example", realm="https://storage.example/storage_1", error="invalid_token"`)
-	fmt.Println(ch[0].AsURI(), ch[0].Realm(), ch[0].Error())
-	// Output: https://authorization.example https://storage.example/storage_1 invalid_token
+	ch := lws.ParseChallenges(`Bearer resource_metadata="https://storage.example/.well-known/oauth-protected-resource/storage_1/a.txt", error="invalid_token"`)
+	fmt.Println(ch[0].ResourceMetadata(), ch[0].Error())
+	// Output: https://storage.example/.well-known/oauth-protected-resource/storage_1/a.txt invalid_token
 }
 
 func ExampleJSONPatch() {

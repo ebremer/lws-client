@@ -2,10 +2,11 @@
 
 // Package lws is a client for the W3C Linked Web Storage (LWS) protocol.
 //
-// It targets the LWS Working Group specifications as of 2026-10-05: the
-// Linked Web Storage Protocol 1.0 (core), the OpenID Connect, SAML 2.0 and
-// self-signed Controlled Identifier authentication suites, the Webhook
-// notification suite, and the Search and Type Index services.
+// It targets the LWS Working Group specifications as of 2026-10-19 (the
+// Working Draft of 19 October 2026): the Linked Web Storage Protocol 1.0
+// (core), the OpenID Connect, SAML 2.0 and self-signed Controlled Identifier
+// authentication suites, the Webhook notification suite, and the Search and
+// Type Index services.
 //
 // # Overview
 //
@@ -31,14 +32,20 @@
 // passed as variadic [CallOption] values such as [IfMatch], [Slug] or
 // [Recursive]. Each method documents the options it honours.
 //
+// [Client.Move] moves a resource into another container by patching the up
+// link of its linkset, where the storage's [StorageDescription.MoveCapability]
+// allows it.
+//
 // # Authentication
 //
 // LWS authorization is OAuth 2.0 token exchange. Configure a
 // [TokenExchangeAuthenticator] with a [CredentialProvider] for one of the
 // authentication suites — [OpenIDCredentials], [SAMLCredentials] or
 // [SelfSignedCredentials] — and the client transparently handles the
-// 401 → authorization server metadata → token exchange → retry flow, caching
-// access tokens per authorization server and realm:
+// 401 → protected resource metadata (RFC 9728) → storage description →
+// authorization server metadata → token exchange → retry flow, with the
+// discovery checks lws10-core requires before any token request, caching
+// access tokens per authorization server and storage:
 //
 //	key, _ := lws.GenerateP256Key()
 //	creds, _ := lws.NewDIDKeyCredentials(key, nil)

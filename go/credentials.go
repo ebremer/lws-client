@@ -17,8 +17,9 @@ type CredentialContext struct {
 	// Issuer is the authorization server identifier (the audience of a
 	// self-signed credential).
 	Issuer string
-	// Realm is the protection scope being accessed.
-	Realm    string
+	// Storage is the storage the access token is for (the token request's
+	// resource and the access token's audience).
+	Storage  string
 	Metadata *AuthorizationServerMetadata
 }
 

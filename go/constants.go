@@ -14,6 +14,10 @@ const (
 	LWSContext             = "https://www.w3.org/ns/lws/v1"
 	CIDContext             = "https://www.w3.org/ns/cid/v1"
 	ActivityStreamsContext = "https://www.w3.org/ns/activitystreams"
+	// LWSProfile is the LWS profile: the media type parameter
+	// profile="https://www.w3.org/ns/lws/v1" of an RDF representation that is
+	// isomorphic to the application/lws+json one.
+	LWSProfile = "https://www.w3.org/ns/lws/v1"
 )
 
 // Link relation types used by LWS.
@@ -63,6 +67,13 @@ const (
 	OpenIDProviderService = LWSNamespace + "OpenIdProvider"
 )
 
+// Storage description capability types.
+const (
+	// CapabilityMoveResource is the capability of a storage that moves
+	// resources between containers (see [StorageDescription.MoveCapability]).
+	CapabilityMoveResource = "MoveResource"
+)
+
 // OAuth 2.0 token exchange and authentication suite token types.
 const (
 	GrantTypeTokenExchange    = "urn:ietf:params:oauth:grant-type:token-exchange"
@@ -71,6 +82,9 @@ const (
 	TokenTypeJWT              = "urn:ietf:params:oauth:token-type:jwt"
 	TokenTypeAccessToken      = "urn:ietf:params:oauth:token-type:access_token"
 	WellKnownLWSConfiguration = "/.well-known/lws-configuration"
+	// WellKnownOAuthProtectedResource is the well-known path of protected
+	// resource metadata (RFC 9728).
+	WellKnownOAuthProtectedResource = "/.well-known/oauth-protected-resource"
 )
 
 // Access requests and grants (ODRL-based Access Profile).
@@ -111,6 +125,7 @@ const (
 	ActivityCreate = "Create"
 	ActivityUpdate = "Update"
 	ActivityDelete = "Delete"
+	ActivityMove   = "Move"
 	// TypeNotification is the type of a notification envelope.
 	TypeNotification = "Notification"
 )

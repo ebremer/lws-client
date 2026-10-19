@@ -89,8 +89,9 @@ func (e *HTTPError) AcceptPatch() []string { return splitList(e.Header.Values("A
 func (e *HTTPError) AcceptQuery() []string { return parseAcceptQuery(e.Header.Values("Accept-Query")) }
 
 // AuthenticationError reports a failure of the LWS authorization flow: a
-// rejected realm, an untrusted or insecure authorization server, invalid
-// authorization server metadata, or a token endpoint error.
+// failed discovery check (protected resource metadata, storage root) or realm
+// check, an untrusted or insecure authorization server, invalid authorization
+// server metadata, or a token endpoint error.
 type AuthenticationError struct {
 	Message string
 	// Code is the OAuth "error" code of a token endpoint error response.

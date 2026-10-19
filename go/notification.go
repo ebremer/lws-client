@@ -24,14 +24,16 @@ type Notification struct {
 
 // Activity describes one event.
 type Activity struct {
-	ID     string
-	Types  TypeList
+	ID    string
+	Types TypeList
+	// Object is the resource the activity is about (for a Move, the resource
+	// as it is after the move).
 	Object ActivityObject
 	// Actor is the agent that performed the action, if disclosed.
 	Actor string
-	// Target is the container a resource was added to (Create).
+	// Target is the container a resource was added to (Create, Move).
 	Target string
-	// Origin is the container a resource was removed from (Delete).
+	// Origin is the container a resource was removed from (Delete, Move).
 	Origin string
 	// Published is when the activity occurred (zero if unparseable; see
 	// PublishedRaw).
@@ -54,6 +56,10 @@ func (a Activity) IsUpdate() bool { return a.Types.Has(ActivityUpdate) }
 
 // IsDelete reports whether the activity is a Delete.
 func (a Activity) IsDelete() bool { return a.Types.Has(ActivityDelete) }
+
+// IsMove reports whether the activity is a Move: a resource left the
+// container Origin for the container Target.
+func (a Activity) IsMove() bool { return a.Types.Has(ActivityMove) }
 
 // ParseNotification parses a notification envelope. It fails with a
 // *ProtocolError if the type is not "Notification".
