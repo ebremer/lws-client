@@ -80,6 +80,9 @@ def test_interop_scenario(inbox: tuple[str, queue.Queue[Delivery]]) -> None:
                         sd.access_grant_service(), sd.type_index_service(),
                         sd.type_search_service()):
             assert service
+        move = sd.move_capability()
+        assert move is not None and move.moves_data_resources and move.moves_containers
+        assert move.preserves_identifier is False
         # 2. container
         c = client.create_container(sd.storage_root(), slug=f"interop-python-{int(time.time() * 1000)}")
         container = c.location
@@ -154,7 +157,19 @@ def test_interop_scenario(inbox: tuple[str, queue.Queue[Delivery]]) -> None:
         assert client.get_access_grant(grant_url).storage == sd.id
         client.revoke_access_grant(grant_url)
         client.cancel_access_request(request_url)
-        # 13. delete
+        # 13. move
+        archive = client.create_container(container, slug="archive").location
+        m = client.create(container, "Move me", "text/plain", slug="move-me.txt").location
+        moved = client.move(m, archive)
+        assert moved.location == archive + "move-me.txt"
+        assert moved.identifier_preserved is False
+        assert moved.linkset == moved.location + ".meta"
+        assert client.read(moved.location).text == "Move me"
+        assert moved.location in [i.id for i in client.list_container(archive)]
+        assert m not in [i.id for i in client.list_container(container)]
+        with pytest.raises(ConflictError):
+            client.move(container, archive)
+        # 14. delete
         with pytest.raises(ConflictError):
             client.delete(container)
         client.delete(container, recursive=True)

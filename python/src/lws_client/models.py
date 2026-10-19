@@ -22,7 +22,7 @@ from ._util import (
     split_header_list,
     string_list,
 )
-from .constants import MediaType, Rel, ServiceType, Types
+from .constants import CapabilityType, MediaType, Rel, ServiceType, Types
 from .errors import ProtocolError
 from .headers import Link, parse_link_header
 
@@ -37,12 +37,16 @@ __all__ = [
     "UpdateResult",
     "Service",
     "Capability",
+    "MoveCapability",
     "VerificationMethod",
     "StorageDescription",
     "parse_json_body",
 ]
 
 _CONTAINER_MEDIA_TYPES = {MediaType.LWS_JSON, MediaType.LD_JSON, MediaType.JSON}
+
+#: ``Accept`` of a storage description request.
+STORAGE_ACCEPT = f"{MediaType.LWS_CID}, {MediaType.LD_JSON};q=0.9, {MediaType.JSON};q=0.8"
 
 
 def parse_json_body(body: bytes, what: str) -> Any:
@@ -441,6 +445,40 @@ class Capability:
 
 
 @dataclass(frozen=True, slots=True)
+class MoveCapability:
+    """The ``MoveResource`` capability: the storage lets clients move resources between
+    containers by changing their ``up`` link.
+
+    ``applies_to`` holds the ``appliesTo`` values as received, and ``("DataResource",)`` when the
+    capability does not say (data resources only). ``preserves_identifier`` is ``None`` when the
+    capability does not say, and then a client must not assume that identifiers are kept.
+    """
+
+    applies_to: tuple[str, ...] = ("DataResource",)
+    preserves_identifier: bool | None = None
+    raw: Mapping[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_capability(cls, capability: Capability) -> MoveCapability:
+        raw = capability.raw
+        applies_to = raw.get("appliesTo")
+        preserves = raw.get("preservesIdentifier")
+        return cls(
+            applies_to=string_list(applies_to) if applies_to is not None else ("DataResource",),
+            preserves_identifier=preserves if isinstance(preserves, bool) else None,
+            raw=dict(raw),
+        )
+
+    @property
+    def moves_data_resources(self) -> bool:
+        return has_type(self.applies_to, Types.DATA_RESOURCE)
+
+    @property
+    def moves_containers(self) -> bool:
+        return has_type(self.applies_to, Types.CONTAINER)
+
+
+@dataclass(frozen=True, slots=True)
 class VerificationMethod:
     """A controlled-identifier verification method (``publicKeyJwk`` keys)."""
 
@@ -569,6 +607,12 @@ class StorageDescription:
             if c.has_type(type_):
                 return c
         return None
+
+    def move_capability(self) -> MoveCapability | None:
+        """The ``MoveResource`` capability, or ``None`` when the storage describes none: its
+        ``up`` links are then not modifiable."""
+        found = self.capability(CapabilityType.MOVE_RESOURCE)
+        return MoveCapability.from_capability(found) if found is not None else None
 
     def storage_root(self) -> str:
         """URL of the storage root container (the required ``StorageRoot`` service)."""

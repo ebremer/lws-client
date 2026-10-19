@@ -52,6 +52,37 @@ def origin_parts(url: str) -> tuple[str, str, int | None]:
     return scheme, host, port
 
 
+def url_origin(url: str) -> tuple[str, str, int | None] | None:
+    """``(scheme, host, port)`` like :func:`origin_parts`, or ``None`` unless ``url`` is an
+    absolute URL with a host and a valid port."""
+    parts = urlsplit(url)
+    try:
+        port = parts.port
+    except ValueError:
+        return None
+    if not parts.scheme or not parts.hostname:
+        return None
+    scheme = parts.scheme.lower()
+    return scheme, parts.hostname.lower(), port if port is not None else _DEFAULT_PORTS.get(scheme)
+
+
+def normalize_url(url: str) -> str | None:
+    """``url`` with its scheme and host in lower case and without a default port, the rest as
+    given (an empty path is ``/``, which is what an HTTP request for it asks for); ``None``
+    unless it is an absolute URL with a host."""
+    origin = url_origin(url)
+    if origin is None:
+        return None
+    scheme, host, port = origin
+    netloc = urlsplit(url).netloc
+    userinfo, at, _ = netloc.rpartition("@")
+    authority = userinfo + at + (f"[{host}]" if ":" in host else host)
+    if port != _DEFAULT_PORTS.get(scheme):
+        authority += f":{port}"
+    rest = url[url.index("//") + 2 + len(netloc):]
+    return f"{scheme}://{authority}{rest if rest.startswith('/') else '/' + rest}"
+
+
 def is_loopback(url: str) -> bool:
     host = (urlsplit(url).hostname or "").lower()
     return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost")

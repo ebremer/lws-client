@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import pytest
 from conftest import load, make_response
@@ -13,12 +14,16 @@ from lws_client import (
     AccessPolicy,
     AccessRequest,
     AccessTarget,
+    AuthenticationError,
+    Capability,
     ConflictError,
     Constraint,
     ContainerPage,
     Linkset,
+    MoveCapability,
     Notification,
     ProblemDetails,
+    ProtectedResourceMetadata,
     ProtocolError,
     ResourceMetadata,
     SearchPage,
@@ -30,6 +35,8 @@ from lws_client import (
     parse_notification,
     parse_token_response_expiry,
     realm_contains,
+    same_origin,
+    same_resource,
 )
 from lws_client.errors import error_for_response
 from lws_client.linkset import LinksetDocument
@@ -57,6 +64,33 @@ def test_storage_description_fixture() -> None:
     assert custom.service_endpoint == exp["customService"]["serviceEndpoint"]
     assert sd.capability("https://feature.example/PatchSupport") is not None
     assert sd.has_type("https://www.w3.org/ns/lws#Storage")
+    check_move_capability(sd.move_capability(), exp["moveCapability"])
+
+
+def check_move_capability(move: MoveCapability | None, exp: dict[str, Any] | None) -> None:
+    if exp is None:
+        assert move is None
+        return
+    assert move is not None
+    assert list(move.applies_to) == exp["appliesTo"]
+    assert move.preserves_identifier is exp["preservesIdentifier"]
+    assert move.moves_data_resources is exp["movesDataResources"]
+    assert move.moves_containers is exp["movesContainers"]
+
+
+MOVE_CAPABILITIES = load("responses/storage-description.json")["moveCapabilities"]
+
+
+@pytest.mark.parametrize("case", MOVE_CAPABILITIES, ids=[c["name"] for c in MOVE_CAPABILITIES])
+def test_move_capability_fixture(case: dict[str, Any]) -> None:
+    body: dict[str, Any] = {"id": "https://storage.example/", "type": "Storage"}
+    if case["capability"] is not None:
+        body["capability"] = case["capability"]
+    check_move_capability(StorageDescription.from_json(body).move_capability(), case["expected"])
+    if case["expected"] is not None:
+        found = StorageDescription.from_json(body).capability("MoveResource")
+        assert isinstance(found, Capability)
+        assert MoveCapability.from_capability(found).raw == case["capability"][0]
 
 
 def test_storage_description_invalid() -> None:
@@ -143,7 +177,7 @@ def test_linkset_fixture() -> None:
 
 def test_notification_fixture() -> None:
     fx = load("responses/notification.json")
-    for key in ("single", "batch"):
+    for key in ("single", "batch", "move"):
         n = parse_notification(fx[key])
         exp = fx[f"{key}Expected"]
         assert n.storage == exp["storage"]
@@ -152,7 +186,7 @@ def test_notification_fixture() -> None:
             assert act.id == e["id"]
             assert list(act.types) == e["types"]
             assert act.object.id == e["objectId"]
-            for flag in ("isCreate", "isUpdate", "isDelete"):
+            for flag in ("isCreate", "isUpdate", "isDelete", "isMove"):
                 if flag in e:
                     attr = "is_" + flag[2:].lower()
                     assert getattr(act, attr) is e[flag]
@@ -238,6 +272,11 @@ def test_oauth_fixture() -> None:
         assert metadata_url(case["issuer"]) == case["url"]
     for case in fx["realmChecks"]:
         assert realm_contains(case["realm"], case["url"]) is case["contained"], case
+    for case in fx["originChecks"]:
+        assert same_origin(case["a"], case["b"]) is case["sameOrigin"], case
+        assert same_origin(case["b"], case["a"]) is case["sameOrigin"], case
+    for case in fx["resourceChecks"]:
+        assert same_resource(case["requested"], case["resource"]) is case["identical"], case
     now = time.time()
     assert parse_token_response_expiry(fx["tokenResponse"]["body"], now) == pytest.approx(
         now + fx["tokenResponse"]["expectedExpiresIn"]
@@ -273,3 +312,18 @@ def test_subscription_fixture() -> None:
         fx["expected"]["type"], fx["expected"]["subscription"], fx["expected"]["expires"]
     )
     assert sub.expires is not None
+
+
+def test_protected_resource_metadata_fixture() -> None:
+    fx = load("responses/oauth.json")
+    case = fx["protectedResourceMetadata"]
+    prm = ProtectedResourceMetadata.from_json(case["body"])
+    assert prm.resource == case["expected"]["resource"]
+    assert list(prm.authorization_servers) == case["expected"]["authorizationServers"]
+    assert prm.raw == case["body"]  # unknown members are kept
+    invalid = fx["protectedResourceMetadataInvalid"]
+    for name, body in invalid.items():
+        if name == "description":
+            continue
+        with pytest.raises(AuthenticationError):
+            ProtectedResourceMetadata.from_json(body)

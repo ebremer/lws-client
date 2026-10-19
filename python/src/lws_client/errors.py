@@ -191,7 +191,8 @@ class InsufficientStorageError(HttpError):
 
 
 class AuthenticationError(LwsError):
-    """Obtaining an access token failed (realm check, metadata, token exchange …)."""
+    """Obtaining an access token failed (a discovery check, the realm check, metadata, token
+    exchange …)."""
 
     def __init__(
         self,

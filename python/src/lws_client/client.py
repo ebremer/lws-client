@@ -23,7 +23,7 @@ from .auth import Authenticator
 from .errors import error_for_response
 from .headers import Link
 from .json_patch import JsonPatch
-from .linkset import Linkset, LinksetDocument
+from .linkset import Linkset, LinksetDocument, MoveResult
 from .models import (
     ContainedResource,
     ContainerPage,
@@ -376,6 +376,24 @@ class LwsClient:
     ) -> UpdateResult:
         """Patch a linkset with JSON Patch."""
         return self._driver.run(self._core.patch_linkset(linkset_url, patch, if_match=if_match))
+
+    # -- moving --------------------------------------------------------------------------
+
+    def move(
+        self,
+        resource_url: str,
+        destination_url: str,
+        *,
+        if_match: str | None = None,
+        headers: HeaderInput = None,
+    ) -> MoveResult:
+        """Move a resource (and, for a container, everything in it) into the container
+        ``destination_url``: the ``up`` link of its linkset is patched, conditional on the
+        linkset's ETag (``if_match`` overrides it). Check the storage description's
+        ``move_capability()`` first; ``result.location`` is the resource's URL after the move."""
+        return self._driver.run(
+            self._core.move(resource_url, destination_url, if_match=if_match, headers=headers)
+        )
 
     # -- notifications -------------------------------------------------------------------
 
@@ -731,6 +749,20 @@ class AsyncLwsClient:
     ) -> UpdateResult:
         return await self._driver.run(
             self._core.patch_linkset(linkset_url, patch, if_match=if_match)
+        )
+
+    # -- moving --------------------------------------------------------------------------
+
+    async def move(
+        self,
+        resource_url: str,
+        destination_url: str,
+        *,
+        if_match: str | None = None,
+        headers: HeaderInput = None,
+    ) -> MoveResult:
+        return await self._driver.run(
+            self._core.move(resource_url, destination_url, if_match=if_match, headers=headers)
         )
 
     # -- notifications -------------------------------------------------------------------

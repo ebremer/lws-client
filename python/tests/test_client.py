@@ -162,9 +162,10 @@ def test_full_scenario_sync(fake: FakeLws, client: LwsClient) -> None:
         client.read(h.location)
     # one token exchange for the whole session (proactive reuse)
     assert len(fake.token_requests) == 1
-    anonymous = [r for r in fake.requests
+    anonymous = [r.url.path for r in fake.requests
                  if r.url.host == "storage.example" and "authorization" not in r.headers]
-    assert len(anonymous) == 1  # only the very first request went out without a token
+    # only the very first request went out without a token, and the discovery documents
+    assert anonymous == ["/root/", "/.well-known/oauth-protected-resource/root/", "/"]
 
 
 @pytest.mark.anyio
@@ -217,6 +218,7 @@ async def test_concurrent_requests_share_one_exchange(fake: FakeLws) -> None:
         await asyncio.gather(*(client.head(fake.root) for _ in range(8)))
     assert len(fake.token_requests) == 1
     assert fake.metadata_requests == 1
+    assert [r.url.path for r in fake.requests].count("/") == 1  # one storage description read
 
 
 def test_streaming_read_and_upload(fake: FakeLws, client: LwsClient) -> None:
@@ -226,8 +228,14 @@ def test_streaming_read_and_upload(fake: FakeLws, client: LwsClient) -> None:
 
     # A non-replayable body: the client authenticates with a pre-flight HEAD first.
     created = client.create(fake.root, chunks(), "text/plain", slug="stream.txt")
-    storage_requests = [r.method for r in fake.requests if r.url.host == "storage.example"]
-    assert storage_requests == ["HEAD", "HEAD", "POST"]
+    storage_requests = [(r.method, r.url.path) for r in fake.requests if r.url.host == "storage.example"]
+    assert storage_requests == [
+        ("HEAD", "/root/"),
+        ("GET", "/.well-known/oauth-protected-resource/root/"),
+        ("GET", "/"),
+        ("HEAD", "/root/"),
+        ("POST", "/root/"),
+    ]
     with client.stream(created.location) as stream:
         assert stream.metadata.content_type == "text/plain"
         assert b"".join(stream.iter_bytes()) == b"part one, part two"

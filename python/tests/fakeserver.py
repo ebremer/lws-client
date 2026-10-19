@@ -18,6 +18,7 @@ from lws_client.crypto import decode_jwt_unverified
 LWS = "https://www.w3.org/ns/lws#"
 CONTAINER = LWS + "Container"
 DATA = LWS + "DataResource"
+PRM = "/.well-known/oauth-protected-resource"
 
 
 @dataclass
@@ -81,12 +82,14 @@ class FakeLws:
         auth: bool = False,
         page_size: int = 2,
         as_base: str = "https://as.example",
+        legacy_challenge: bool = False,
     ) -> None:
         self.base = base
         self.storage_id = base + "/"
         self.root = base + "/root/"
         self.as_base = as_base
         self.auth = auth
+        self.legacy_challenge = legacy_challenge
         self.page_size = page_size
         self.resources: dict[str, Res] = {}
         self.requests: list[httpx.Request] = []
@@ -157,12 +160,15 @@ class FakeLws:
         header = request.headers.get("authorization", "")
         return header.startswith("Bearer ") and header[7:] in self.tokens
 
-    def _challenge(self) -> httpx.Response:
+    def _challenge(self, request: httpx.Request) -> httpx.Response:
+        if self.legacy_challenge:  # the drafts before 19 October 2026
+            challenge = f'Bearer as_uri="{self.as_base}", realm="{self.storage_id}"'
+        else:
+            challenge = f'Bearer resource_metadata="{self.base}{PRM}{request.url.raw_path.decode()}"'
         return httpx.Response(
             401,
             headers=[
-                ("WWW-Authenticate", f'Bearer as_uri="{self.as_base}", realm="{self.storage_id}", '
-                                     'error="invalid_token"'),
+                ("WWW-Authenticate", f'{challenge}, error="invalid_token"'),
                 ("Link", f'<{self.storage_id}>; rel="{LWS}storage"'),
             ],
         )
@@ -180,8 +186,13 @@ class FakeLws:
             return self._authorization_server(request, parts.path)
         if path_url == self.storage_id and method in ("GET", "HEAD"):
             return self._json(200, self.description(), [("ETag", '"sd"')], "application/lws+cid")
+        if parts.path.startswith(PRM) and method == "GET":
+            # RFC 9728: the metadata of the resource at the path (and query) after PRM
+            return self._json(200, {"resource": self.base + url[len(self.base + PRM):],
+                                    "authorization_servers": [self.as_base]},
+                              content_type="application/json")
         if self.auth and not self._authorized(request):
-            return self._challenge()
+            return self._challenge(request)
         if path_url == self.type_index:
             return self._type_index(int(query.get("page", ["1"])[0]))
         if path_url == self.type_search:

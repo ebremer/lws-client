@@ -4,10 +4,11 @@
 * :class:`Authenticator` — pluggable hook: ``authorize`` before a request and
   ``handle_challenge`` on ``401``.
 * :class:`BearerTokenAuthenticator` — send a known access token.
-* :class:`TokenExchangeAuthenticator` — the LWS flow: ``401`` challenge (``as_uri``,
-  ``realm``) → authorization server metadata (``/.well-known/lws-configuration``) →
-  OAuth 2.0 Token Exchange (RFC 8693) with a subject token from a
-  :class:`CredentialProvider` → retry with ``Authorization: Bearer``.
+* :class:`TokenExchangeAuthenticator` — the LWS flow: ``401`` challenge
+  (``resource_metadata``) → protected resource metadata (RFC 9728) and the discovery checks →
+  authorization server metadata (``/.well-known/lws-configuration``) → OAuth 2.0 Token
+  Exchange (RFC 8693) with a subject token from a :class:`CredentialProvider` → retry with
+  ``Authorization: Bearer``.
 * Credential providers for the authentication suites: :class:`OpenIdCredentials`,
   :class:`SamlCredentials`, :class:`SelfSignedCredentials`.
 """
@@ -26,8 +27,22 @@ from urllib.parse import urlencode, urlsplit
 import httpx
 
 from ._flow import Exclusive, Flow, Invoke, Send
-from ._util import b64url_decode, is_loopback, origin_parts, with_path
-from .constants import GRANT_TYPE_TOKEN_EXCHANGE, WELL_KNOWN_LWS_CONFIGURATION, MediaType, TokenType
+from ._util import (
+    b64url_decode,
+    is_loopback,
+    normalize_url,
+    origin_parts,
+    resolve,
+    url_origin,
+    with_path,
+)
+from .constants import (
+    GRANT_TYPE_TOKEN_EXCHANGE,
+    WELL_KNOWN_LWS_CONFIGURATION,
+    MediaType,
+    Rel,
+    TokenType,
+)
 from .crypto import (
     SigningKey,
     did_key_from_jwk,
@@ -35,14 +50,16 @@ from .crypto import (
     encode_jwt,
     self_signed_claims,
 )
-from .errors import AuthenticationError
-from .headers import AuthChallenge, parse_www_authenticate
+from .errors import AuthenticationError, ProtocolError
+from .headers import AuthChallenge, parse_link_header, parse_www_authenticate
+from .models import STORAGE_ACCEPT, StorageDescription
 
 __all__ = [
     "Authenticator",
     "BearerTokenAuthenticator",
     "TokenExchangeAuthenticator",
     "AuthorizationServerMetadata",
+    "ProtectedResourceMetadata",
     "AccessToken",
     "CredentialContext",
     "CredentialProvider",
@@ -51,6 +68,8 @@ __all__ = [
     "SelfSignedCredentials",
     "encode_saml_assertion",
     "realm_contains",
+    "same_origin",
+    "same_resource",
     "metadata_url",
     "parse_token_response_expiry",
 ]
@@ -62,15 +81,34 @@ __all__ = [
 def realm_contains(realm: str, url: str) -> bool:
     """True if ``url`` is logically contained in ``realm``: same scheme, host and port, and
     the path equals the realm path or lies below it (the realm path is treated as a
-    directory)."""
+    directory). A token's scopes contain URLs in the same way."""
     if origin_parts(realm) != origin_parts(url):
         return False
     realm_path = urlsplit(realm).path or "/"
     path = urlsplit(url).path or "/"
     if path == realm_path:
         return True
-    prefix = realm_path if realm_path.endswith("/") else realm_path + "/"
-    return path.startswith(prefix)
+    return path.startswith(_directory(realm_path))
+
+
+def _directory(path: str) -> str:
+    return path if path.endswith("/") else path + "/"
+
+
+def same_origin(a: str, b: str) -> bool:
+    """True if ``a`` and ``b`` have the same scheme and authority: scheme and host compared
+    case-insensitively, a missing port taken as the scheme's default (lws10-core "Discovery
+    Validation by a Client")."""
+    origin = url_origin(a)
+    return origin is not None and origin == url_origin(b)
+
+
+def same_resource(requested: str, resource: str) -> bool:
+    """True if a protected resource metadata ``resource`` is identical to the ``requested`` URL
+    (RFC 9728 §3.3): compared after lower-casing scheme and host and dropping a default port,
+    and nothing else — no trailing slash, case or percent-encoding leniency."""
+    normalized = normalize_url(requested)
+    return normalized is not None and normalized == normalize_url(resource)
 
 
 def metadata_url(issuer: str) -> str:
@@ -143,14 +181,44 @@ class AuthorizationServerMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class ProtectedResourceMetadata:
+    """RFC 9728 protected resource metadata, named by the ``resource_metadata`` of a ``401``
+    challenge: the resource it describes and its authorization servers, in order."""
+
+    resource: str
+    authorization_servers: tuple[str, ...]
+    raw: Mapping[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, data: Any) -> ProtectedResourceMetadata:
+        """Parse a metadata document; raises :class:`AuthenticationError` unless ``resource`` is
+        a string and ``authorization_servers`` a non-empty array of strings (lws10-core makes it
+        REQUIRED)."""
+        if not isinstance(data, Mapping):
+            raise AuthenticationError("protected resource metadata is not a JSON object")
+        resource = data.get("resource")
+        if not isinstance(resource, str):
+            raise AuthenticationError("protected resource metadata has no resource")
+        servers = data.get("authorization_servers")
+        if not (isinstance(servers, list) and servers and all(isinstance(s, str) for s in servers)):
+            raise AuthenticationError("protected resource metadata names no authorization_servers")
+        return cls(resource=resource, authorization_servers=tuple(servers), raw=dict(data))
+
+
+@dataclass(frozen=True, slots=True)
 class AccessToken:
-    """An access token obtained from an authorization server."""
+    """An access token obtained from an authorization server for a storage.
+
+    It is sent ahead to URLs inside its ``scopes``: the storage URL and the storage root, each
+    treated as a directory, or the realm for the challenge of the drafts before 19 October 2026.
+    """
 
     value: str
     token_type: str
     expires_at: float
     issuer: str
-    realm: str
+    storage: str
+    scopes: tuple[str, ...] = ()
 
     def expired(self, skew: float = 0.0, now: float | None = None) -> bool:
         return (time.time() if now is None else now) >= self.expires_at - skew
@@ -158,10 +226,11 @@ class AccessToken:
 
 @dataclass(frozen=True, slots=True)
 class CredentialContext:
-    """What a credential provider knows about the token exchange it is asked to support."""
+    """What a credential provider knows about the token exchange it is asked to support: the
+    authorization server and the storage the token is for."""
 
     issuer: str
-    realm: str
+    storage: str
     metadata: AuthorizationServerMetadata
 
 
@@ -334,7 +403,11 @@ class Authenticator:
     def authorize_flow(self, request: httpx.Request) -> Flow[None]:
         yield Invoke(self.authorize, (request,))
 
-    def challenge_flow(self, request: httpx.Request, response: httpx.Response) -> Flow[bool]:
+    def challenge_flow(
+        self, request: httpx.Request, response: httpx.Response
+    ) -> Flow[bool | str]:
+        """``True`` to retry the request once, or the ``Authorization`` header value to retry it
+        with (the request is then sent without :meth:`authorize_flow`)."""
         return bool((yield Invoke(self.handle_challenge, (request, response))))
 
 
@@ -366,10 +439,17 @@ class BearerTokenAuthenticator(Authenticator):
 class TokenExchangeAuthenticator(Authenticator):
     """The LWS OAuth 2.0 token-exchange flow (design contract §6.2).
 
+    On a ``401`` it follows the challenge's ``resource_metadata`` (RFC 9728), and makes the
+    discovery checks of lws10-core before it asks for a token: the metadata is on the requested
+    origin and describes the requested URL, and the storage the ``401`` links to has its root on
+    the requested origin. A challenge that fails a check gets no token, and does not cost the
+    client the token it has. A ``401`` with the ``as_uri`` and ``realm`` of the drafts before
+    19 October 2026, and no ``resource_metadata``, is still followed after the realm check.
+
     :param credentials: supplies the subject token (authentication credential).
     :param allow_insecure_http: allow ``http`` authorization servers (loopback hosts are
         always allowed, for testing).
-    :param authorization_server_filter: ``(as_uri, realm) -> bool`` policy deciding whether
+    :param authorization_server_filter: ``(issuer, storage) -> bool`` policy deciding whether
         credentials may be presented to an authorization server named by a storage.
     :param refresh_skew: seconds before expiry at which cached tokens are refreshed.
     """
@@ -390,17 +470,23 @@ class TokenExchangeAuthenticator(Authenticator):
         self._clock = clock
         self._tokens: dict[tuple[str, str], AccessToken] = {}
         self._metadata: dict[str, AuthorizationServerMetadata] = {}
+        self._descriptions: dict[str, StorageDescription] = {}
         self._lock = threading.Lock()
 
     # -- cache ---------------------------------------------------------------------------
 
     def _entry_for(self, url: str) -> AccessToken | None:
-        """The cached token whose realm contains ``url`` (longest realm wins)."""
+        """The cached token with a scope that contains ``url`` (the longest scope path wins)."""
         with self._lock:
-            matches = [t for t in self._tokens.values() if realm_contains(t.realm, url)]
-        if not matches:
-            return None
-        return max(matches, key=lambda t: len(t.realm))
+            tokens = list(self._tokens.values())
+        best: AccessToken | None = None
+        longest = -1
+        for token in tokens:
+            for scope in token.scopes:
+                length = len(_directory(urlsplit(scope).path))
+                if length > longest and realm_contains(scope, url):
+                    best, longest = token, length
+        return best
 
     def has_credentials_for(self, url: str) -> bool:
         entry = self._entry_for(url)
@@ -411,10 +497,11 @@ class TokenExchangeAuthenticator(Authenticator):
         return self._entry_for(url)
 
     def clear(self) -> None:
-        """Forget all cached tokens and authorization server metadata."""
+        """Forget all cached tokens, authorization server metadata and storage descriptions."""
         with self._lock:
             self._tokens.clear()
             self._metadata.clear()
+            self._descriptions.clear()
 
     # -- flows ---------------------------------------------------------------------------
 
@@ -425,52 +512,141 @@ class TokenExchangeAuthenticator(Authenticator):
             return
         if entry.expired(self.refresh_skew, self._clock()):
             entry = yield Exclusive(
-                ("lws-token", entry.issuer, entry.realm),
-                self._obtain(entry.issuer, entry.realm, failed=entry.value),
+                ("lws-token", entry.issuer, entry.storage),
+                self._obtain(entry.issuer, entry.storage, entry.scopes, failed=entry.value),
             )
         request.headers["Authorization"] = f"Bearer {entry.value}"
 
-    def challenge_flow(self, request: httpx.Request, response: httpx.Response) -> Flow[bool]:
-        challenge = self._select(parse_www_authenticate(response.headers.get_list("www-authenticate")))
-        if challenge is None:
-            return False
-        issuer, realm = str(challenge.as_uri), str(challenge.realm)
+    def challenge_flow(
+        self, request: httpx.Request, response: httpx.Response
+    ) -> Flow[bool | str]:
+        challenges = [
+            ch
+            for ch in parse_www_authenticate(response.headers.get_list("www-authenticate"))
+            if ch.is_scheme("Bearer")
+        ]
         url = str(request.url)
+        current = next((ch for ch in challenges if ch.resource_metadata), None)
+        if current is not None:
+            issuer, storage, scopes = yield from self._discover(url, current, response)
+        else:
+            legacy = next((ch for ch in challenges if ch.as_uri and ch.realm), None)
+            if legacy is None:
+                return False
+            issuer, storage, scopes = self._legacy(url, legacy)
+        sent = request.headers.get("authorization", "")
+        failed = sent[7:] if sent.lower().startswith("bearer ") else None
+        token = yield Exclusive(
+            ("lws-token", issuer, storage), self._obtain(issuer, storage, scopes, failed=failed)
+        )
+        # The retry carries the token obtained for the URL that drew the 401, inside its scopes
+        # or not (a storage with opaque identifiers).
+        return f"Bearer {token.value}"
+
+    def _discover(
+        self, url: str, challenge: AuthChallenge, response: httpx.Response
+    ) -> Flow[tuple[str, str, tuple[str, ...]]]:
+        """The issuer, the storage and the token's scopes for a ``401`` with
+        ``resource_metadata``, after the discovery checks of lws10-core."""
+        prm_url = resolve(url, str(challenge.resource_metadata))
+        if not same_origin(prm_url, url):
+            raise AuthenticationError(
+                f"the protected resource metadata {prm_url} is not on the origin of {url}; "
+                "refusing to obtain credentials"
+            )
+        storage = next(
+            (link.href for link in parse_link_header(response.headers.get_list("link"), url)
+             if link.rel == Rel.STORAGE),
+            None,
+        )
+        if storage is None:
+            raise AuthenticationError(f"the 401 from {url} links to no storage (rel={Rel.STORAGE})")
+        metadata = yield from self._resource_metadata_flow(prm_url)
+        if not same_resource(url, metadata.resource):
+            raise AuthenticationError(
+                f"the protected resource metadata {prm_url} describes {metadata.resource}, not "
+                f"{url}; refusing to obtain credentials"
+            )
+        root = yield Exclusive(("lws-storage", storage), self._storage_root_flow(storage))
+        if not same_origin(root, url):
+            raise AuthenticationError(
+                f"the root {root} of storage {storage} is not on the origin of {url}; refusing "
+                "to obtain credentials"
+            )
+        refused: list[str] = []
+        for issuer in metadata.authorization_servers:
+            if not self._secure(issuer):
+                refused.append(f"{issuer} is insecure (https is required)")
+            elif not self._allowed(issuer, storage):
+                refused.append(f"{issuer} is rejected by policy")
+            else:
+                return issuer, storage, (storage, root)
+        raise AuthenticationError(
+            f"no authorization server of {prm_url} can be used: {'; '.join(refused)}"
+        )
+
+    def _legacy(self, url: str, challenge: AuthChallenge) -> tuple[str, str, tuple[str, ...]]:
+        """The challenge of the drafts before 19 October 2026: the realm must contain ``url``,
+        and is then the token's storage and its only scope."""
+        issuer, realm = str(challenge.as_uri), str(challenge.realm)
         if not realm_contains(realm, url):
             raise AuthenticationError(
                 f"request URL {url} is not within the challenge realm {realm}; refusing to "
                 "obtain credentials"
             )
         self._check_secure(issuer, "authorization server")
-        if self.authorization_server_filter is not None and not self.authorization_server_filter(
-            issuer, realm
-        ):
+        if not self._allowed(issuer, realm):
             raise AuthenticationError(f"authorization server {issuer} rejected by policy")
-        sent = request.headers.get("authorization", "")
-        failed = sent[7:] if sent.lower().startswith("bearer ") else None
-        if failed:
-            self._drop(failed)
-        yield Exclusive(("lws-token", issuer, realm), self._obtain(issuer, realm, failed=failed))
-        return True
+        return issuer, realm, (realm,)
 
-    @staticmethod
-    def _select(challenges: list[AuthChallenge]) -> AuthChallenge | None:
-        for ch in challenges:
-            if ch.is_scheme("Bearer") and ch.as_uri and ch.realm:
-                return ch
-        return None
+    def _secure(self, url: str) -> bool:
+        scheme = urlsplit(url).scheme.lower()
+        return scheme == "https" or (
+            scheme == "http" and (is_loopback(url) or self.allow_insecure_http)
+        )
 
     def _check_secure(self, url: str, what: str) -> None:
-        scheme = urlsplit(url).scheme.lower()
-        if scheme == "https" or (scheme == "http" and (is_loopback(url) or self.allow_insecure_http)):
-            return
-        raise AuthenticationError(f"refusing insecure {what} URL {url} (https is required)")
+        if not self._secure(url):
+            raise AuthenticationError(f"refusing insecure {what} URL {url} (https is required)")
 
-    def _drop(self, token: str) -> None:
+    def _allowed(self, issuer: str, storage: str) -> bool:
+        policy = self.authorization_server_filter
+        return policy is None or policy(issuer, storage)
+
+    @staticmethod
+    def _get_json(url: str, accept: str, what: str) -> Flow[Any]:
+        """``GET`` a discovery document: without credentials, following no redirect."""
+        response = yield Send(httpx.Request("GET", url, headers={"Accept": accept}))
+        if response.status_code != 200:
+            raise AuthenticationError(
+                f"{what} {url} returned {response.status_code}", status=response.status_code
+            )
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise AuthenticationError(f"{what} {url} is not JSON") from exc
+
+    def _resource_metadata_flow(self, url: str) -> Flow[ProtectedResourceMetadata]:
+        # Not cached: it describes one resource.
+        data = yield from self._get_json(url, MediaType.JSON, "protected resource metadata")
+        return ProtectedResourceMetadata.from_json(data)
+
+    def _storage_root_flow(self, storage: str) -> Flow[str]:
+        """The root of ``storage``, from its description, which is cached for the
+        authenticator's lifetime."""
         with self._lock:
-            for key, entry in list(self._tokens.items()):
-                if entry.value == token:
-                    del self._tokens[key]
+            description = self._descriptions.get(storage)
+        if description is not None:
+            return description.storage_root()
+        data = yield from self._get_json(storage, STORAGE_ACCEPT, "storage description")
+        try:
+            description = StorageDescription.from_json(data, storage)
+            root = description.storage_root()
+        except ProtocolError as exc:
+            raise AuthenticationError(f"storage description {storage}: {exc}") from exc
+        with self._lock:
+            self._descriptions[storage] = description
+        return root
 
     def _metadata_flow(self, issuer: str) -> Flow[AuthorizationServerMetadata]:
         with self._lock:
@@ -478,38 +654,37 @@ class TokenExchangeAuthenticator(Authenticator):
         if cached is not None:
             return cached
         url = metadata_url(issuer)
-        response = yield Send(httpx.Request("GET", url, headers={"Accept": MediaType.JSON}))
-        if response.status_code != 200:
-            raise AuthenticationError(
-                f"authorization server metadata {url} returned {response.status_code}",
-                status=response.status_code,
-            )
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise AuthenticationError(f"authorization server metadata {url} is not JSON") from exc
+        data = yield from self._get_json(url, MediaType.JSON, "authorization server metadata")
         if not isinstance(data, dict):
             raise AuthenticationError(f"authorization server metadata {url} is not a JSON object")
         metadata = AuthorizationServerMetadata.from_json(data)
         if not _same_issuer(metadata.issuer, issuer):
             raise AuthenticationError(
-                f"metadata issuer {metadata.issuer!r} does not match as_uri {issuer!r}"
+                f"metadata issuer {metadata.issuer!r} does not match the authorization server "
+                f"{issuer!r}"
             )
         self._check_secure(metadata.token_endpoint, "token endpoint")
         with self._lock:
             self._metadata[issuer] = metadata
         return metadata
 
-    def _obtain(self, issuer: str, realm: str, failed: str | None) -> Flow[AccessToken]:
+    def _obtain(
+        self, issuer: str, storage: str, scopes: tuple[str, ...], failed: str | None
+    ) -> Flow[AccessToken]:
+        key = (issuer, storage)
         with self._lock:
-            current = self._tokens.get((issuer, realm))
+            current = self._tokens.get(key)
         if (
             current is not None
             and current.value != failed
             and not current.expired(self.refresh_skew, self._clock())
         ):
-            return current  # another request refreshed it meanwhile
+            return current  # another request obtained it meanwhile
         metadata = yield from self._metadata_flow(issuer)
+        if current is not None:
+            with self._lock:
+                if self._tokens.get(key) is current:
+                    del self._tokens[key]  # refused by the storage, or expired: exchange again
         token_type = self.credentials.token_type
         supported = metadata.subject_token_types_supported
         if supported is not None and token_type not in supported:
@@ -517,12 +692,12 @@ class TokenExchangeAuthenticator(Authenticator):
                 f"authorization server {issuer} does not accept subject tokens of type "
                 f"{token_type} (supported: {', '.join(supported)})"
             )
-        context = CredentialContext(issuer=issuer, realm=realm, metadata=metadata)
+        context = CredentialContext(issuer=issuer, storage=storage, metadata=metadata)
         subject_token = yield Invoke(self.credentials.get_subject_token, (context,))
         form = urlencode(
             {
                 "grant_type": GRANT_TYPE_TOKEN_EXCHANGE,
-                "resource": realm,
+                "resource": storage,
                 "subject_token": subject_token,
                 "subject_token_type": token_type,
             }
@@ -535,13 +710,13 @@ class TokenExchangeAuthenticator(Authenticator):
                 content=form.encode("ascii"),
             )
         )
-        token = self._parse_token_response(response, issuer, realm)
+        token = self._parse_token_response(response, issuer, storage, scopes)
         with self._lock:
-            self._tokens[(issuer, realm)] = token
+            self._tokens[key] = token
         return token
 
     def _parse_token_response(
-        self, response: httpx.Response, issuer: str, realm: str
+        self, response: httpx.Response, issuer: str, storage: str, scopes: tuple[str, ...]
     ) -> AccessToken:
         try:
             data = response.json()
@@ -567,7 +742,7 @@ class TokenExchangeAuthenticator(Authenticator):
         if not isinstance(token_type, str) or token_type.lower() != "bearer":
             raise AuthenticationError(f"unsupported token_type {token_type!r} (Bearer required)")
         expires_at = parse_token_response_expiry(data, self._clock())
-        return AccessToken(data["access_token"], "Bearer", expires_at, issuer, realm)
+        return AccessToken(data["access_token"], "Bearer", expires_at, issuer, storage, scopes)
 
 
 def parse_token_response_expiry(body: Mapping[str, Any], now: float) -> float:

@@ -83,12 +83,17 @@ def test_www_authenticate_fixture(case: dict[str, Any]) -> None:
 
 def test_challenge_accessors() -> None:
     (ch,) = parse_www_authenticate(
-        'Bearer as_uri="https://as.example", realm="https://s.example/", error="invalid_token", '
-        'error_description="expired"'
+        'Bearer resource_metadata="https://s.example/.well-known/oauth-protected-resource/a", '
+        'error="invalid_token", error_description="expired"'
     )
     assert ch.is_scheme("bearer")
-    assert (ch.as_uri, ch.realm, ch.error, ch.error_description) == (
-        "https://as.example", "https://s.example/", "invalid_token", "expired"
+    assert (ch.resource_metadata, ch.as_uri, ch.realm, ch.error, ch.error_description) == (
+        "https://s.example/.well-known/oauth-protected-resource/a", None, None, "invalid_token",
+        "expired",
+    )
+    (legacy,) = parse_www_authenticate('Bearer as_uri="https://as.example", realm="https://s.example/"')
+    assert (legacy.resource_metadata, legacy.as_uri, legacy.realm) == (
+        None, "https://as.example", "https://s.example/"
     )
 
 

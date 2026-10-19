@@ -41,6 +41,8 @@ from lws_client import (
     Linkset,
     LwsClient,
     MethodNotAllowedError,
+    MoveCapability,
+    MoveResult,
     NotAcceptableError,
     NotFoundError,
     NotImplementedByServerError,
@@ -359,6 +361,17 @@ def created_result(c: CreateResult) -> Json:
     return {"location": c.location, "metadata": metadata_result(c.metadata)}
 
 
+def moved_result(m: MoveResult) -> Json:
+    return members(
+        status=m.status,
+        location=m.location,
+        linkset=m.linkset,
+        identifierPreserved=m.identifier_preserved,
+        etag=m.etag,
+        metadata=metadata_result(m.metadata),
+    )
+
+
 def service_result(s: Service) -> Json:
     return members(
         id=s.id,
@@ -366,6 +379,12 @@ def service_result(s: Service) -> Json:
         serviceEndpoint=s.service_endpoint,
         subscriptionType=list(s.subscription_types) if "subscriptionType" in s.raw else None,
     )
+
+
+def move_capability_result(m: MoveCapability | None) -> Json | None:
+    if m is None:
+        return None
+    return members(appliesTo=list(m.applies_to), preservesIdentifier=m.preserves_identifier)
 
 
 def storage_result(s: StorageDescription) -> Json:
@@ -381,6 +400,7 @@ def storage_result(s: StorageDescription) -> Json:
         verificationMethods=[
             members(id=vm.id, type=vm.type, controller=vm.controller) for vm in s.verification_methods
         ],
+        moveCapability=move_capability_result(s.move_capability()),
         raw=dict(s.raw),
     )
 
@@ -506,6 +526,7 @@ class Adapter:
             "read_linkset": self.read_linkset,
             "update_linkset": self.update_linkset,
             "patch_linkset": self.patch_linkset,
+            "move": self.move,
             "subscribe": self.subscribe,
             "list_subscriptions": self.list_subscriptions,
             "get_subscription": self.get_subscription,
@@ -717,6 +738,13 @@ class Adapter:
         return update_result(
             self.client.patch_linkset(linkset_url, patch, if_match=opt_str(args, "ifMatch"))
         )
+
+    # -- moving ----------------------------------------------------------------------------
+
+    def move(self, args: Json) -> Json:
+        url = req_url(args, "url")
+        destination = req_url(args, "destination")
+        return moved_result(self.client.move(url, destination, if_match=opt_str(args, "ifMatch")))
 
     # -- notifications ---------------------------------------------------------------------
 

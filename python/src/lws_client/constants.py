@@ -7,6 +7,7 @@ from __future__ import annotations
 __all__ = [
     "LWS_NS",
     "LWS_CONTEXT",
+    "LWS_PROFILE",
     "CID_CONTEXT",
     "ACTIVITYSTREAMS_CONTEXT",
     "Rel",
@@ -14,9 +15,11 @@ __all__ = [
     "MediaType",
     "ServiceType",
     "SUBSCRIPTION_WEBHOOK",
+    "CapabilityType",
     "TokenType",
     "GRANT_TYPE_TOKEN_EXCHANGE",
     "WELL_KNOWN_LWS_CONFIGURATION",
+    "WELL_KNOWN_OAUTH_PROTECTED_RESOURCE",
     "OPENID_PROVIDER_SERVICE",
     "ACCESS_PROFILE",
     "TYPE_ACCESS_REQUEST",
@@ -39,6 +42,9 @@ USER_AGENT = f"lws-client-python/{VERSION}"
 # Namespaces / JSON-LD contexts
 LWS_NS = "https://www.w3.org/ns/lws#"
 LWS_CONTEXT = "https://www.w3.org/ns/lws/v1"
+#: The "LWS profile": the ``profile`` parameter of an RDF media type whose representation is RDF
+#: isomorphic to the ``application/lws+json`` one.
+LWS_PROFILE = "https://www.w3.org/ns/lws/v1"
 CID_CONTEXT = "https://www.w3.org/ns/cid/v1"
 ACTIVITYSTREAMS_CONTEXT = "https://www.w3.org/ns/activitystreams"
 
@@ -94,6 +100,12 @@ class ServiceType:
 SUBSCRIPTION_WEBHOOK = "WebhookSubscription"
 
 
+class CapabilityType:
+    """``type`` values of capabilities in a storage description."""
+
+    MOVE_RESOURCE = "MoveResource"
+
+
 class TokenType:
     """OAuth 2.0 token type URIs (RFC 8693) used by the LWS authentication suites."""
 
@@ -105,6 +117,7 @@ class TokenType:
 
 GRANT_TYPE_TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"
 WELL_KNOWN_LWS_CONFIGURATION = "/.well-known/lws-configuration"
+WELL_KNOWN_OAUTH_PROTECTED_RESOURCE = "/.well-known/oauth-protected-resource"  # RFC 9728
 OPENID_PROVIDER_SERVICE = "https://www.w3.org/ns/lws#OpenIdProvider"
 
 # Access requests / grants (ODRL-based access profile)
@@ -154,3 +167,4 @@ class ActivityType:
     CREATE = "Create"
     UPDATE = "Update"
     DELETE = "Delete"
+    MOVE = "Move"

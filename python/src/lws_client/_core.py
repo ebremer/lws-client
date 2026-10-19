@@ -27,8 +27,9 @@ from .constants import (
 from .errors import ProtocolError, UnsupportedError, error_for_response
 from .headers import Link, encode_slug
 from .json_patch import JsonPatch
-from .linkset import Linkset, LinksetDocument
+from .linkset import Linkset, LinksetDocument, MoveResult, move_patch
 from .models import (
+    STORAGE_ACCEPT,
     ContainerPage,
     CreateResult,
     Resource,
@@ -49,7 +50,6 @@ ServiceRef = Union[str, Service]
 
 _REDIRECTS = {301, 302, 303, 307, 308}
 _SAFE = {"GET", "HEAD", "OPTIONS", "QUERY"}
-_STORAGE_ACCEPT = f"{MediaType.LWS_CID}, {MediaType.LD_JSON};q=0.9, {MediaType.JSON};q=0.8"
 _MAX_REDIRECTS = 10
 
 
@@ -115,15 +115,22 @@ class Core:
             yield from self.execute(self.request("HEAD", str(request.url)))
         redirects = 0
         retried = False
+        authorize = True
         while True:
-            if auth is not None:
+            if auth is not None and authorize:
                 yield from auth.authorize_flow(request)
+            authorize = True
             response: httpx.Response = yield Send(request, stream)
             status = response.status_code
             if status == 401 and auth is not None and not retried and replayable:
                 retried = True
-                if (yield from auth.challenge_flow(request, response)):
+                answer = yield from auth.challenge_flow(request, response)
+                if answer:
                     request = self._clone(request, request.method, str(request.url))
+                    if isinstance(answer, str):
+                        # The authenticator answered the challenge with the retry's credentials.
+                        request.headers["Authorization"] = answer
+                        authorize = False
                     continue
                 return response
             location = response.headers.get("location")
@@ -164,7 +171,7 @@ class Core:
     def get_storage_description(
         self, storage_url: str, headers: HeaderInput = None
     ) -> Flow[StorageDescription]:
-        req = self.request("GET", storage_url, headers=headers, accept=_STORAGE_ACCEPT)
+        req = self.request("GET", storage_url, headers=headers, accept=STORAGE_ACCEPT)
         response = yield from self.call(req)
         data = parse_json_body(response.content, "storage description")
         return StorageDescription.from_json(data, str(response.url))
@@ -412,6 +419,7 @@ class Core:
             url=str(response.url),
             linkset=Linkset.from_json(data),
             metadata=ResourceMetadata.from_response(response),
+            raw=data,
         )
 
     def update_linkset(
@@ -432,6 +440,25 @@ class Core:
         if_match: str | None,
     ) -> Flow[UpdateResult]:
         return (yield from self.patch(linkset_url, patch, if_match=if_match))
+
+    # -- moving --------------------------------------------------------------------------
+
+    def move(
+        self,
+        resource_url: str,
+        destination_url: str,
+        *,
+        if_match: str | None = None,
+        headers: HeaderInput = None,
+    ) -> Flow[MoveResult]:
+        """Read the resource's linkset, then patch its ``up`` link to the destination,
+        conditional on the linkset's ETag."""
+        doc = yield from self.read_linkset(resource_url)
+        patch = move_patch(resource_url, doc.url, doc.raw, destination_url)
+        result = yield from self.patch(
+            doc.url, patch, if_match=if_match or doc.etag, headers=headers
+        )
+        return MoveResult.parse(resource_url, result.metadata, result.content)
 
     # -- JSON documents (notifications, access) ------------------------------------------
 

@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: MIT
 """lws-client — a client for the W3C Linked Web Storage (LWS) protocol.
 
-Targets the LWS Working Group specifications as of 2026-10-05 (LWS Protocol 1.0 core,
-OpenID / SAML / self-signed CID authentication suites, webhook notifications, and the
-Search and Type Index services).
+Targets the LWS Working Group specifications as of 2026-10-19, the Working Draft of 19 October
+2026 (LWS Protocol 1.0 core, OpenID / SAML / self-signed CID authentication suites, webhook
+notifications, and the Search and Type Index services).
 
 Quick start::
 
@@ -27,6 +27,7 @@ from .auth import (
     CredentialContext,
     CredentialProvider,
     OpenIdCredentials,
+    ProtectedResourceMetadata,
     SamlCredentials,
     SelfSignedCredentials,
     TokenExchangeAuthenticator,
@@ -34,6 +35,8 @@ from .auth import (
     metadata_url,
     parse_token_response_expiry,
     realm_contains,
+    same_origin,
+    same_resource,
 )
 from .client import AsyncLwsClient, AsyncResourceStream, LwsClient, ResourceStream
 from .constants import (
@@ -43,6 +46,7 @@ from .constants import (
     GRANT_TYPE_TOKEN_EXCHANGE,
     LWS_CONTEXT,
     LWS_NS,
+    LWS_PROFILE,
     OPENID_PROVIDER_SERVICE,
     PREFER_LINK_RELATIONS,
     PREFER_SET_LINKSET,
@@ -53,8 +57,10 @@ from .constants import (
     TYPE_ACCESS_REQUEST,
     VERSION,
     WELL_KNOWN_LWS_CONFIGURATION,
+    WELL_KNOWN_OAUTH_PROTECTED_RESOURCE,
     Action,
     ActivityType,
+    CapabilityType,
     MediaType,
     Operand,
     Operator,
@@ -108,12 +114,13 @@ from .headers import (
     serialize_links,
 )
 from .json_patch import JsonPatch, JsonPointer
-from .linkset import LinkContext, Linkset, LinksetDocument, LinkTarget
+from .linkset import LinkContext, Linkset, LinksetDocument, LinkTarget, MoveResult, move_patch
 from .models import (
     Capability,
     ContainedResource,
     ContainerPage,
     CreateResult,
+    MoveCapability,
     Resource,
     ResourceMetadata,
     SearchPage,
@@ -158,9 +165,11 @@ __all__ = [
     "TypeIndexPage",
     "CreateResult",
     "UpdateResult",
+    "MoveResult",
     "StorageDescription",
     "Service",
     "Capability",
+    "MoveCapability",
     "VerificationMethod",
     "Linkset",
     "LinkContext",
@@ -187,6 +196,7 @@ __all__ = [
     "BearerTokenAuthenticator",
     "TokenExchangeAuthenticator",
     "AuthorizationServerMetadata",
+    "ProtectedResourceMetadata",
     "AccessToken",
     "CredentialContext",
     "CredentialProvider",
@@ -196,6 +206,8 @@ __all__ = [
     "encode_saml_assertion",
     "metadata_url",
     "realm_contains",
+    "same_origin",
+    "same_resource",
     "parse_token_response_expiry",
     # crypto
     "SigningKey",
@@ -220,6 +232,7 @@ __all__ = [
     "serialize_links",
     "parse_www_authenticate",
     "parse_notification",
+    "move_patch",
     "encode_slug",
     "has_type",
     "parse_datetime",
@@ -248,6 +261,7 @@ __all__ = [
     # constants
     "LWS_NS",
     "LWS_CONTEXT",
+    "LWS_PROFILE",
     "CID_CONTEXT",
     "ACTIVITYSTREAMS_CONTEXT",
     "Rel",
@@ -255,9 +269,11 @@ __all__ = [
     "MediaType",
     "ServiceType",
     "SUBSCRIPTION_WEBHOOK",
+    "CapabilityType",
     "TokenType",
     "GRANT_TYPE_TOKEN_EXCHANGE",
     "WELL_KNOWN_LWS_CONFIGURATION",
+    "WELL_KNOWN_OAUTH_PROTECTED_RESOURCE",
     "OPENID_PROVIDER_SERVICE",
     "ACCESS_PROFILE",
     "TYPE_ACCESS_REQUEST",

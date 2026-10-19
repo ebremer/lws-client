@@ -215,8 +215,15 @@ class AuthChallenge:
         return self.scheme.lower() == scheme.lower()
 
     @property
+    def resource_metadata(self) -> str | None:
+        """The ``resource_metadata`` parameter (RFC 9728 §5.1): the URL of the requested
+        resource's protected resource metadata."""
+        return self.params.get("resource_metadata")
+
+    @property
     def as_uri(self) -> str | None:
-        """The LWS ``as_uri`` parameter (authorization server issuer)."""
+        """The ``as_uri`` parameter (authorization server issuer) of the LWS challenge of the
+        drafts before 19 October 2026."""
         return self.params.get("as_uri")
 
     @property

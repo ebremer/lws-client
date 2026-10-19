@@ -93,6 +93,12 @@ class Activity:
     def is_delete(self) -> bool:
         return self._is(ActivityType.DELETE)
 
+    @property
+    def is_move(self) -> bool:
+        """A ``Move``: ``origin`` is the container the resource left, ``target`` the one it
+        joined, and ``object`` the resource as it is after the move."""
+        return self._is(ActivityType.MOVE)
+
 
 @dataclass(frozen=True, slots=True)
 class Notification:
