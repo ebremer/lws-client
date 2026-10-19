@@ -39,7 +39,7 @@ public final class SelfSignedAuth {
         LwsClient client = LwsClient.builder()
                 .authenticator(TokenExchangeAuthenticator.builder(didKey)
                         // Optional: only send credentials to authorization servers you trust.
-                        .authorizationServerFilter((as, realm) -> true)
+                        .authorizationServerFilter((issuer, storage) -> true)
                         .build())
                 .build();
         System.out.println("Client ready: " + client.authenticator().isPresent() + ", https agent alg " + https.algorithm());

@@ -35,12 +35,20 @@ public record AuthChallenge(String scheme, Map<String, String> params, String to
         return Optional.ofNullable(token68);
     }
 
-    /** LWS: the authorization server issuer ({@code as_uri}). */
+    /**
+     * LWS: the URL of the requested resource's protected resource metadata ({@code resource_metadata},
+     * RFC 9728 section 5.1), as sent; resolve it against the request URL.
+     */
+    public Optional<URI> resourceMetadata() {
+        return param("resource_metadata").flatMap(AuthChallenge::uri);
+    }
+
+    /** LWS before the drafts of 19 October 2026: the authorization server issuer ({@code as_uri}). */
     public Optional<URI> asUri() {
         return param("as_uri").flatMap(AuthChallenge::uri);
     }
 
-    /** LWS: the protection scope ({@code realm}). */
+    /** LWS before the drafts of 19 October 2026: the protection scope ({@code realm}). */
     public Optional<URI> realm() {
         return param("realm").flatMap(AuthChallenge::uri);
     }

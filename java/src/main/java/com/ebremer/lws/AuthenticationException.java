@@ -4,7 +4,9 @@ package com.ebremer.lws;
 import java.util.Optional;
 
 /**
- * Obtaining an access token failed: the challenge realm did not contain the request URI, the
+ * Obtaining an access token failed: a discovery check failed (the protected resource metadata or the
+ * storage root is on another origin, the metadata describes another resource or cannot be read, or the
+ * realm of a challenge of the drafts before 19 October 2026 did not contain the request URI), the
  * authorization server was untrusted or insecure, its metadata was invalid, or the token exchange was
  * rejected (in which case {@link #error()} carries the OAuth {@code error} code).
  */

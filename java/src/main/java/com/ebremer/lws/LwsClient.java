@@ -76,6 +76,7 @@ public final class LwsClient {
             + Lws.MediaType.JSON + ";q=0.8";
     private static final String ACCEPT_DESCRIPTION = Lws.MediaType.LWS_CID + ", " + Lws.MediaType.LD_JSON + ";q=0.9, "
             + Lws.MediaType.JSON + ";q=0.8";
+    private static final String ACCEPT_LINKSET = Lws.MediaType.LINKSET_JSON + ", " + Lws.MediaType.JSON + ";q=0.5";
     private static final DateTimeFormatter HTTP_DATE = DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneOffset.UTC);
 
     private final Pipeline pipeline;
@@ -379,8 +380,11 @@ public final class LwsClient {
 
     /** The linkset resource URL of a resource (from {@code rel="linkset"}). */
     public URI linksetUrl(URI resource) {
-        return head(resource).linkset()
-                .orElseThrow(() -> new LwsProtocolException("Resource " + resource + " has no linkset link"));
+        return linksetOf(head(resource), resource);
+    }
+
+    private static URI linksetOf(ResourceMetadata md, URI resource) {
+        return md.linkset().orElseThrow(() -> new LwsProtocolException("Resource " + resource + " has no linkset link"));
     }
 
     /** Discovers and reads a resource's linkset. */
@@ -390,8 +394,10 @@ public final class LwsClient {
 
     /** Reads a linkset resource at a known URL. */
     public LinksetDocument readLinksetResource(URI linksetUrl) {
-        HttpResponse<byte[]> resp = send("GET", linksetUrl, Body.empty(),
-                Map.of("Accept", List.of(Lws.MediaType.LINKSET_JSON + ", " + Lws.MediaType.JSON + ";q=0.5")), null);
+        return toLinksetDocument(send("GET", linksetUrl, Body.empty(), Map.of("Accept", List.of(ACCEPT_LINKSET)), null));
+    }
+
+    private static LinksetDocument toLinksetDocument(HttpResponse<byte[]> resp) {
         check(resp, "GET");
         return new LinksetDocument(resp.uri(), Linkset.parse(Json.parse(resp.body())), metadata(resp));
     }
@@ -404,6 +410,59 @@ public final class LwsClient {
     /** Patches a linkset with JSON Patch. Use {@link com.ebremer.lws.patch.JsonPointer} to address relation keys. */
     public UpdateResult patchLinkset(URI linksetUrl, JsonPatch patch, UpdateOptions options) {
         return patch(linksetUrl, patch, options);
+    }
+
+    // ================================================================================================
+    // Moving
+    // ================================================================================================
+
+    /** Moves a resource into another container; see {@link #move(URI, URI, MoveOptions)}. */
+    public MoveResult move(URI resource, URI destination) {
+        return move(resource, destination, MoveOptions.DEFAULT);
+    }
+
+    /**
+     * Moves a resource (a container with everything in it) into the container {@code destination}: reads its
+     * linkset and patches its {@code up} link ({@link LinksetDocument#movePatch}), conditional on the linkset's
+     * ETag unless {@link MoveOptions#ifMatch} says otherwise. Whether the storage moves resources is
+     * {@link StorageDescription#moveCapability()}; a storage refuses a move it does not allow, a destination
+     * that is not a container, or a container moved into itself or its own descendant
+     * ({@link ConflictException} for 409). Unless the storage preserves identifiers, the resource's URL after
+     * the move is the result's {@link MoveResult#location()}.
+     */
+    public MoveResult move(URI resource, URI destination, MoveOptions options) {
+        LinksetDocument linkset = readLinkset(resource);
+        JsonPatch patch = linkset.movePatch(resource, destination);
+        return toMoveResult(resource, send("PATCH", linkset.url(), Body.of(patch.toBytes()), moveHeaders(options, linkset),
+                options.timeout().orElse(null)));
+    }
+
+    /** Asynchronous {@link #move(URI, URI)}. */
+    public CompletableFuture<MoveResult> moveAsync(URI resource, URI destination) {
+        return moveAsync(resource, destination, MoveOptions.DEFAULT);
+    }
+
+    /** Asynchronous {@link #move(URI, URI, MoveOptions)}. */
+    public CompletableFuture<MoveResult> moveAsync(URI resource, URI destination, MoveOptions options) {
+        return headAsync(resource)
+                .thenCompose(md -> sendAsync("GET", linksetOf(md, resource), Body.empty(), Map.of("Accept", List.of(ACCEPT_LINKSET)), null))
+                .thenApply(LwsClient::toLinksetDocument)
+                .thenCompose(linkset -> sendAsync("PATCH", linkset.url(), Body.of(linkset.movePatch(resource, destination).toBytes()),
+                        moveHeaders(options, linkset), options.timeout().orElse(null)))
+                .thenApply(resp -> toMoveResult(resource, resp));
+    }
+
+    private static Map<String, List<String>> moveHeaders(MoveOptions o, LinksetDocument linkset) {
+        Map<String, List<String>> h = new LinkedHashMap<>();
+        h.put("Content-Type", List.of(Lws.MediaType.JSON_PATCH));
+        o.ifMatchValue().or(linkset::etag).ifPresent(v -> h.put("If-Match", List.of(v)));
+        h.putAll(o.headers());
+        return h;
+    }
+
+    private static MoveResult toMoveResult(URI resource, HttpResponse<byte[]> resp) {
+        check(resp, "PATCH");
+        return MoveResult.of(resource, metadata(resp), resp.body());
     }
 
     // ================================================================================================

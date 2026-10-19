@@ -71,8 +71,8 @@ public record Notification(URI storage, List<Activity> activities, ObjectNode ra
      * @param types the activity types (e.g. {@code Create})
      * @param object the resource concerned
      * @param actor the agent that performed the change
-     * @param target the container a resource was added to ({@code Create})
-     * @param origin the container a resource was removed from ({@code Delete})
+     * @param target the container a resource was added to ({@code Create}, {@code Move})
+     * @param origin the container a resource was removed from ({@code Delete}, {@code Move})
      * @param published when the activity occurred, if parseable
      * @param publishedRaw the {@code published} value as sent
      * @param raw the JSON object
@@ -113,6 +113,11 @@ public record Notification(URI storage, List<Activity> activities, ObjectNode ra
 
         public boolean isDelete() {
             return hasType(Lws.Activity.DELETE);
+        }
+
+        /** A resource moved between containers: {@code origin} it left, {@code target} it joined, {@code object} as it is now. */
+        public boolean isMove() {
+            return hasType(Lws.Activity.MOVE);
         }
     }
 

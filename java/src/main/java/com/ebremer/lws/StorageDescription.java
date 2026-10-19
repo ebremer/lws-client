@@ -147,6 +147,14 @@ public record StorageDescription(URI id, List<String> types, List<Service> servi
     }
 
     /**
+     * The {@code MoveResource} capability: the storage moves resources between containers when their {@code up}
+     * link changes. Without it the {@code up} link is not modifiable, and a client must not assume it is.
+     */
+    public Optional<MoveCapability> moveCapability() {
+        return capability(Lws.Capability.MOVE_RESOURCE).map(MoveCapability::of);
+    }
+
+    /**
      * Finds a verification method by full id, by fragment ({@code #key} or {@code key}), or by an id that
      * resolves against the storage id to the requested id.
      */
@@ -235,6 +243,38 @@ public record StorageDescription(URI id, List<String> types, List<Service> servi
         /** An extra member of the capability object. */
         public Optional<JsonNode> property(String name) {
             return Optional.ofNullable(raw.get(name));
+        }
+    }
+
+    /**
+     * The {@code MoveResource} capability of a storage description (lws10-core "Storage Description
+     * Capabilities").
+     *
+     * @param appliesTo the resource types the storage moves, as received ({@code ["DataResource"]} when the
+     *     capability does not say)
+     * @param preservesIdentifier whether a moved resource keeps its URL; when absent a client must not assume it does
+     * @param raw the capability object
+     */
+    public record MoveCapability(List<String> appliesTo, Optional<Boolean> preservesIdentifier, ObjectNode raw) {
+        public MoveCapability {
+            appliesTo = List.copyOf(appliesTo);
+        }
+
+        static MoveCapability of(Capability c) {
+            JsonNode applies = c.raw().get("appliesTo");
+            JsonNode preserves = c.raw().get("preservesIdentifier");
+            return new MoveCapability(applies == null || applies.isNull() ? List.of("DataResource") : Json.stringOrArray(applies),
+                    preserves != null && preserves.isBoolean() ? Optional.of(preserves.booleanValue()) : Optional.empty(), c.raw());
+        }
+
+        /** Whether the storage moves data resources. */
+        public boolean movesDataResources() {
+            return Lws.hasType(appliesTo, Lws.Type.DATA_RESOURCE);
+        }
+
+        /** Whether the storage moves containers (with everything in them). */
+        public boolean movesContainers() {
+            return Lws.hasType(appliesTo, Lws.Type.CONTAINER);
         }
     }
 

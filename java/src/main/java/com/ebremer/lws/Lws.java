@@ -17,6 +17,8 @@ public final class Lws {
     public static final String LWS_NS = "https://www.w3.org/ns/lws#";
     /** The LWS JSON-LD context. */
     public static final String LWS_CONTEXT = "https://www.w3.org/ns/lws/v1";
+    /** The LWS profile: the {@code profile} parameter of an RDF media type whose representation is in the LWS profile. */
+    public static final String LWS_PROFILE = "https://www.w3.org/ns/lws/v1";
     /** The W3C Controlled Identifiers JSON-LD context. */
     public static final String CID_CONTEXT = "https://www.w3.org/ns/cid/v1";
     /** The Activity Streams 2.0 JSON-LD context. */
@@ -26,6 +28,8 @@ public final class Lws {
     public static final String GRANT_TYPE_TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange";
     /** Well-known path of LWS authorization server metadata. */
     public static final String WELL_KNOWN_LWS_CONFIGURATION = "/.well-known/lws-configuration";
+    /** Well-known path of OAuth 2.0 protected resource metadata (RFC 9728). */
+    public static final String WELL_KNOWN_OAUTH_PROTECTED_RESOURCE = "/.well-known/oauth-protected-resource";
     /** Service type of an OpenID provider in a controlled identifier document. */
     public static final String OPENID_PROVIDER_SERVICE = LWS_NS + "OpenIdProvider";
     /** Public access assignee (foaf:Agent). */
@@ -73,8 +77,8 @@ public final class Lws {
         public static final String JSON = "application/json";
         public static final String PROBLEM_JSON = "application/problem+json";
         public static final String FORM = "application/x-www-form-urlencoded";
-        /** {@code application/ld+json} with the LWS profile, equivalent to {@link #LWS_JSON}. */
-        public static final String LD_JSON_LWS = "application/ld+json; profile=\"" + LWS_CONTEXT + "\"";
+        /** {@code application/ld+json} in the LWS profile, RDF isomorphic to {@link #LWS_JSON}. */
+        public static final String LD_JSON_LWS = "application/ld+json; profile=\"" + LWS_PROFILE + "\"";
     }
 
     /** Storage description service types. */
@@ -86,6 +90,13 @@ public final class Lws {
         public static final String ACCESS_GRANT = "AccessGrantService";
         public static final String TYPE_INDEX = "TypeIndexService";
         public static final String TYPE_SEARCH = "TypeSearchService";
+    }
+
+    /** Storage description capability types ({@code capability[].type}). */
+    public static final class Capability {
+        private Capability() {}
+        /** The storage moves resources between containers when their {@code up} link changes. */
+        public static final String MOVE_RESOURCE = "MoveResource";
     }
 
     /** Notification subscription types. */
@@ -137,6 +148,7 @@ public final class Lws {
         public static final String CREATE = "Create";
         public static final String UPDATE = "Update";
         public static final String DELETE = "Delete";
+        public static final String MOVE = "Move";
     }
 
     /**

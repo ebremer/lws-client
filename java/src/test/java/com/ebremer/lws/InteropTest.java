@@ -2,6 +2,7 @@
 package com.ebremer.lws;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,6 +30,7 @@ import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -55,6 +57,9 @@ class InteropTest {
         URI grants = sd.accessGrantService().orElseThrow().serviceEndpoint();
         URI typeIndex = sd.typeIndexService().orElseThrow().serviceEndpoint();
         URI typeSearch = sd.typeSearchService().orElseThrow().serviceEndpoint();
+        StorageDescription.MoveCapability moves = sd.moveCapability().orElseThrow();
+        assertTrue(moves.movesDataResources() && moves.movesContainers());
+        assertEquals(Optional.of(false), moves.preservesIdentifier());
         // An Ed25519 (EdDSA) did:key agent authenticates as well.
         LwsClient ed = LwsClient.builder()
                 .authenticator(TokenExchangeAuthenticator.of(SelfSignedCredentials.didKey(KeyPairs.generateEd25519())))
@@ -163,7 +168,19 @@ class InteropTest {
         client.revokeAccessGrant(grantUrl);
         client.cancelAccessRequest(reqUrl);
 
-        // 13. Delete
+        // 13. Move
+        URI d = client.createContainer(c, CreateOptions.slug("archive")).location();
+        URI m = client.create(c, Body.of("Move me"), "text/plain", CreateOptions.slug("move-me.txt")).location();
+        MoveResult moved = client.move(m, d);
+        assertEquals(d.resolve("move-me.txt"), moved.location());
+        assertFalse(moved.identifierPreserved());
+        assertEquals(URI.create(moved.location() + ".meta"), moved.linkset());
+        assertEquals("Move me", client.read(moved.location()).text());
+        assertTrue(client.listContainer(d).anyMatch(i -> i.id().equals(moved.location())));
+        assertTrue(client.listContainer(c).noneMatch(i -> i.id().equals(m)));
+        assertThrows(ConflictException.class, () -> client.move(c, d));
+
+        // 14. Delete
         assertThrows(ConflictException.class, () -> client.delete(c));
         client.delete(c, DeleteOptions.recursive());
         assertThrows(NotFoundException.class, () -> client.read(h));

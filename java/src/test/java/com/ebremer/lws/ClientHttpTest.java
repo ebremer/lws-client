@@ -30,6 +30,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.stream.IntStream;
@@ -61,8 +62,15 @@ class ClientHttpTest {
         assertEquals(server.uri("/root/"), sd.storageRoot());
         assertEquals(server.uri("/"), sd.id());
         assertTrue(sd.notificationService().isPresent());
+        StorageDescription.MoveCapability move = sd.moveCapability().orElseThrow();
+        assertTrue(move.movesDataResources() && move.movesContainers());
+        assertEquals(Optional.of(false), move.preservesIdentifier());
         assertEquals(1, server.tokenRequests.get());
+        assertEquals(1, server.resourceMetadataRequests.get(), "the protected resource metadata the 401 named");
+        assertTrue(server.requestLog.indexOf("GET " + Lws.WELL_KNOWN_OAUTH_PROTECTED_RESOURCE + "/root/")
+                < server.requestLog.indexOf("POST /as/token"));
         assertEquals(1, server.metadataRequests.get(), "metadata at RFC 8414 path-inserted URL");
+        assertEquals(server.base + "/", server.lastTokenResource, "the token is for the storage the 401 linked to");
         // the subject token is the self-signed did:key credential for this AS
         ObjectNode claims = Jwt.claims(server.lastSubjectToken);
         assertEquals(credentials.agent().toString(), claims.get("sub").asText());
@@ -91,27 +99,43 @@ class ClientHttpTest {
         server.tokens.clear(); // server forgets tokens (e.g. revoked)
         client.head(server.uri("/root/"));
         assertEquals(2, server.tokenRequests.get());
+        assertEquals(1, server.requestLog.stream().filter("GET /"::equals).count(), "the storage description is cached");
+        assertEquals(1, server.metadataRequests.get());
     }
 
     @Test
-    void realmMustContainTheRequestUri() {
+    void aDecoyChallengeIsNotActedOnAndTheCachedTokenIsKept() {
         AuthenticationException e = assertThrows(AuthenticationException.class, () -> client.read(server.uri("/elsewhere/x")));
-        assertTrue(e.getMessage().contains("realm"));
+        assertTrue(e.getMessage().contains("not on the origin"), e.getMessage());
         assertEquals(0, server.tokenRequests.get(), "no credential was sent");
+        client.head(server.uri("/root/"));
+        assertThrows(AuthenticationException.class, () -> client.read(server.uri("/elsewhere/x")));
+        assertEquals(1, server.tokenRequests.get(), "no token was asked for the decoy's storage");
+        int before = server.requestLog.size();
+        client.head(server.uri("/root/"));
+        assertEquals(before + 1, server.requestLog.size(), "the cached token is still sent");
+        assertEquals(1, server.tokenRequests.get());
     }
 
     @Test
     void untrustedAuthorizationServerIsRejected() {
+        List<URI> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
         LwsClient c = LwsClient.builder().authenticator(TokenExchangeAuthenticator.builder(credentials)
-                .authorizationServerFilter((as, realm) -> as.getHost().equals("as.example")).build()).build();
+                .authorizationServerFilter((issuer, storage) -> {
+                    seen.add(issuer);
+                    seen.add(storage);
+                    return issuer.getHost().equals("as.example");
+                }).build()).build();
         assertThrows(AuthenticationException.class, () -> c.head(server.uri("/root/")));
         assertEquals(0, server.tokenRequests.get());
+        assertEquals(List.of(server.uri("/as"), server.uri("/")), seen);
     }
 
     @Test
     void anonymousRequestsFailWithUnauthorized() {
         UnauthorizedException e = assertThrows(UnauthorizedException.class, () -> LwsClient.create().read(server.uri("/root/")));
-        assertEquals(server.uri("/as"), e.challenges().get(0).asUri().orElseThrow());
+        assertEquals(server.uri(Lws.WELL_KNOWN_OAUTH_PROTECTED_RESOURCE + "/root/"),
+                e.challenges().get(0).resourceMetadata().orElseThrow());
     }
 
     @Test
@@ -191,6 +215,58 @@ class ClientHttpTest {
         assertEquals("https://example.org/shapes/person", again.linkset().targets("describedby").get(0).href());
         assertThrows(PreconditionFailedException.class, () -> client.patchLinkset(ls.url(),
                 JsonPatch.builder().remove(pointer).build(), UpdateOptions.ifMatch(ls.etag().orElseThrow())));
+    }
+
+    @Test
+    void moveGivesTheResourceANewIdentifier() {
+        URI root = server.uri("/root/");
+        URI folder = client.createContainer(root, CreateOptions.slug("folder")).location();
+        URI archive = client.createContainer(folder, CreateOptions.slug("archive")).location();
+        URI m = client.create(folder, Body.of("Move me"), "text/plain", CreateOptions.slug("move-me.txt")).location();
+        String etag = client.readLinkset(m).etag().orElseThrow();
+
+        MoveResult r = client.move(m, archive);
+        assertEquals(200, r.status());
+        assertEquals(server.uri("/root/folder/archive/move-me.txt"), r.location());
+        assertEquals(server.uri("/root/folder/archive/move-me.txt.meta"), r.linkset());
+        assertFalse(r.identifierPreserved());
+        assertTrue(r.etag().isPresent());
+        assertEquals(r.location().toString(), r.document().orElseThrow().contexts().get(0).anchor());
+        Map<String, List<String>> sent = server.lastHeaders.get("PATCH /root/folder/move-me.txt.meta");
+        assertEquals(Lws.MediaType.JSON_PATCH, sent.get("Content-Type").get(0));
+        assertEquals(etag, sent.get("If-Match").get(0), "conditional on the linkset's ETag");
+
+        assertEquals("Move me", client.read(r.location()).text());
+        assertEquals(List.of(r.location()), client.listContainer(archive).map(ContainedResource::id).toList());
+        assertEquals(List.of(archive), client.listContainer(folder).map(ContainedResource::id).toList());
+        assertThrows(NotFoundException.class, () -> client.read(m));
+
+        assertThrows(ConflictException.class, () -> client.move(folder, archive), "a container into its own descendant");
+        assertThrows(PreconditionFailedException.class, () -> client.move(r.location(), folder, MoveOptions.ifMatch("\"stale\"")));
+        assertThrows(LwsProtocolException.class, () -> client.move(root, folder), "the root has no up link");
+    }
+
+    @Test
+    void moveAsync() {
+        URI root = server.uri("/root/");
+        URI folder = client.createContainer(root, CreateOptions.slug("folder")).location();
+        URI archive = client.createContainer(folder, CreateOptions.slug("archive")).location();
+        URI m = client.create(folder, Body.of("Move me"), "text/plain", CreateOptions.slug("move-me.txt")).location();
+
+        MoveResult r = client.moveAsync(m, archive).join();
+        assertEquals(server.uri("/root/folder/archive/move-me.txt"), r.location());
+        assertEquals(server.uri("/root/folder/archive/move-me.txt.meta"), r.linkset());
+        assertFalse(r.identifierPreserved());
+        assertEquals("Move me", client.readAsync(r.location()).join().text());
+        assertEquals(1, server.tokenRequests.get());
+
+        CompletionException stale = assertThrows(CompletionException.class,
+                () -> client.moveAsync(r.location(), folder, MoveOptions.ifMatch("\"stale\"")).join());
+        assertInstanceOf(PreconditionFailedException.class, stale.getCause());
+        CompletionException conflict = assertThrows(CompletionException.class, () -> client.moveAsync(folder, archive).join());
+        assertInstanceOf(ConflictException.class, conflict.getCause());
+        CompletionException noUp = assertThrows(CompletionException.class, () -> client.moveAsync(root, folder).join());
+        assertInstanceOf(LwsProtocolException.class, noUp.getCause());
     }
 
     @Test

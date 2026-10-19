@@ -23,6 +23,7 @@ import com.ebremer.lws.patch.JsonPointer;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.net.http.HttpHeaders;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -30,6 +31,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
@@ -99,10 +101,50 @@ class ParserFixturesTest {
 
     @Test
     void lwsChallengeAccessors() {
-        AuthChallenge c = WwwAuthenticate.parse("Bearer as_uri=\"https://as.example\", realm=\"https://s.example/\", error=\"invalid_token\"").get(0);
-        assertEquals(URI.create("https://as.example"), c.asUri().orElseThrow());
-        assertEquals(URI.create("https://s.example/"), c.realm().orElseThrow());
+        AuthChallenge c = WwwAuthenticate.parse("Bearer resource_metadata=\"https://s.example/.well-known/oauth-protected-resource/a\", "
+                + "error=\"invalid_token\", error_description=\"expired\"").get(0);
+        assertEquals(URI.create("https://s.example/.well-known/oauth-protected-resource/a"), c.resourceMetadata().orElseThrow());
         assertEquals("invalid_token", c.error().orElseThrow());
+        assertEquals("expired", c.errorDescription().orElseThrow());
+        assertTrue(c.asUri().isEmpty());
+        AuthChallenge legacy = WwwAuthenticate.parse("Bearer as_uri=\"https://as.example\", realm=\"https://s.example/\", error=\"invalid_token\"").get(0);
+        assertEquals(URI.create("https://as.example"), legacy.asUri().orElseThrow());
+        assertEquals(URI.create("https://s.example/"), legacy.realm().orElseThrow());
+        assertTrue(legacy.resourceMetadata().isEmpty());
+    }
+
+    @TestFactory
+    Stream<DynamicTest> movePatches() {
+        return cases(Fixtures.json("move.json"), "patches").map(c -> dynamicTest(c.get("name").asText(), () -> {
+            URI linksetUrl = URI.create(c.get("linksetUrl").asText());
+            LinksetDocument doc = new LinksetDocument(linksetUrl, Linkset.parse(c.get("linkset")),
+                    ResourceMetadata.of(linksetUrl, 200, HttpHeaders.of(Map.of(), (a, b) -> true)));
+            URI resource = URI.create(c.get("resource").asText());
+            URI destination = URI.create(c.get("destination").asText());
+            if (c.get("expected").isNull()) {
+                assertEquals("ProtocolError", c.get("error").asText());
+                assertThrows(LwsProtocolException.class, () -> doc.movePatch(resource, destination));
+            } else {
+                assertEquals(c.get("expected"), doc.movePatch(resource, destination).toJson());
+            }
+        }));
+    }
+
+    @TestFactory
+    Stream<DynamicTest> moveResponses() {
+        return cases(Fixtures.json("move.json"), "responses").map(c -> dynamicTest(c.get("name").asText(), () -> {
+            ResourceMetadata md = ResourceMetadata.of(URI.create(c.get("linksetUrl").asText()), c.get("status").asInt(),
+                    ModelFixturesTest.headers(c.get("headers")));
+            byte[] body = c.get("body").isNull() ? new byte[0] : Json.toBytes(c.get("body"));
+            MoveResult r = MoveResult.of(URI.create(c.get("resource").asText()), md, body);
+            JsonNode e = c.get("expected");
+            assertEquals(c.get("status").asInt(), r.status());
+            assertEquals(e.get("location").asText(), r.location().toString());
+            assertEquals(e.get("linkset").asText(), r.linkset().toString());
+            assertEquals(e.get("identifierPreserved").asBoolean(), r.identifierPreserved());
+            assertEquals(e.get("etag").isNull() ? Optional.empty() : Optional.of(e.get("etag").asText()), r.etag());
+            assertEquals(!c.get("body").isNull(), r.document().isPresent());
+        }));
     }
 
     @TestFactory

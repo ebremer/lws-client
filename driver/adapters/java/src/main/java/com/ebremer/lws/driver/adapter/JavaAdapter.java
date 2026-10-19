@@ -8,6 +8,7 @@ import com.ebremer.lws.Linkset;
 import com.ebremer.lws.LinksetDocument;
 import com.ebremer.lws.LwsClient;
 import com.ebremer.lws.LwsProtocolException;
+import com.ebremer.lws.MoveOptions;
 import com.ebremer.lws.ReadOptions;
 import com.ebremer.lws.Resource;
 import com.ebremer.lws.UpdateOptions;
@@ -101,6 +102,7 @@ public final class JavaAdapter {
         operations.put("read_linkset", this::readLinkset);
         operations.put("update_linkset", this::updateLinkset);
         operations.put("patch_linkset", this::patchLinkset);
+        operations.put("move", this::move);
         operations.put("subscribe", this::subscribe);
         operations.put("list_subscriptions",
                 a -> items(client.listSubscriptions(Args.requiredUri(a, "serviceUrl")), Args.limit(a)));
@@ -423,6 +425,15 @@ public final class JavaAdapter {
     private ObjectNode patchLinkset(ObjectNode args) {
         URI linksetUrl = Args.requiredUri(args, "linksetUrl");
         return Results.update(client.patchLinkset(linksetUrl, Args.patch(args.get("patch")), ifMatch(args)));
+    }
+
+    private ObjectNode move(ObjectNode args) {
+        URI url = Args.requiredUri(args, "url");
+        URI destination = Args.requiredUri(args, "destination");
+        MoveOptions.Builder options = MoveOptions.builder();
+        String ifMatch = Args.optionalString(args, "ifMatch");
+        if (ifMatch != null) options.ifMatch(ifMatch);
+        return Results.moved(client.move(url, destination, options.build()));
     }
 
     // ---------------------------------------------------------------------------------------------

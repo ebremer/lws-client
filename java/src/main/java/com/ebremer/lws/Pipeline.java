@@ -26,8 +26,8 @@ import java.util.concurrent.Executor;
 
 /**
  * Sends requests: applies default headers and the authenticator, retries once after a {@code 401} the
- * authenticator handled, and follows redirects itself so credentials are re-evaluated per target
- * (internal).
+ * authenticator handled (with the headers it set while handling it), and follows redirects itself so
+ * credentials are re-evaluated per target (internal).
  */
 final class Pipeline {
     private static final int MAX_REDIRECTS = 10;
@@ -60,15 +60,25 @@ final class Pipeline {
         return authenticator;
     }
 
-    /** One request attempt's mutable state. */
+    /**
+     * One request attempt's mutable state. While the authenticator handles a {@code 401} to it, the headers it
+     * sets or removes are recorded for the retry.
+     */
     private static final class Attempt implements AuthRequest {
         final String method;
         final URI uri;
         final Map<String, List<String>> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        Map<String, String> forRetry;
 
         Attempt(String method, URI uri) {
             this.method = method;
             this.uri = uri;
+        }
+
+        /** Runs the authenticator's {@code handleChallenge}, recording the headers it sets for the retry. */
+        boolean handle(Authenticator authenticator, AuthResponse response) {
+            forRetry = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+            return authenticator.handleChallenge(this, response);
         }
 
         @Override
@@ -92,20 +102,32 @@ final class Pipeline {
             List<String> l = new ArrayList<>();
             l.add(value);
             headers.put(name, l);
+            if (forRetry != null) forRetry.put(name, value);
         }
 
         @Override
         public void removeHeader(String name) {
             headers.remove(name);
+            if (forRetry != null) forRetry.put(name, null);
         }
     }
 
-    private Attempt prepare(String method, URI uri, Map<String, List<String>> callHeaders) {
+    /**
+     * A request attempt: default and call headers, then the authenticator's; {@code retry} holds the headers the
+     * authenticator set while handling the {@code 401} this attempt retries (null values remove), else null.
+     */
+    private Attempt prepare(String method, URI uri, Map<String, List<String>> callHeaders, Map<String, String> retry) {
         Attempt a = new Attempt(method, uri);
         defaultHeaders.forEach((k, v) -> a.headers.put(k, new ArrayList<>(v)));
         callHeaders.forEach((k, v) -> a.headers.put(k, new ArrayList<>(v)));
         if (!a.headers.containsKey("User-Agent") && userAgent != null) a.setHeader("User-Agent", userAgent);
         if (authenticator != null) authenticator.authorize(a);
+        if (retry != null) {
+            retry.forEach((k, v) -> {
+                if (v == null) a.removeHeader(k);
+                else a.setHeader(k, v);
+            });
+        }
         return a;
     }
 
@@ -125,9 +147,11 @@ final class Pipeline {
         URI uri = call.uri();
         Body body = call.body() == null ? Body.empty() : call.body();
         boolean authRetried = false;
+        Map<String, String> retryHeaders = null;
         int redirects = 0;
         while (true) {
-            Attempt a = prepare(method, uri, call.headers());
+            Attempt a = prepare(method, uri, call.headers(), retryHeaders);
+            retryHeaders = null;
             HttpRequest req = build(a, body, call.timeout());
             HttpResponse<T> resp;
             try {
@@ -143,13 +167,14 @@ final class Pipeline {
                 authRetried = true;
                 boolean retry;
                 try {
-                    retry = authenticator.handleChallenge(a, new AuthResponse(uri, status, resp.headers()));
+                    retry = a.handle(authenticator, new AuthResponse(uri, status, resp.headers()));
                 } catch (RuntimeException e) {
                     discard(resp);
                     throw e;
                 }
                 if (retry) {
                     discard(resp);
+                    retryHeaders = a.forRetry;
                     continue;
                 }
                 return resp;
@@ -169,15 +194,15 @@ final class Pipeline {
 
     <T> CompletableFuture<HttpResponse<T>> sendAsync(Call call, BodyHandler<T> handler) {
         Body body = call.body() == null ? Body.empty() : call.body();
-        return attemptAsync(call, call.method(), call.uri(), body, handler, false, 0);
+        return attemptAsync(call, call.method(), call.uri(), body, handler, false, null, 0);
     }
 
-    private <T> CompletableFuture<HttpResponse<T>> attemptAsync(Call call, String method, URI uri, Body body,
-                                                                 BodyHandler<T> handler, boolean authRetried, int redirects) {
+    private <T> CompletableFuture<HttpResponse<T>> attemptAsync(Call call, String method, URI uri, Body body, BodyHandler<T> handler,
+                                                                 boolean authRetried, Map<String, String> retryHeaders, int redirects) {
         Attempt a;
         HttpRequest req;
         try {
-            a = prepare(method, uri, call.headers());
+            a = prepare(method, uri, call.headers(), retryHeaders);
             req = build(a, body, call.timeout());
         } catch (RuntimeException e) {
             return CompletableFuture.failedFuture(e);
@@ -195,17 +220,17 @@ final class Pipeline {
                     int status = resp.statusCode();
                     if (status == 401 && authenticator != null && !authRetried) {
                         return CompletableFuture
-                                .supplyAsync(() -> authenticator.handleChallenge(a, new AuthResponse(uri, status, resp.headers())), executor)
+                                .supplyAsync(() -> a.handle(authenticator, new AuthResponse(uri, status, resp.headers())), executor)
                                 .thenCompose(retry -> {
                                     if (!retry) return CompletableFuture.completedFuture(resp);
                                     discard(resp);
-                                    return attemptAsync(call, method, uri, body, handler, true, redirects);
+                                    return attemptAsync(call, method, uri, body, handler, true, a.forRetry, redirects);
                                 });
                     }
                     Optional<Redirect> r = redirect(method, uri, body, resp, redirects);
                     if (r.isPresent()) {
                         discard(resp);
-                        return attemptAsync(call, r.get().method(), r.get().uri(), r.get().body(), handler, authRetried, redirects + 1);
+                        return attemptAsync(call, r.get().method(), r.get().uri(), r.get().body(), handler, authRetried, null, redirects + 1);
                     }
                     return CompletableFuture.completedFuture(resp);
                 });

@@ -14,6 +14,7 @@ import com.ebremer.lws.access.AccessTarget;
 import com.ebremer.lws.access.Constraint;
 import com.ebremer.lws.auth.AccessToken;
 import com.ebremer.lws.auth.AuthorizationServerMetadata;
+import com.ebremer.lws.auth.ProtectedResourceMetadata;
 import com.ebremer.lws.http.ProblemDetails;
 import com.ebremer.lws.index.TypeIndexPage;
 import com.ebremer.lws.internal.Json;
@@ -74,8 +75,10 @@ class ModelFixturesTest {
         assertEquals(e.get("accessGrantService").asText(), d.accessGrantService().orElseThrow().serviceEndpoint().toString());
         assertEquals(List.of(Lws.ACCESS_PROFILE), d.accessGrantService().orElseThrow().conformsTo());
         assertEquals(e.get("serviceCount").asInt(), d.services().size());
-        assertEquals(List.of("https://feature.example/PatchSupport", "https://feature.example/ResumableUploads"),
-                d.capabilities().stream().map(c -> c.types().get(0)).toList());
+        List<String> capabilityTypes = new ArrayList<>();
+        e.get("capabilityTypes").forEach(t -> capabilityTypes.add(t.asText()));
+        assertEquals(capabilityTypes, d.capabilities().stream().map(c -> c.types().get(0)).toList());
+        assertMoveCapability(e.get("moveCapability"), d.moveCapability());
         StorageDescription.Service custom = d.service("DataSharingService").orElseThrow();
         assertEquals(e.get("customService").get("id").asText(), custom.id().orElseThrow().toString());
         assertEquals(e.get("customService").get("serviceEndpoint").asText(), custom.serviceEndpoint().toString());
@@ -84,6 +87,28 @@ class ModelFixturesTest {
         assertThrows(LwsProtocolException.class, () -> StorageDescription.parse(invalid.get("notStorage"), URI.create("https://storage.example/")));
         StorageDescription noRoot = StorageDescription.parse(invalid.get("noRoot"), URI.create("https://storage.example/"));
         assertThrows(LwsProtocolException.class, noRoot::storageRoot);
+
+        for (JsonNode c : f.get("moveCapabilities")) {
+            ObjectNode body = f.get("body").deepCopy();
+            if (c.get("capability").isNull()) body.remove("capability");
+            else body.set("capability", c.get("capability"));
+            assertMoveCapability(c.get("expected"), StorageDescription.parse(body, URI.create(f.get("url").asText())).moveCapability());
+        }
+    }
+
+    private static void assertMoveCapability(JsonNode expected, Optional<StorageDescription.MoveCapability> actual) {
+        if (expected.isNull()) {
+            assertTrue(actual.isEmpty());
+            return;
+        }
+        StorageDescription.MoveCapability m = actual.orElseThrow();
+        List<String> appliesTo = new ArrayList<>();
+        expected.get("appliesTo").forEach(t -> appliesTo.add(t.asText()));
+        assertEquals(appliesTo, m.appliesTo());
+        JsonNode preserves = expected.get("preservesIdentifier");
+        assertEquals(preserves.isNull() ? Optional.empty() : Optional.of(preserves.asBoolean()), m.preservesIdentifier());
+        assertEquals(expected.get("movesDataResources").asBoolean(), m.movesDataResources());
+        assertEquals(expected.get("movesContainers").asBoolean(), m.movesContainers());
     }
 
     @Test
@@ -160,7 +185,7 @@ class ModelFixturesTest {
     @Test
     void notifications() {
         JsonNode f = Fixtures.json("responses/notification.json");
-        for (String which : List.of("single", "batch")) {
+        for (String which : List.of("single", "batch", "move")) {
             Notification n = Notification.parse(f.get(which));
             JsonNode e = f.get(which + "Expected");
             assertEquals(e.get("storage").asText(), n.storage().toString());
@@ -173,9 +198,10 @@ class ModelFixturesTest {
                 ea.get("types").forEach(t -> types.add(t.asText()));
                 assertEquals(types, a.types());
                 assertEquals(ea.get("objectId").asText(), a.object().id().toString());
-                if (ea.has("isCreate")) assertTrue(a.isCreate());
-                if (ea.has("isUpdate")) assertTrue(a.isUpdate());
-                if (ea.has("isDelete")) assertTrue(a.isDelete());
+                if (ea.has("isCreate")) assertEquals(ea.get("isCreate").asBoolean(), a.isCreate());
+                if (ea.has("isUpdate")) assertEquals(ea.get("isUpdate").asBoolean(), a.isUpdate());
+                if (ea.has("isDelete")) assertEquals(ea.get("isDelete").asBoolean(), a.isDelete());
+                if (ea.has("isMove")) assertEquals(ea.get("isMove").asBoolean(), a.isMove());
                 if (ea.has("objectTypes")) assertEquals(ea.get("objectTypes").get(0).asText(), a.object().types().get(0));
                 if (ea.has("target")) assertEquals(ea.get("target").asText(), a.target().orElseThrow().toString());
                 if (ea.has("origin")) assertEquals(ea.get("origin").asText(), a.origin().orElseThrow().toString());
@@ -265,6 +291,34 @@ class ModelFixturesTest {
         for (JsonNode c : f.get("realmChecks")) {
             assertEquals(c.get("contained").asBoolean(), Uris.contains(URI.create(c.get("realm").asText()), URI.create(c.get("url").asText())),
                     c.toString());
+        }
+    }
+
+    @Test
+    void protectedResourceMetadata() {
+        JsonNode f = Fixtures.json("responses/oauth.json");
+        JsonNode valid = f.get("protectedResourceMetadata");
+        ProtectedResourceMetadata prm = ProtectedResourceMetadata.parse(valid.get("body"));
+        assertEquals(valid.get("expected").get("resource").asText(), prm.resource());
+        List<String> servers = new ArrayList<>();
+        valid.get("expected").get("authorizationServers").forEach(s -> servers.add(s.asText()));
+        assertEquals(servers, prm.authorizationServers());
+        assertEquals("Photos", prm.raw().get("resource_name").asText(), "unknown members are kept");
+        assertTrue(prm.describes(URI.create(prm.resource())));
+
+        f.get("protectedResourceMetadataInvalid").properties().forEach(c -> {
+            if (c.getKey().equals("description")) return;
+            assertThrows(LwsProtocolException.class, () -> ProtectedResourceMetadata.parse(c.getValue()), c.getKey());
+        });
+        for (JsonNode c : f.get("originChecks")) {
+            assertEquals(c.get("sameOrigin").asBoolean(), Uris.sameOrigin(URI.create(c.get("a").asText()), URI.create(c.get("b").asText())),
+                    c.toString());
+        }
+        for (JsonNode c : f.get("resourceChecks")) {
+            assertEquals(c.get("identical").asBoolean(),
+                    Uris.sameResource(URI.create(c.get("requested").asText()), URI.create(c.get("resource").asText())), c.toString());
+            ProtectedResourceMetadata md = new ProtectedResourceMetadata(c.get("resource").asText(), List.of("https://as.example"), null);
+            assertEquals(c.get("identical").asBoolean(), md.describes(URI.create(c.get("requested").asText())), c.toString());
         }
     }
 

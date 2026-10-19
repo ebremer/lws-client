@@ -27,9 +27,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * A small in-memory LWS server for client tests: storage description, authorization server (token
- * exchange of self-signed did:key JWTs), containers with pagination, data resources with ETags,
- * linksets, notifications, access requests and type index/search.
+ * A small in-memory LWS server for client tests: storage description, protected resource metadata
+ * (RFC 9728), authorization server (token exchange of self-signed did:key JWTs), containers with
+ * pagination, data resources with ETags, linksets and moves (identifiers not preserved), notifications,
+ * access requests and type index/search. {@code /elsewhere/} answers every request {@code 401}, linking to
+ * a decoy storage {@code /vault/} whose root is on another origin.
  */
 final class MockLwsServer implements AutoCloseable {
     final HttpServer server;
@@ -39,10 +41,12 @@ final class MockLwsServer implements AutoCloseable {
 
     final AtomicInteger tokenRequests = new AtomicInteger();
     final AtomicInteger metadataRequests = new AtomicInteger();
+    final AtomicInteger resourceMetadataRequests = new AtomicInteger();
     final List<String> requestLog = Collections.synchronizedList(new ArrayList<>());
     final Map<String, Map<String, List<String>>> lastHeaders = new ConcurrentHashMap<>();
     final Set<String> tokens = ConcurrentHashMap.newKeySet();
     volatile String lastSubjectToken;
+    volatile String lastTokenResource;
 
     private final Map<String, Res> store = new LinkedHashMap<>();
     private final AtomicInteger counter = new AtomicInteger();
@@ -99,6 +103,22 @@ final class MockLwsServer implements AutoCloseable {
                 send(ex, 200, "application/lws+cid", Json.toBytes(storageDescription()));
                 return;
             }
+            if (path.equals("/vault/") && method.equals("GET")) {
+                // A decoy: a storage whose root is on another origin (localhost, not 127.0.0.1).
+                ObjectNode d = Json.object().put("id", base + "/vault/").put("type", "Storage");
+                d.putArray("service").addObject().put("type", "StorageRoot")
+                        .put("serviceEndpoint", base.replace("127.0.0.1", "localhost") + "/vault/");
+                send(ex, 200, "application/lws+cid", Json.toBytes(d));
+                return;
+            }
+            if (path.startsWith(Lws.WELL_KNOWN_OAUTH_PROTECTED_RESOURCE + "/") && method.equals("GET")) {
+                resourceMetadataRequests.incrementAndGet();
+                String resource = path.substring(Lws.WELL_KNOWN_OAUTH_PROTECTED_RESOURCE.length()) + (query != null ? "?" + query : "");
+                ObjectNode md = Json.object().put("resource", base + resource);
+                md.putArray("authorization_servers").add(base + "/as");
+                send(ex, 200, "application/json", Json.toBytes(md));
+                return;
+            }
             if (path.equals("/.well-known/lws-configuration/as")) {
                 metadataRequests.incrementAndGet();
                 ObjectNode md = Json.object();
@@ -127,11 +147,11 @@ final class MockLwsServer implements AutoCloseable {
             if (requireAuth) {
                 String auth = ex.getRequestHeaders().getFirst("Authorization");
                 boolean ok = auth != null && auth.startsWith("Bearer ") && tokens.contains(auth.substring(7));
-                if (!ok) {
-                    String realm = path.startsWith("/elsewhere/") ? base + "/root/" : base + "/";
-                    ex.getResponseHeaders().add("WWW-Authenticate",
-                            "Bearer as_uri=\"" + base + "/as\", realm=\"" + realm + "\", error=\"invalid_token\"");
-                    ex.getResponseHeaders().add("Link", "<" + base + "/>; rel=\"" + Lws.Rel.STORAGE + "\"");
+                boolean decoy = path.startsWith("/elsewhere/");
+                if (!ok || decoy) {
+                    ex.getResponseHeaders().add("WWW-Authenticate", "Bearer resource_metadata=\"" + base
+                            + Lws.WELL_KNOWN_OAUTH_PROTECTED_RESOURCE + path + (query != null ? "?" + query : "") + "\", error=\"invalid_token\"");
+                    ex.getResponseHeaders().add("Link", "<" + base + (decoy ? "/vault/" : "/") + ">; rel=\"" + Lws.Rel.STORAGE + "\"");
                     send(ex, 401, null, null);
                     return;
                 }
@@ -166,6 +186,9 @@ final class MockLwsServer implements AutoCloseable {
         s.addObject().put("type", "AccessGrantService").put("serviceEndpoint", base + "/access/grants/");
         s.addObject().put("type", "TypeIndexService").put("serviceEndpoint", base + "/types/index");
         s.addObject().put("type", "TypeSearchService").put("serviceEndpoint", base + "/types/search");
+        ObjectNode move = d.putArray("capability").addObject().put("type", "MoveResource");
+        move.putArray("appliesTo").add("DataResource").add("Container");
+        move.put("preservesIdentifier", false);
         return d;
     }
 
@@ -178,8 +201,8 @@ final class MockLwsServer implements AutoCloseable {
         }
         String subject = form.get("subject_token");
         lastSubjectToken = subject;
-        boolean ok = Lws.GRANT_TYPE_TOKEN_EXCHANGE.equals(form.get("grant_type"))
-                && ((base + "/").equals(form.get("resource")) || (base + "/root/").equals(form.get("resource")));
+        lastTokenResource = form.get("resource");
+        boolean ok = Lws.GRANT_TYPE_TOKEN_EXCHANGE.equals(form.get("grant_type")) && (base + "/").equals(form.get("resource"));
         ok &= Lws.TokenType.JWT.equals(form.get("subject_token_type")) && subject != null;
         if (ok) {
             ObjectNode claims = Jwt.claims(subject);
@@ -359,10 +382,14 @@ final class MockLwsServer implements AutoCloseable {
         if (r != null) for (String c : new ArrayList<>(r.children)) removeTree(c);
     }
 
+    private static String parentPath(String path) {
+        int cut = path.endsWith("/") ? path.lastIndexOf('/', path.length() - 2) : path.lastIndexOf('/');
+        return path.substring(0, cut + 1);
+    }
+
     private void addLinks(HttpExchange ex, String path, Res r) {
         ex.getResponseHeaders().add("Link", "<" + path + ".meta>; rel=\"linkset\"; type=\"application/linkset+json\"");
-        int cut = path.endsWith("/") ? path.lastIndexOf('/', path.length() - 2) : path.lastIndexOf('/');
-        if (!path.equals("/root/")) ex.getResponseHeaders().add("Link", "<" + path.substring(0, cut + 1) + ">; rel=\"up\"");
+        if (!path.equals("/root/")) ex.getResponseHeaders().add("Link", "<" + parentPath(path) + ">; rel=\"up\"");
         ex.getResponseHeaders().add("Link", "<" + (r.container ? Lws.Type.CONTAINER : Lws.Type.DATA_RESOURCE) + ">; rel=\"type\"");
         for (String t : r.types) ex.getResponseHeaders().add("Link", "<" + t + ">; rel=\"type\"");
         ex.getResponseHeaders().add("Link", "<" + base + "/>; rel=\"" + Lws.Rel.STORAGE + "\"");
@@ -376,7 +403,8 @@ final class MockLwsServer implements AutoCloseable {
         }
         if (r.linkset == null) {
             r.linkset = Json.object();
-            r.linkset.putArray("linkset").addObject().put("anchor", base + resourcePath);
+            ObjectNode context = r.linkset.putArray("linkset").addObject().put("anchor", base + resourcePath);
+            if (!resourcePath.equals("/root/")) context.putArray("up").addObject().put("href", base + parentPath(resourcePath));
         }
         String etag = "\"ls" + r.linkset.toString().hashCode() + "\"";
         ex.getResponseHeaders().add("Allow", "GET, HEAD, PATCH");
@@ -392,10 +420,50 @@ final class MockLwsServer implements AutoCloseable {
                     send(ex, 412, null, null);
                     return;
                 }
-                r.linkset = (ObjectNode) applyPatch(r.linkset, Json.parse(body));
-                send(ex, 204, null, null);
+                ObjectNode patched;
+                try {
+                    patched = (ObjectNode) applyPatch(r.linkset, Json.parse(body));
+                } catch (IllegalStateException e) {
+                    send(ex, 409, "text/plain", "test failed".getBytes(StandardCharsets.UTF_8));
+                    return;
+                }
+                String up = patched.path("linkset").path(0).path("up").path(0).path("href").asText(null);
+                String parent = parentPath(resourcePath);
+                if (up == null || up.equals(base + parent)) {
+                    r.linkset = patched;
+                    send(ex, 204, null, null);
+                    return;
+                }
+                // The up link changed: move the resource (and everything in it) under a new identifier.
+                String dest = up.startsWith(base) ? up.substring(base.length()) : up;
+                Res d = store.get(dest);
+                String target = dest + resourcePath.substring(parent.length());
+                if (d == null || !d.container || dest.startsWith(resourcePath) || store.containsKey(target)) {
+                    send(ex, 409, "text/plain", "cannot move there".getBytes(StandardCharsets.UTF_8));
+                    return;
+                }
+                store.get(parent).children.remove(resourcePath);
+                rename(resourcePath, target);
+                d.children.add(target);
+                ((ObjectNode) patched.withArray("linkset").get(0)).put("anchor", base + target);
+                r.linkset = patched;
+                ex.getResponseHeaders().add("Content-Location", target + ".meta");
+                ex.getResponseHeaders().add("ETag", "\"ls" + r.linkset.toString().hashCode() + "\"");
+                send(ex, 200, Lws.MediaType.LINKSET_JSON, Json.toBytes(r.linkset));
             }
             default -> send(ex, 405, null, null);
+        }
+    }
+
+    /** Re-keys a resource and, for a container, everything in it. */
+    private void rename(String from, String to) {
+        Map<String, Res> moved = new LinkedHashMap<>();
+        for (String k : new ArrayList<>(store.keySet())) {
+            if (k.equals(from) || (from.endsWith("/") && k.startsWith(from))) moved.put(to + k.substring(from.length()), store.remove(k));
+        }
+        store.putAll(moved);
+        for (Res r : store.values()) {
+            r.children.replaceAll(c -> c.equals(from) || (from.endsWith("/") && c.startsWith(from)) ? to + c.substring(from.length()) : c);
         }
     }
 

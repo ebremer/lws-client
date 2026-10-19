@@ -5,6 +5,7 @@ import com.ebremer.lws.ContainedResource;
 import com.ebremer.lws.ContainerPage;
 import com.ebremer.lws.CreateResult;
 import com.ebremer.lws.LwsProtocolException;
+import com.ebremer.lws.MoveResult;
 import com.ebremer.lws.Resource;
 import com.ebremer.lws.ResourceMetadata;
 import com.ebremer.lws.StorageDescription;
@@ -123,6 +124,18 @@ final class Results {
         return o;
     }
 
+    /** Moved: the result of a move. */
+    static ObjectNode moved(MoveResult m) {
+        ObjectNode o = object();
+        o.put("status", m.status());
+        o.put("location", m.location().toString());
+        o.put("linkset", m.linkset().toString());
+        o.put("identifierPreserved", m.identifierPreserved());
+        put(o, "etag", m.etag());
+        o.set("metadata", metadata(m.metadata()));
+        return o;
+    }
+
     /** Created: the result of a create. */
     static ObjectNode created(CreateResult c) {
         ObjectNode o = object();
@@ -131,7 +144,10 @@ final class Results {
         return o;
     }
 
-    /** Storage: a storage description; {@code storageRoot} is omitted when the library's {@code storageRoot()} fails. */
+    /**
+     * Storage: a storage description; {@code storageRoot} is omitted when the library's {@code storageRoot()} fails,
+     * {@code moveCapability} when it describes none.
+     */
     static ObjectNode storage(StorageDescription s) {
         ObjectNode o = object();
         o.put("id", s.id().toString());
@@ -158,6 +174,11 @@ final class Results {
             put(method, "type", Optional.ofNullable(vm.type()));
             put(method, "controller", Optional.ofNullable(vm.controller()));
         }
+        s.moveCapability().ifPresent(m -> {
+            ObjectNode move = o.putObject("moveCapability");
+            move.set("appliesTo", strings(m.appliesTo()));
+            m.preservesIdentifier().ifPresent(p -> move.put("preservesIdentifier", p));
+        });
         o.set("raw", s.raw());
         return o;
     }

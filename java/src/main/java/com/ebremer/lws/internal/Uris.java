@@ -4,6 +4,7 @@ package com.ebremer.lws.internal;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Locale;
+import java.util.Objects;
 
 /**
  * RFC 3986 reference resolution and URI comparisons. {@link URI#resolve} follows RFC 2396 and gets
@@ -138,7 +139,10 @@ public final class Uris {
         };
     }
 
-    /** Whether two URIs share scheme, host and effective port (case-insensitive). */
+    /**
+     * Whether two URIs share scheme, host and effective port (scheme and host compared case-insensitively,
+     * the port after the scheme's default is applied).
+     */
     public static boolean sameOrigin(URI a, URI b) {
         return a.getScheme() != null && b.getScheme() != null
                 && a.getScheme().equalsIgnoreCase(b.getScheme())
@@ -148,12 +152,26 @@ public final class Uris {
     }
 
     /**
-     * Whether {@code uri} is logically contained in {@code realm}: same origin, and the path equals the
-     * realm path or lies beneath it (the realm path is treated as a directory).
+     * Whether two URIs are identical after lower-casing scheme and host and dropping a default port, and in
+     * nothing else: user info, path, query and fragment must be the same as written (no trailing slash, case
+     * or percent-encoding leniency).
      */
-    public static boolean contains(URI realm, URI uri) {
-        if (!sameOrigin(realm, uri)) return false;
-        String rp = nz(realm.getRawPath());
+    public static boolean sameResource(URI a, URI b) {
+        return sameOrigin(a, b)
+                && Objects.equals(a.getRawUserInfo(), b.getRawUserInfo())
+                && nz(a.getRawPath()).equals(nz(b.getRawPath()))
+                && Objects.equals(a.getRawQuery(), b.getRawQuery())
+                && Objects.equals(a.getRawFragment(), b.getRawFragment());
+    }
+
+    /**
+     * Whether {@code uri} is logically contained in {@code scope} (a realm, a storage or a storage root): same
+     * origin, and the path equals the scope's path or lies beneath it (the scope's path is treated as a
+     * directory).
+     */
+    public static boolean contains(URI scope, URI uri) {
+        if (!sameOrigin(scope, uri)) return false;
+        String rp = nz(scope.getRawPath());
         String up = nz(uri.getRawPath());
         if (up.isEmpty()) up = "/";
         if (rp.isEmpty() || rp.equals("/")) return true;
