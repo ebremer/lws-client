@@ -29,7 +29,7 @@ const PERSON = "https://schema.org/Person";
 const OPERATIONS = [
   "configure", "discover_storage", "get_storage_description", "head", "read", "read_container",
   "list_container", "create", "create_container", "update", "patch", "delete", "linkset_url",
-  "read_linkset", "update_linkset", "patch_linkset", "subscribe", "list_subscriptions",
+  "read_linkset", "update_linkset", "patch_linkset", "move", "subscribe", "list_subscriptions",
   "get_subscription", "unsubscribe", "verify_notification", "request_access", "get_access_request",
   "list_access_requests", "cancel_access_request", "grant_access", "get_access_grant",
   "list_access_grants", "revoke_access_grant", "read_type_index", "list_types", "search_types",
@@ -244,7 +244,9 @@ function startInbox() {
 // ---------------------------------------------------------------------------------------------
 // The checks
 
-const server = await startServer({ port: 0, pageSize: 5, auth: true });
+// The server's request log shows how the client found its authorization server.
+const requests = [];
+const server = await startServer({ port: 0, pageSize: 5, auth: true, verbose: true, log: (line) => requests.push(line) });
 const base = server.url;
 const root = `${base}/root/`;
 const storageId = `${base}/`;
@@ -318,9 +320,19 @@ try {
       `subscriptionType ${JSON.stringify(notifications.subscriptionType)}`);
     expect(Array.isArray(s.verificationMethods) && s.verificationMethods.length > 0, "no verificationMethods");
     expect(s.raw && s.raw.id === storageId, "raw is not the document");
+    const move = s.moveCapability;
+    expect(move && hasType(move.appliesTo, "DataResource") && hasType(move.appliesTo, "Container") && move.preservesIdentifier === false,
+      `moveCapability ${JSON.stringify(move)}`);
     state.services = Object.fromEntries(
       ["NotificationService", "AccessRequestService", "AccessGrantService", "TypeIndexService", "TypeSearchService"].map((t) => [t, endpoint(t)]),
     );
+  });
+
+  await check("the first token came through the protected resource metadata (RFC 9728)", async () => {
+    const metadata = requests.findIndex((l) => /\] GET \/\.well-known\/oauth-protected-resource\/root\/ -> 200/.test(l));
+    const token = requests.findIndex((l) => /\] POST \/oauth\/token -> 200/.test(l));
+    expect(metadata >= 0, "the client never read the protected resource metadata the 401 named");
+    expect(token > metadata, "no token request after reading the protected resource metadata");
   });
 
   await check("get_storage_description reads the description itself", async () => {
@@ -473,6 +485,22 @@ try {
     expect(hasType(hello.types, "DataResource") && hello.format?.startsWith("text/plain"), `item ${JSON.stringify(hello)}`);
     const some = await adapter.call("list_container", { url: state.container, limit: 3 });
     expect(some.items.length === 3 && some.truncated === true, `${some.items.length} items, truncated ${some.truncated}`);
+  });
+
+  await check("move puts a resource in another container, under the new identifier the storage gives it", async () => {
+    const archive = (await adapter.call("create_container", { parent: state.container, slug: "archive" })).location;
+    const resource = (await adapter.call("create", { container: state.container, body: { text: "Move me" }, contentType: "text/plain", slug: "move-me.txt" })).location;
+    const r = await adapter.call("move", { url: resource, destination: archive });
+    expect(r.status === 200, `status ${r.status}`);
+    expect(r.location === `${archive}move-me.txt`, `location ${r.location}`);
+    expect(r.linkset === `${archive}move-me.txt.meta`, `linkset ${r.linkset}`);
+    expect(r.identifierPreserved === false, `identifierPreserved ${r.identifierPreserved}`);
+    expect(typeof r.etag === "string" && r.metadata?.status === 200, `etag ${r.etag}, metadata ${JSON.stringify(r.metadata)}`);
+    const moved = await adapter.call("read", { url: r.location });
+    expect(moved.body?.text === "Move me", `body ${JSON.stringify(moved.body)}`);
+    const archived = (await adapter.call("list_container", { url: archive })).items.map((i) => i.id);
+    expect(archived.includes(r.location), `archive holds ${archived}`);
+    await adapter.fails("move", { url: state.container, destination: archive }, "ConflictError", 409);
   });
 
   await check("malformed arguments are InvalidArguments", async () => {

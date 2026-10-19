@@ -13,6 +13,9 @@ Options:
   --base-url <url>  public base URL (default http://localhost:<port>)
   --page-size <n>   container / index / search page size (default 5)
   --no-auth         disable authentication (every request is anonymous)
+  --legacy-challenge
+                    answer 401 with the as_uri/realm challenge of the drafts before
+                    19 October 2026 instead of resource_metadata (RFC 9728)
   --verbose         log requests, token exchanges and webhook deliveries
   --help            show this help`;
 
@@ -25,6 +28,7 @@ try {
       "base-url": { type: "string" },
       "page-size": { type: "string", default: "5" },
       "no-auth": { type: "boolean", default: false },
+      "legacy-challenge": { type: "boolean", default: false },
       verbose: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
@@ -56,6 +60,7 @@ const server = await startServer({
   baseUrl: values["base-url"],
   pageSize,
   auth: !values["no-auth"],
+  legacyChallenge: values["legacy-challenge"],
   verbose: values.verbose,
 });
 console.log(`LWS mock server listening on ${server.url}`);

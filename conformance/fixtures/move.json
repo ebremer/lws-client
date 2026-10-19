@@ -1,0 +1,169 @@
+{
+  "description": "Moving a resource (lws10-core 'Moving Resources'). 'patches': a resource, its linkset as read (from linksetUrl) and a destination container, and the JSON Patch the client sends to the linkset, or the error it raises when the linkset shows it no up link to replace. The link context is the first whose anchor resolves (against linksetUrl) to the resource, or the only one when it has no anchor; the up link is its first 'up' target. 'responses': the answer to that patch and what the client makes of it: the resource's URL after the move ('location'), its linkset's ('linkset'), whether the identifier was kept, and the ETag. A 200 with a linkset body gives the new identifier as the anchor of its first context with an up link (resolved against Content-Location, else linksetUrl), and Content-Location the linkset's.",
+  "patches": [
+    {
+      "name": "opaque identifiers (the lws10-core example)",
+      "resource": "https://storage.example/f8c3de3d",
+      "linksetUrl": "https://storage.example/9b1e07a4",
+      "destination": "https://storage.example/c2a71f60",
+      "linkset": {
+        "linkset": [
+          {
+            "anchor": "https://storage.example/f8c3de3d",
+            "up": [{ "href": "https://storage.example/1d4f8a02" }],
+            "linkset": [{ "href": "https://storage.example/9b1e07a4", "type": "application/linkset+json" }]
+          }
+        ]
+      },
+      "expected": [
+        { "op": "test", "path": "/linkset/0/up/0/href", "value": "https://storage.example/1d4f8a02" },
+        { "op": "replace", "path": "/linkset/0/up/0/href", "value": "https://storage.example/c2a71f60" }
+      ]
+    },
+    {
+      "name": "relative references, the resource's context second",
+      "resource": "https://example.com/alice/notes/shoppinglist.txt",
+      "linksetUrl": "https://example.com/alice/notes/shoppinglist.txt.meta",
+      "destination": "https://example.com/alice/archive/",
+      "linkset": {
+        "linkset": [
+          {
+            "anchor": "https://example.com/alice/notes/",
+            "describedby": [{ "href": "https://example.org/shapes/notes" }]
+          },
+          {
+            "anchor": "/alice/notes/shoppinglist.txt",
+            "describedby": [{ "href": "https://example.org/shapes/list" }],
+            "up": [{ "href": "/alice/notes/" }]
+          }
+        ]
+      },
+      "expected": [
+        { "op": "test", "path": "/linkset/1/up/0/href", "value": "/alice/notes/" },
+        { "op": "replace", "path": "/linkset/1/up/0/href", "value": "https://example.com/alice/archive/" }
+      ]
+    },
+    {
+      "name": "one context without an anchor",
+      "resource": "https://storage.example/alice/a.txt",
+      "linksetUrl": "https://storage.example/alice/a.txt.meta",
+      "destination": "https://storage.example/bob/",
+      "linkset": {
+        "linkset": [
+          {
+            "up": [{ "href": "https://storage.example/alice/" }]
+          }
+        ]
+      },
+      "expected": [
+        { "op": "test", "path": "/linkset/0/up/0/href", "value": "https://storage.example/alice/" },
+        { "op": "replace", "path": "/linkset/0/up/0/href", "value": "https://storage.example/bob/" }
+      ]
+    },
+    {
+      "name": "no up link",
+      "resource": "https://storage.example/alice/a.txt",
+      "linksetUrl": "https://storage.example/alice/a.txt.meta",
+      "destination": "https://storage.example/bob/",
+      "linkset": {
+        "linkset": [
+          {
+            "anchor": "https://storage.example/alice/a.txt",
+            "describedby": [{ "href": "https://example.org/shapes/a" }]
+          }
+        ]
+      },
+      "expected": null,
+      "error": "ProtocolError"
+    },
+    {
+      "name": "the linkset describes other resources only",
+      "resource": "https://storage.example/alice/a.txt",
+      "linksetUrl": "https://storage.example/alice/a.txt.meta",
+      "destination": "https://storage.example/bob/",
+      "linkset": {
+        "linkset": [
+          {
+            "anchor": "https://storage.example/alice/b.txt",
+            "up": [{ "href": "https://storage.example/alice/" }]
+          }
+        ]
+      },
+      "expected": null,
+      "error": "ProtocolError"
+    }
+  ],
+  "responses": [
+    {
+      "name": "204: the identifier is kept",
+      "resource": "https://storage.example/f8c3de3d",
+      "linksetUrl": "https://storage.example/9b1e07a4",
+      "status": 204,
+      "headers": { "etag": "\"meta-v4\"", "link": "<https://storage.example/c2a71f60>; rel=\"up\"" },
+      "body": null,
+      "expected": {
+        "location": "https://storage.example/f8c3de3d",
+        "linkset": "https://storage.example/9b1e07a4",
+        "identifierPreserved": true,
+        "etag": "\"meta-v4\""
+      }
+    },
+    {
+      "name": "200 with the linkset under a new identifier (the lws10-core example)",
+      "resource": "https://example.com/alice/notes/shoppinglist.txt",
+      "linksetUrl": "https://example.com/alice/notes/shoppinglist.txt.meta",
+      "status": 200,
+      "headers": { "content-type": "application/linkset+json", "content-location": "/alice/archive/shoppinglist.txt.meta", "etag": "\"meta-v4\"" },
+      "body": {
+        "linkset": [
+          {
+            "anchor": "/alice/archive/shoppinglist.txt",
+            "up": [{ "href": "/alice/archive/" }],
+            "linkset": [{ "href": "/alice/archive/shoppinglist.txt.meta", "type": "application/linkset+json" }]
+          }
+        ]
+      },
+      "expected": {
+        "location": "https://example.com/alice/archive/shoppinglist.txt",
+        "linkset": "https://example.com/alice/archive/shoppinglist.txt.meta",
+        "identifierPreserved": false,
+        "etag": "\"meta-v4\""
+      }
+    },
+    {
+      "name": "200 with the linkset, identifier kept",
+      "resource": "https://storage.example/alice/a.txt",
+      "linksetUrl": "https://storage.example/alice/a.txt.meta",
+      "status": 200,
+      "headers": { "content-type": "application/linkset+json", "etag": "\"ls-9\"" },
+      "body": {
+        "linkset": [
+          {
+            "anchor": "https://storage.example/alice/a.txt",
+            "up": [{ "href": "https://storage.example/bob/" }]
+          }
+        ]
+      },
+      "expected": {
+        "location": "https://storage.example/alice/a.txt",
+        "linkset": "https://storage.example/alice/a.txt.meta",
+        "identifierPreserved": true,
+        "etag": "\"ls-9\""
+      }
+    },
+    {
+      "name": "200 without a body",
+      "resource": "https://storage.example/alice/a.txt",
+      "linksetUrl": "https://storage.example/alice/a.txt.meta",
+      "status": 200,
+      "headers": {},
+      "body": null,
+      "expected": {
+        "location": "https://storage.example/alice/a.txt",
+        "linkset": "https://storage.example/alice/a.txt.meta",
+        "identifierPreserved": true,
+        "etag": null
+      }
+    }
+  ]
+}

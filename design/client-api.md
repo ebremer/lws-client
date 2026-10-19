@@ -12,16 +12,21 @@ must stay recognisable across languages.
 ## 1. Specification baseline
 
 The clients target the W3C Linked Web Storage (LWS) Working Group specifications as they stood on
-**2026-10-05** (`w3c/lws-protocol` commit `ef02548`, "Switch baseline PATCH format from JSON Merge
-Patch to JSON Patch (#255)"):
+**2026-10-19** (`w3c/lws-protocol` commit `9a08ff6`, "Define how resources move between containers
+(#237)", published as the Working Draft of 19 October 2026). Since the previous baseline (2026-10-05,
+`ef02548`) three changes reach the clients: a `401` now leads to the authorization server through
+OAuth 2.0 Protected Resource Metadata (RFC 9728, #256), with three checks a client must make before it
+asks for a token (section 6.2); only `application/lws+json` is a required container media type (#253,
+section 5.2); and resources move between containers by a change of their `up` link (#237, sections
+5.1, 5.7 and 7).
 
-| Document | Status (2026-10-05) | Client coverage |
+| Document | Status (2026-10-19) | Client coverage |
 |---|---|---|
-| Linked Web Storage Protocol 1.0 (`lws10-core`) | FPWD 2026-06-05, Editor's Draft 2026-10-05 | full |
-| LWS Vocabulary (`lws10-vocab`) | Group Note Draft 2026-07-14 | constants |
-| Authentication Suite: OpenID Connect (`lws10-authn-openid`) | WD 2026-08-03 | credential provider |
-| Authentication Suite: SAML 2.0 (`lws10-authn-saml`) | WD | credential provider |
-| Authentication Suite: Self-signed Identity using Controlled Identifiers (`lws10-authn-ssi-cid`) | WD 2026-04-23 | credential provider + key helpers |
+| Linked Web Storage Protocol 1.0 (`lws10-core`) | WD 2026-10-19 | full |
+| LWS Vocabulary (`lws10-vocab`) | Group Note Draft (vocabulary of 2026-10-19) | constants |
+| Authentication Suite: OpenID Connect (`lws10-authn-openid`) | WD 2026-10-15 | credential provider |
+| Authentication Suite: SAML 2.0 (`lws10-authn-saml`) | WD 2026-10-15 | credential provider |
+| Authentication Suite: Self-signed Identity using Controlled Identifiers (`lws10-authn-ssi-cid`) | WD 2026-10-15 | credential provider + key helpers |
 | Authentication Suite: Self-signed Identity using did:key (`lws10-authn-ssi-did-key`) | Discontinued (subsumed by ssi-cid) | did:key subjects via the CID provider |
 | Notification Suite: Webhooks (`lws10-notifications-webhook`) | Editor's Draft | subscribe/manage + signed-delivery verifier |
 | Search and Type Index Services (`lws10-index`) | Editor's Draft | type index + type search (HTTP QUERY) |
@@ -41,6 +46,7 @@ names, `MediaType.LWS_JSON`).
 # Namespaces / contexts
 LWS_NS                    https://www.w3.org/ns/lws#
 LWS_CONTEXT               https://www.w3.org/ns/lws/v1
+LWS_PROFILE               https://www.w3.org/ns/lws/v1        (the "LWS profile": media type parameter profile="…")
 CID_CONTEXT               https://www.w3.org/ns/cid/v1
 ACTIVITYSTREAMS_CONTEXT   https://www.w3.org/ns/activitystreams
 
@@ -76,6 +82,9 @@ SERVICE_TYPE_INDEX        TypeIndexService
 SERVICE_TYPE_SEARCH       TypeSearchService
 SUBSCRIPTION_WEBHOOK      WebhookSubscription
 
+# Capability types (storage description "capability[].type")
+CAPABILITY_MOVE_RESOURCE  MoveResource
+
 # OAuth / auth suites
 GRANT_TYPE_TOKEN_EXCHANGE urn:ietf:params:oauth:grant-type:token-exchange
 TOKEN_TYPE_ID_TOKEN       urn:ietf:params:oauth:token-type:id_token      (OpenID Connect suite)
@@ -83,6 +92,7 @@ TOKEN_TYPE_SAML2          urn:ietf:params:oauth:token-type:saml2         (SAML 2
 TOKEN_TYPE_JWT            urn:ietf:params:oauth:token-type:jwt           (self-signed CID / did:key suites)
 TOKEN_TYPE_ACCESS_TOKEN   urn:ietf:params:oauth:token-type:access_token
 WELL_KNOWN_LWS_CONFIGURATION  /.well-known/lws-configuration
+WELL_KNOWN_OAUTH_PROTECTED_RESOURCE  /.well-known/oauth-protected-resource     (RFC 9728)
 OPENID_PROVIDER_SERVICE   https://www.w3.org/ns/lws#OpenIdProvider
 
 # Access requests / grants (ODRL-based Access Profile)
@@ -100,7 +110,7 @@ PREFER_SET_LINKSET        set-linkset
 PREFER_LINK_RELATIONS     https://www.w3.org/ns/lws#PreferLinkRelations
 
 # Notifications
-ACTIVITY_CREATE / ACTIVITY_UPDATE / ACTIVITY_DELETE                Create / Update / Delete
+ACTIVITY_CREATE / ACTIVITY_UPDATE / ACTIVITY_DELETE / ACTIVITY_MOVE    Create / Update / Delete / Move
 ```
 
 ### Type matching
@@ -132,9 +142,10 @@ applications commonly need them.
 
 ### 3.2 WWW-Authenticate (RFC 9110 §11.6.1)
 Parse all challenges, including several challenges in one field value
-(`Bearer as_uri="…", realm="…", error="invalid_token", DPoP algs="ES256"`). Model:
+(`Bearer resource_metadata="…", error="invalid_token", DPoP algs="ES256"`). Model:
 `AuthChallenge { scheme (case-insensitive), params: map (lower-cased keys), token68?: string }`
-with accessors `asUri()`, `realm()`, `error()`, `errorDescription()`.
+with accessors `resourceMetadata()`, `error()`, `errorDescription()`, and `asUri()`, `realm()` for
+the challenge of the drafts before 19 October 2026.
 
 ### 3.3 Structured Fields (RFC 8941 / RFC 9651) — dictionary subset
 Needed for `Signature-Input`, `Signature` and `Content-Digest`. Parse dictionaries whose members
@@ -209,8 +220,17 @@ headers and relative `Link` targets.
 * Helpers: `storageRoot()` (required — throw/err `ProtocolError` if missing), `service(type)`
   (first match or none), `services(type)`, `capability(type)`, `notificationService()`,
   `accessRequestService()`, `accessGrantService()`, `typeIndexService()`, `typeSearchService()`,
-  `verificationMethod(idOrFragment)`.
+  `verificationMethod(idOrFragment)`, `moveCapability()`.
 * Validation: `type` must include `Storage`; otherwise `ProtocolError`.
+
+`moveCapability()` is the storage's `MoveResource` capability (lws10-core "Storage Description
+Capabilities"), or none when it describes none: then the `up` link is not modifiable, and a client
+MUST NOT assume it is. `MoveCapability { appliesTo: List<string>, preservesIdentifier?: bool, raw }`:
+`appliesTo` is the property's values as received (a single string normalised to a list), and
+`["DataResource"]` when the property is absent, which lws10-core makes mean data resources only;
+`preservesIdentifier` is absent when the property is, and then a client MUST NOT assume identifiers
+are kept. Helpers `movesDataResources()` and `movesContainers()` match `appliesTo` as in Type
+matching (section 2). The cases are `conformance/fixtures/responses/storage-description.json`.
 
 ### 5.2 Reading
 
@@ -237,9 +257,17 @@ A `304 Not Modified` (conditional read) is **not an error**: it is returned as a
 `ContainerPage`: `id` (absolute), `types`, `totalItems?` (integer; MAY be approximate),
 `items: List<ContainedResource>`, pagination `first? / next? / prev? / last?` (absolute URIs
 from Link headers), `metadata: ResourceMetadata` (etag etc.), raw JSON.
-`readContainer` accepts response content types `application/lws+json`, `application/ld+json`,
-`application/json` (ignore parameters); anything else → `ProtocolError`. If the response's
-rel=type links / body `type` show it is not a `Container`, → `ProtocolError`.
+`readContainer` asks for `application/lws+json`, the one container media type lws10-core requires a
+server to honour (#253). It accepts response content types `application/lws+json`,
+`application/ld+json` and `application/json` (ignore parameters), reading each as an
+`application/lws+json` document; anything else → `ProtocolError`.
+**Decision:** the drafts no longer make `application/ld+json` and `application/json` equivalent to
+`application/lws+json`, and only an `application/lws+json` response is a container representation;
+the clients keep reading the other two as one, a leniency towards servers of earlier drafts, which
+fails with a `ProtocolError` where the document does not have the container's shape. A representation
+in the *LWS profile* (an RDF media type with `profile="https://www.w3.org/ns/lws/v1"`, RDF isomorphic to
+the `application/lws+json` one) is available through `read(url, accept)`; the clients do not parse RDF.
+If the response's rel=type links / body `type` show it is not a `Container`, → `ProtocolError`.
 
 `ContainedResource`: `id` (absolute), `types`, `format?` (media type; MUST for DataResources),
 `size?` (bytes), `modified?` (date-time; keep raw string too; an unparseable date MUST NOT fail
@@ -297,6 +325,43 @@ A non-empty container without `recursive` yields `409` → `ConflictError`.
   round-trip that preserves unknown members.
 * `LinksetDocument { url (of the linkset resource), etag, linkset, allow, acceptPatch }`.
 
+### 5.7 Moving resources
+
+| Operation | HTTP | Result |
+|---|---|---|
+| `move(resourceUrl, destinationUrl, opts)` | `readLinkset(resourceUrl)`, then `PATCH` the linkset with `application/json-patch+json` and `If-Match: <the linkset's ETag>` (opts: `ifMatch` overrides it, `headers`) | `MoveResult` |
+
+lws10-core defines no method for a move: a client changes the `up` link in the resource's linkset to
+the destination container, and the server moves the resource (and, for a container, everything in
+it) atomically. `move` reads the linkset first, as JSON Patch addresses the `up` link by its position
+and the conditional request needs the linkset's ETag:
+
+1. The link context is the first whose `anchor` resolves (against the linkset's URL) to `resourceUrl`
+   (scheme and host compared case-insensitively, default ports dropped), or the only context when it
+   has no `anchor`. Its `up` link is its first `up` target with a string `href`. Without either →
+   `ProtocolError`, and nothing is sent.
+2. The patch is two operations: `test` that `/linkset/{i}/up/{j}/href` still holds the `href` as read
+   (the raw string), and `replace` it with `destinationUrl` (absolute). The cases are
+   `conformance/fixtures/move.json` (`patches`).
+3. `PATCH` the linkset with it, conditional on the linkset's ETag when it had one (lws10-core: clients
+   SHOULD make the request conditional).
+
+`MoveResult { status, location (absolute URL of the resource after the move), linkset (absolute URL
+of its linkset after the move), identifierPreserved (location == resourceUrl), etag?, metadata,
+document? (the linkset in a 200's body) }`. A storage that keeps identifiers answers `204` (or `200`
+with the linkset): `location` is `resourceUrl`. One that does not answers `200` with the updated
+linkset, whose `anchor` is the new identifier, and `Content-Location`, the linkset's new URL:
+`location` is the anchor of the body's first context with an `up` link, resolved against
+`Content-Location` (else the linkset URL), and `linkset` is `Content-Location`. Without a
+`preservesIdentifier: true`, a client MUST rely on this answer for the identifier (the cases are
+`move.json`, `responses`).
+
+`move` does not read the storage description: whether the storage allows moves is
+`moveCapability()` (section 5.1), which an application checks first. A storage that does not refuses
+the patch with a `4xx` (`409` → `ConflictError`), as it does a destination that is not an existing
+container, or a container moved into itself or its own descendant. Moving needs delete on the resource
+and create in the destination (`403` → `ForbiddenError`).
+
 ## 6. Authentication & authorization (OAuth 2.0 token exchange)
 
 ### 6.1 Pluggable `Authenticator`
@@ -306,64 +371,120 @@ Authenticator
   authorize(request)                         // before sending: may add Authorization
   handleChallenge(request, response) -> bool // on 401: obtain credentials; true = retry once
 ```
+The one retry after a handled `401` may need credentials that `authorize` would not send, because the
+request URL lies outside the token's scope (section 6.2, step 14). Each language gives the retry its own
+hook: `authorizeRetry(request)`, which defaults to `authorize` (C++, Rust, Kotlin, Swift), headers that
+`handleChallenge` sets being carried onto the retry (Java, C#), or the challenge handler handing the retry
+its credentials (JavaScript's per-request context, Go's request context, Python's `challenge_flow` result,
+PHP's authenticator state). Custom authenticators need not use it.
+
 Provided implementations:
-* `BearerTokenAuthenticator(token | tokenSupplier)` — send a known access token.
+* `BearerTokenAuthenticator(token | tokenSupplier)` — send a known access token (optionally only to
+  URLs inside a given realm).
 * `TokenExchangeAuthenticator(credentialProvider, options)` — the LWS flow below.
 Users may implement their own (cookies, DPoP, mTLS…).
 
 ### 6.2 LWS flow (`TokenExchangeAuthenticator`)
 
-1. A request returns `401` with `WWW-Authenticate: Bearer as_uri="…", realm="…"`.
-   Pick the first `Bearer` challenge that has both `as_uri` and `realm`. If none → surface
+Since the drafts of 19 October 2026 a `401` names the requested resource's protected resource metadata
+(RFC 9728), which names the authorization servers, and links to the storage that holds the resource,
+which is what the token is for. Before it asks for a token a client MUST check what the `401` told it
+against the URL that drew it (lws10-core "Discovery Validation by a Client"), as a malicious server could
+otherwise have it get a token for another storage, and replay it there. The *request URL* below is the URL
+of the request the `401` answered (after redirects, the last hop's). The steps, in this order:
+
+1. A request returns `401`. Pick the first `Bearer` challenge with a `resource_metadata` parameter.
+   If there is none, but there is a `Bearer` challenge with both `as_uri` and `realm`, follow the
+   **challenge of the drafts before 19 October 2026** (below). If there is neither → surface
    `UnauthorizedError` (with parsed challenges).
-2. **Realm check (client MUST):** the request URL must be logically contained in `realm`: same
-   scheme, host and port, and the request path equals the realm path or starts with the realm
-   path (treated as a directory, i.e. ending in `/`). Otherwise → `AuthenticationError`.
-   **Decision:** a challenge that fails this check (or steps 3–4) is not acted on at all. In particular
-   a cached token the request carried is **not** dropped: a storage can hold a resource whose 401 names
-   a realm that does not contain it (Touchstone's decoy), and believing it would cost the client a valid
-   token.
-3. **Transport security:** `as_uri` and the token endpoint MUST be `https`, except loopback hosts
-   (`localhost`, `127.0.0.1`, `[::1]`) or when the option `allowInsecureHttp` is enabled.
-4. Optional policy: `authorizationServerFilter(asUri, realm) -> bool` (default: allow). If it
-   rejects → `AuthenticationError`. (Security note: a malicious storage can name any AS; tokens
-   minted by the self-signed provider are audience-bound to that AS, but static OpenID/SAML
-   tokens may not be — use the filter or audience-restricted tokens.)
-5. **Metadata and token requests never follow a redirect**; a `3xx` there is an `AuthenticationError`.
-   A `307`/`308` would carry the subject token, a credential, on to wherever it points, past step 3.
-   Fetch AS metadata (RFC 8414 §3.1): for issuer `https://as.example` →
-   `https://as.example/.well-known/lws-configuration`; for an issuer with a path
-   `https://as.example/t1` → `https://as.example/.well-known/lws-configuration/t1`.
-   The returned `issuer` MUST equal `as_uri` (ignoring one trailing `/`) else
-   `AuthenticationError`. Cache metadata per issuer.
-6. Ask the `CredentialProvider` for a subject token for this AS
-   (`context: { issuer, realm, metadata }`). If metadata has `subject_token_types_supported`
-   and it does not contain the provider's token type → `AuthenticationError`.
-7. `POST token_endpoint` (`application/x-www-form-urlencoded`):
-   `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, `resource=<realm>`,
-   `subject_token=<token>`, `subject_token_type=<type>`.
-   Error responses (RFC 6749 §5.2 `{"error": …}`) → `AuthenticationError` carrying `error`,
-   `error_description`.
-8. Response: `access_token`, `token_type` (must be `Bearer`, case-insensitive),
-   `expires_in?`. Expiry = `expires_in`, else the access token's JWT `exp` (decode payload
-   without verifying), else 300 s. Cache per `(issuer, realm)`; refresh 30 s before expiry.
-9. Retry the original request **once** with `Authorization: Bearer <token>`.
-10. Proactive auth: subsequent requests to URLs inside a cached realm send the cached token
-    immediately. If such a request still gets `401` (e.g. `error="invalid_token"`), drop the
-    cached token and run steps 1–9 once.
-11. Never send a token to a URL outside its realm (also on redirects).
-12. Concurrency: concurrent requests should share one in-flight exchange where practical;
+2. **Metadata origin (client MUST):** the `resource_metadata` URL (resolved against the request URL)
+   has the scheme and authority of the request URL: scheme and host compared case-insensitively, the
+   port after the scheme's default is applied (`originChecks` in `responses/oauth.json`). Otherwise →
+   `AuthenticationError`, and it is not fetched.
+3. **Storage:** the `401`'s first `Link` with rel `https://www.w3.org/ns/lws#storage`, resolved
+   against the request URL, is the storage. Without one → `AuthenticationError`.
+4. **Protected resource metadata:** `GET` the `resource_metadata` URL with `Accept: application/json`,
+   no credentials, following **no redirect**. Anything but a `200` JSON object → `AuthenticationError`.
+   Parse it as `ProtectedResourceMetadata { resource, authorizationServers: List<string>, raw }`:
+   `resource` a string (RFC 9728), `authorization_servers` a non-empty array of strings (lws10-core
+   makes it REQUIRED), else `AuthenticationError` (the cases are `protectedResourceMetadata*` in
+   `responses/oauth.json`). Not cached: it describes one resource.
+5. **Metadata resource (client MUST):** `resource` is identical to the request URL, compared after
+   lower-casing scheme and host and dropping a default port on both, and nothing else (no trailing
+   slash, case or percent-encoding leniency; `resourceChecks` in `responses/oauth.json`). Otherwise →
+   `AuthenticationError`.
+6. **Storage root origin (client MUST):** obtain the storage's description (section 5.1: `GET` with the
+   storage description `Accept`, no credentials, following no redirect), and its `StorageRoot`
+   service's `serviceEndpoint` has the scheme and authority of the request URL. A description that
+   cannot be read or parsed, has no `StorageRoot`, or whose root is on another origin →
+   `AuthenticationError`. Descriptions are cached per storage URL for the authenticator's lifetime
+   (lws10-core: a client can cache a storage description); `clear()` forgets them.
+7. **Authorization server:** the first entry of `authorizationServers` that passes the transport
+   check (step 8) and the filter (step 9) is the issuer; none → `AuthenticationError`.
+8. **Transport security:** the issuer and the token endpoint MUST be `https`, except loopback hosts
+   (`localhost`, `127.0.0.1`, `[::1]`) or when the option `allowInsecureHttp` is enabled. (The
+   metadata and the storage description carry no credential; they are on the requested origin, or
+   named by it.)
+9. Optional policy: `authorizationServerFilter(issuer, storage) -> bool` (default: allow). (Security
+   note: a malicious storage can name any AS; tokens minted by the self-signed provider are
+   audience-bound to that AS, but static OpenID/SAML tokens may not be — use the filter or
+   audience-restricted tokens.)
+10. **Metadata and token requests never follow a redirect**; a `3xx` there is an
+    `AuthenticationError`. A `307`/`308` would carry the subject token, a credential, on to wherever it
+    points, past step 8. Fetch AS metadata (RFC 8414 §3.1): for issuer `https://as.example` →
+    `https://as.example/.well-known/lws-configuration`; for an issuer with a path
+    `https://as.example/t1` → `https://as.example/.well-known/lws-configuration/t1`. The returned
+    `issuer` MUST equal the issuer (ignoring one trailing `/`) else `AuthenticationError`. Cache
+    metadata per issuer.
+11. Ask the `CredentialProvider` for a subject token for this AS
+    (`context: { issuer, storage, metadata }`). If metadata has `subject_token_types_supported` and it
+    does not contain the provider's token type → `AuthenticationError`.
+12. `POST token_endpoint` (`application/x-www-form-urlencoded`):
+    `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, `resource=<storage>` (the URL of
+    step 3, absolute, not otherwise normalised), `subject_token=<token>`,
+    `subject_token_type=<type>`. Error responses (RFC 6749 §5.2 `{"error": …}`) →
+    `AuthenticationError` carrying `error`, `error_description`.
+13. Response: `access_token`, `token_type` (must be `Bearer`, case-insensitive), `expires_in?`.
+    Expiry = `expires_in`, else the access token's JWT `exp` (decode payload without verifying), else
+    300 s. Cache per `(issuer, storage)`; refresh 30 s before expiry.
+14. Retry the original request **once** with `Authorization: Bearer <token>`. The retry carries the
+    token even when the request URL lies outside the token's scope (step 15), as that URL has just
+    passed the checks. Later requests to URLs outside the scope get no token up front: their `401` runs
+    steps 1–14 again, which reuse the cached token for the same issuer and storage without a new
+    exchange.
+15. **Proactive auth:** later requests send a cached token at once to URLs inside its *scope*: the
+    storage URL and the storage root (step 6), each treated as a directory, as a realm was before: same
+    scheme, host and port, and a path equal to the scope's or below it (a path not ending in `/`
+    counting as one that does). Where several tokens' scopes contain a URL, the longest scope path wins.
+    If such a request still gets `401` (e.g. `error="invalid_token"`), run steps 1–14; when they name
+    the same issuer and storage, drop the cached token and exchange again, once.
+16. Never send a token to a URL outside its scope (also on redirects), except in the retry of step 14.
+17. Concurrency: concurrent requests should share one in-flight exchange where practical;
     the token cache must be thread/task-safe.
-13. Bodies: the auth retry requires a replayable body. Byte/string bodies are always
+18. Bodies: the auth retry requires a replayable body. Byte/string bodies are always
     replayable. For streaming bodies, if no token is cached the client may first issue `HEAD`
     on the target (or its container for POST) to establish a token; otherwise surface the 401.
+
+**Decision:** a challenge that fails a check (steps 2–10) is not acted on at all, and in particular a
+cached token the request carried is **not** dropped: a storage can hold a resource whose `401` links to
+another storage (Touchstone's decoy), and believing it would cost the client a valid token. The client
+asks for no token for what that `401` named, and sends none there.
+
+**The challenge of the drafts before 19 October 2026** (`Bearer as_uri="…", realm="…"`, without
+`resource_metadata`) is still followed, so that the clients keep working with servers that have not
+moved to RFC 9728; a challenge that has `resource_metadata` is never read this way, whatever else it
+carries. **Realm check (client MUST in those drafts):** the request URL must be logically contained in
+`realm`: same scheme, host and port, and the request path equals the realm path or starts with the
+realm path (treated as a directory, i.e. ending in `/`). Otherwise → `AuthenticationError`. Then
+`as_uri` is the issuer (steps 8–10), the realm the storage of steps 11–13 (`resource=<realm>`), and the
+realm alone the token's scope (step 15). The cases of both are `conformance/fixtures/discovery.json`.
 
 ### 6.3 `CredentialProvider` (authentication suites)
 
 ```
 CredentialProvider
   tokenType: string
-  getSubjectToken(context{issuer, realm, metadata}) -> string   (may be async)
+  getSubjectToken(context{issuer, storage, metadata}) -> string   (may be async)
 ```
 * **`OpenIdCredentials`** (`lws10-authn-openid`): wraps an ID token or a supplier/callback that
   returns a fresh ID token (interactive OIDC login is out of scope — apps use their OIDC
@@ -407,7 +528,10 @@ clients should check that `subscriptionType` includes `WebhookSubscription` and 
 **Notification model**: `parseNotification(bytes|string|json) -> Notification`
 `Notification { storage, activities: List<Activity>, raw }` (`activity` may be an object or an
 array — always expose a list). `Activity { id, types, object: {id, types}, actor?, target?,
-origin?, published (date-time + raw), raw }` with `isCreate()/isUpdate()/isDelete()`.
+origin?, published (date-time + raw), raw }` with `isCreate()/isUpdate()/isDelete()/isMove()`. A
+`Move` (lws10-core, for storages that allow moves) has `origin`, the container the resource left,
+`target`, the one it joined, and `object`, the resource as it is after the move (`move` in
+`responses/notification.json`).
 `type` must be `Notification`, else `ProtocolError`.
 
 ### 7.1 `WebhookVerifier` (RFC 9421 HTTP Message Signatures + RFC 9530 Content-Digest)
@@ -520,7 +644,7 @@ A single hierarchy (or enum / sentinel set) mapping the LWS abstract responses:
 | ├ `UnprocessableContentError` | 422 | |
 | ├ `NotImplementedError` | 501 | |
 | └ `InsufficientStorageError` | 507 | quota exceeded |
-| `AuthenticationError` (+ OAuth `error`, `errorDescription`) | token exchange / realm / metadata failures | |
+| `AuthenticationError` (+ OAuth `error`, `errorDescription`) | token exchange, discovery check, realm check or metadata failures | |
 | `ProtocolError` | server response violates the spec (missing Location, wrong media type, bad JSON) | |
 | `SignatureVerificationError` | webhook verification failures | |
 
@@ -549,8 +673,10 @@ names the class (`not-found`, `precondition-failed`, …, `authentication`, `pro
    inputs and expected outputs for every language, including the RFC 9421 webhook vectors and
    did:key vectors.
 3. In-process HTTP tests (mock transport or local server) for every operation, including the
-   full `401 → metadata → token exchange → retry` flow, proactive token reuse, realm-check
-   rejection, pagination across ≥3 pages, conditional requests (304, 412), and error mapping.
+   full `401 → protected resource metadata → storage description → AS metadata → token exchange →
+   retry` flow with every case of `conformance/fixtures/discovery.json`, proactive token reuse,
+   moves (`conformance/fixtures/move.json`), pagination across ≥3 pages, conditional requests (304,
+   412), and error mapping.
 4. An interop test/example that runs the full scenario in `conformance/scenario.md` against the
    mock server in `testing/mock-server/` when `LWS_TEST_SERVER` is set (skipped otherwise).
 

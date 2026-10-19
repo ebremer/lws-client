@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Authorization server (lws10-core "Authorization": RFC 8414 metadata + RFC 8693 token exchange)
-// and access-token validation for the storage server.
+// Authorization server (lws10-core "Authorization": RFC 8414 metadata + RFC 8693 token exchange),
+// protected resource metadata (RFC 9728) and access-token validation for the storage server.
 
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { decodeJwt, didKeyToPublicJwk, publicKeyFromJwk, signJwt, verifyJwtSignature } from "./crypto.mjs";
-import { asArray, HttpError, isObject, MEDIA, mediaTypeOf, readBody, REL_STORAGE, send } from "./util.mjs";
+import { asArray, HttpError, isObject, MEDIA, mediaTypeOf, readBody, REL_STORAGE, send, WELL_KNOWN_PRM } from "./util.mjs";
 
 export const TOKEN_TYPES = Object.freeze({
   JWT: "urn:ietf:params:oauth:token-type:jwt",
@@ -250,7 +250,7 @@ export function createAuth(app) {
       if (grantType !== GRANT_TOKEN_EXCHANGE) throw new OAuthError("unsupported_grant_type", `unsupported grant_type ${grantType}`);
       const resource = params.get("resource");
       if (!resource) throw new OAuthError("invalid_request", "resource is required");
-      if (resource !== app.realm) throw new OAuthError("invalid_target", `resource ${resource} is not a storage known to this authorization server (expected ${app.realm})`);
+      if (resource !== app.storageId) throw new OAuthError("invalid_target", `resource ${resource} is not a storage known to this authorization server (expected ${app.storageId})`);
       const subjectToken = params.get("subject_token");
       const subjectTokenType = params.get("subject_token_type");
       if (!subjectToken) throw new OAuthError("invalid_request", "subject_token is required");
@@ -290,17 +290,43 @@ export function createAuth(app) {
     }
   }
 
-  function challengeHeaders() {
+  /**
+   * The protected resource metadata (RFC 9728) of the resource at `url`: the resource is the URL as requested,
+   * and the authorization server is this one.
+   */
+  function protectedResourceMetadata(url) {
     return {
-      "WWW-Authenticate": `Bearer as_uri="${app.issuer}", realm="${app.realm}", error="invalid_token"`,
-      Link: `<${app.storageId}>; rel="${REL_STORAGE}"`,
+      resource: url,
+      authorization_servers: [app.issuer],
+      bearer_methods_supported: ["header"],
+      resource_name: "LWS mock server storage",
     };
   }
 
-  const unauthorized = (detail) => new HttpError(401, detail, { headers: challengeHeaders() });
+  /** GET {base}/.well-known/oauth-protected-resource{path}: the metadata of the resource at {base}{path} (RFC 9728 section 3.1). */
+  function handleProtectedResourceMetadata(req, res, url) {
+    if (req.method !== "GET" && req.method !== "HEAD") throw new HttpError(405, undefined, { headers: { Allow: "GET, HEAD" } });
+    const resource = app.base + url.pathname.slice(WELL_KNOWN_PRM.length) + url.search;
+    send(req, res, 200, { "Content-Type": MEDIA.JSON, "Cache-Control": "no-store" }, protectedResourceMetadata(resource || app.base));
+  }
+
+  /**
+   * The challenge of a 401 to a request for `url` (lws10-core "Authorization Server Discovery"): the
+   * resource_metadata URL of the resource and a Link to the storage. With `legacyChallenge`, the as_uri and
+   * realm challenge of the drafts before 19 October 2026 instead.
+   */
+  function challengeHeaders(url) {
+    const link = `<${app.storageId}>; rel="${REL_STORAGE}"`;
+    if (app.legacyChallenge) {
+      return { "WWW-Authenticate": `Bearer as_uri="${app.issuer}", realm="${app.storageId}", error="invalid_token"`, Link: link };
+    }
+    const metadataUrl = app.base + WELL_KNOWN_PRM + url.pathname + url.search;
+    return { "WWW-Authenticate": `Bearer resource_metadata="${metadataUrl}", error="invalid_token"`, Link: link };
+  }
 
   /** Validates the bearer access token of a storage request (lws10-core "Token Validation by a Storage Server"). */
-  function authenticate(req) {
+  function authenticate(req, url) {
+    const unauthorized = (detail) => new HttpError(401, detail, { headers: challengeHeaders(url) });
     const header = req.headers.authorization;
     if (!header) throw unauthorized("An access token is required");
     const m = /^Bearer[ \t]+([A-Za-z0-9\-._~+/]+=*)[ \t]*$/i.exec(header);
@@ -317,7 +343,7 @@ export function createAuth(app) {
     const p = jwt.payload;
     if (p.iss !== app.issuer) throw unauthorized("Access token issuer is not trusted");
     const aud = asArray(p.aud);
-    if (aud.length !== 1 || aud[0] !== app.realm) throw unauthorized("Access token audience does not identify this storage");
+    if (!aud.includes(app.storageId)) throw unauthorized("Access token audience does not include this storage");
     const t = now();
     if (typeof p.exp !== "number" || p.exp + CLOCK_SKEW <= t) throw unauthorized("Access token is expired");
     if (p.nbf !== undefined && (typeof p.nbf !== "number" || p.nbf - CLOCK_SKEW > t)) throw unauthorized("Access token is not yet valid");
@@ -326,5 +352,15 @@ export function createAuth(app) {
     return { sub: p.sub, clientId: p.client_id ?? null };
   }
 
-  return { handleMetadata, handleJwks, handleToken, authenticate, challengeHeaders, metadata, publicJwk };
+  return {
+    handleMetadata,
+    handleJwks,
+    handleToken,
+    handleProtectedResourceMetadata,
+    authenticate,
+    challengeHeaders,
+    metadata,
+    protectedResourceMetadata,
+    publicJwk,
+  };
 }

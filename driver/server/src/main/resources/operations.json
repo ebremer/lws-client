@@ -172,6 +172,16 @@
       "required": ["linksetUrl", "patch"]
     },
     {
+      "name": "move", "title": "Move a resource",
+      "description": "Move a resource, or a container with everything in it, into another container: read its linkset and PATCH it, conditionally, replacing the up link (lws10-core Moving Resources). Returns where the resource and its linkset are now, and whether the storage kept the identifier. Check the storage description's moveCapability first: a storage without one refuses.",
+      "params": {
+        "url": { "$def": "url", "description": "The resource to move." },
+        "destination": { "$def": "url", "description": "The container to move it into." },
+        "ifMatch": { "$def": "etag", "description": "Overrides the ETag of the linkset as read." }
+      },
+      "required": ["url", "destination"]
+    },
+    {
       "name": "subscribe", "title": "Subscribe to notifications",
       "description": "Subscribe to webhook notifications about some resources. The inbox defaults to the client's own, from open_inbox.",
       "params": {

@@ -1,0 +1,670 @@
+{
+  "description": "The authorization flow of a TokenExchangeAuthenticator (default options) after a 401 (lws10-core 'Authorization Server Discovery', 'Protected Resource Metadata' and 'Discovery Validation by a Client'). Replace {A} with the origin of the server under test and {B} with another origin (a test harness with a real loopback server can use http://127.0.0.1:<port> and http://localhost:<port>). The client GETs 'request'; the server answers it 401 with the 'challenge' header fields when it carries no Authorization, and 200 (text/plain 'ok') when it carries 'Authorization: Bearer token-1'. Every GET of a URL in 'documents' gets that response (body: JSON, null for none); anything else not listed is 404. A POST to {A}/as/token (form-encoded) gets 200 {\"access_token\": \"token-1\", \"token_type\": \"Bearer\", \"expires_in\": 300}. expected.outcome is 'ok' (the request is retried once with the token and succeeds), or the error the client raises: 'AuthenticationError' or 'UnauthorizedError'. expected.tokenRequest is the one token request made (its endpoint and its form's resource parameter) or null when none may be made. expected.notFetched lists URLs the client must not request. expected.then lists later GETs, which the server answers 200 'ok' with or without a token, and whether each carries the token.",
+  "tokenResponse": { "access_token": "token-1", "token_type": "Bearer", "expires_in": 300 },
+  "cases": [
+    {
+      "name": "valid",
+      "description": "The lws10-core example: the metadata and the storage root are on the requested origin and the metadata names the URL requested. The token is for the storage the Link names, and is sent ahead to URLs inside the storage and its root, and nowhere else.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "tokenRequest": { "endpoint": "{A}/as/token", "resource": "{A}/storage_1" },
+        "notFetched": [],
+        "then": [
+          { "request": "{A}/storage_1/notes/a.txt", "sendsToken": true },
+          { "request": "{A}/storage_1", "sendsToken": true },
+          { "request": "{A}/storage_10/x", "sendsToken": false },
+          { "request": "{B}/storage_1/notes/a.txt", "sendsToken": false }
+        ]
+      }
+    },
+    {
+      "name": "request-outside-the-storage-and-its-root",
+      "description": "A URL on the storage's origin but outside the storage's path and its root's, such as a service endpoint: it passes the checks, so the retry carries the token; later requests outside the scope get none up front, and their 401 reuses the cached token without a second token request.",
+      "request": "{A}/services/inbox",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/services/inbox\", error=\"invalid_token\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        },
+        "{A}/.well-known/oauth-protected-resource/services/inbox": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/services/inbox", "authorization_servers": ["{A}/as"] }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "tokenRequest": { "endpoint": "{A}/as/token", "resource": "{A}/storage_1" },
+        "notFetched": [],
+        "then": [{ "request": "{A}/services/other", "sendsToken": false }, { "request": "{A}/storage_1/notes/a.txt", "sendsToken": true }]
+      }
+    },
+    {
+      "name": "resource-metadata-before-as-uri",
+      "description": "A challenge with resource_metadata is followed even when it also carries the as_uri and realm of the drafts before 19 October 2026, which are ignored.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", as_uri=\"{B}/as\", realm=\"{B}/\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "tokenRequest": { "endpoint": "{A}/as/token", "resource": "{A}/storage_1" },
+        "notFetched": ["{B}/.well-known/lws-configuration/as"]
+      }
+    },
+    {
+      "name": "metadata-on-another-origin",
+      "description": "The resource_metadata URL is not on the requested origin: it is not fetched, and no token is requested.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{B}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        },
+        "{B}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        }
+      },
+      "expected": {
+        "outcome": "AuthenticationError",
+        "tokenRequest": null,
+        "notFetched": ["{B}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg", "{A}/.well-known/lws-configuration/as"]
+      }
+    },
+    {
+      "name": "metadata-for-another-resource",
+      "description": "The metadata's resource is not the URL requested.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/other.jpg", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": { "outcome": "AuthenticationError", "tokenRequest": null, "notFetched": ["{A}/.well-known/lws-configuration/as"] }
+    },
+    {
+      "name": "metadata-for-the-storage",
+      "description": "The metadata names the storage, not the URL requested: RFC 9728 and lws10-core want the resource itself.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": { "outcome": "AuthenticationError", "tokenRequest": null, "notFetched": ["{A}/.well-known/lws-configuration/as"] }
+    },
+    {
+      "name": "storage-root-on-another-origin",
+      "description": "The Link names a storage whose description puts its root on another origin (Touchstone's decoy): a client that asked for a token would get one for a storage this server could replay it to.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{A}/vault/>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        },
+        "{A}/vault/": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/vault/",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{B}/vault/" }]
+          }
+        }
+      },
+      "expected": { "outcome": "AuthenticationError", "tokenRequest": null, "notFetched": ["{A}/.well-known/lws-configuration/as"] }
+    },
+    {
+      "name": "storage-on-another-origin-with-its-root-here",
+      "description": "Only the storage root has to be on the requested origin: a storage described elsewhere whose root is here is the token's audience.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{B}/storage_9>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        },
+        "{B}/storage_9": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{B}/storage_9",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "tokenRequest": { "endpoint": "{A}/as/token", "resource": "{B}/storage_9" },
+        "notFetched": []
+      }
+    },
+    {
+      "name": "no-storage-link",
+      "description": "Without a Link to the storage there is nothing to ask a token for. Nothing is fetched.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "AuthenticationError",
+        "tokenRequest": null,
+        "notFetched": ["{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg", "{A}/.well-known/lws-configuration/as"]
+      }
+    },
+    {
+      "name": "no-authorization-server",
+      "description": "lws10-core makes authorization_servers REQUIRED, with at least one issuer.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": [] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": { "outcome": "AuthenticationError", "tokenRequest": null, "notFetched": ["{A}/.well-known/lws-configuration/as"] }
+    },
+    {
+      "name": "metadata-not-found",
+      "description": "The metadata cannot be read.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 404,
+          "headers": {},
+          "body": null
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": { "outcome": "AuthenticationError", "tokenRequest": null, "notFetched": ["{A}/.well-known/lws-configuration/as"] }
+    },
+    {
+      "name": "metadata-redirects",
+      "description": "Discovery follows no redirect: a 3xx for the metadata is a failure, and its Location is not fetched.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 302,
+          "headers": { "location": "{A}/elsewhere" },
+          "body": null
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        },
+        "{A}/elsewhere": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        }
+      },
+      "expected": { "outcome": "AuthenticationError", "tokenRequest": null, "notFetched": ["{A}/elsewhere", "{A}/.well-known/lws-configuration/as"] }
+    },
+    {
+      "name": "storage-description-without-root",
+      "description": "A storage description without a StorageRoot service gives nothing to check the origin of.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "TypeIndexService", "serviceEndpoint": "{A}/storage_1/types" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": { "outcome": "AuthenticationError", "tokenRequest": null, "notFetched": ["{A}/.well-known/lws-configuration/as"] }
+    },
+    {
+      "name": "insecure-authorization-server",
+      "description": "The authorization server must use https (loopback hosts excepted, allowInsecureHttp off): the subject token is a credential. Its metadata is not fetched.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": {
+        "WWW-Authenticate": "Bearer resource_metadata=\"{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\", error=\"invalid_token\"",
+        "Link": "<{A}/storage_1>; rel=\"https://www.w3.org/ns/lws#storage\""
+      },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["http://as.invalid"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": { "outcome": "AuthenticationError", "tokenRequest": null, "notFetched": ["http://as.invalid/.well-known/lws-configuration"] }
+    },
+    {
+      "name": "challenge-before-2026-10-19",
+      "description": "A challenge with as_uri and realm and no resource_metadata, as the drafts before 19 October 2026 had it: the realm must contain the URL requested, and is the token's resource and the scope it is sent ahead to.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": { "WWW-Authenticate": "Bearer as_uri=\"{A}/as\", realm=\"{A}/storage_1/\", error=\"invalid_token\"" },
+      "documents": {
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "ok",
+        "tokenRequest": { "endpoint": "{A}/as/token", "resource": "{A}/storage_1/" },
+        "notFetched": [],
+        "then": [{ "request": "{A}/storage_1/notes/a.txt", "sendsToken": true }, { "request": "{A}/storage_10/x", "sendsToken": false }]
+      }
+    },
+    {
+      "name": "challenge-before-2026-10-19-realm-elsewhere",
+      "description": "The realm of a challenge of the drafts before 19 October 2026 does not contain the URL requested.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": { "WWW-Authenticate": "Bearer as_uri=\"{A}/as\", realm=\"{A}/storage_2/\"" },
+      "documents": {
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": { "outcome": "AuthenticationError", "tokenRequest": null, "notFetched": ["{A}/.well-known/lws-configuration/as"] }
+    },
+    {
+      "name": "no-usable-challenge",
+      "description": "No Bearer challenge with resource_metadata, or with as_uri and realm: the 401 is the caller's.",
+      "request": "{A}/storage_1/photos/img.jpg",
+      "challenge": { "WWW-Authenticate": "Basic realm=\"storage\"" },
+      "documents": {
+        "{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": { "resource": "{A}/storage_1/photos/img.jpg", "authorization_servers": ["{A}/as"] }
+        },
+        "{A}/storage_1": {
+          "status": 200,
+          "headers": { "content-type": "application/lws+cid" },
+          "body": {
+            "@context": ["https://www.w3.org/ns/cid/v1", "https://www.w3.org/ns/lws/v1"],
+            "id": "{A}/storage_1",
+            "type": "Storage",
+            "service": [{ "type": "StorageRoot", "serviceEndpoint": "{A}/storage_1/" }]
+          }
+        },
+        "{A}/.well-known/lws-configuration/as": {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "body": {
+            "issuer": "{A}/as",
+            "token_endpoint": "{A}/as/token",
+            "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            "subject_token_types_supported": ["urn:ietf:params:oauth:token-type:jwt", "urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:saml2"]
+          }
+        }
+      },
+      "expected": {
+        "outcome": "UnauthorizedError",
+        "tokenRequest": null,
+        "notFetched": ["{A}/.well-known/oauth-protected-resource/storage_1/photos/img.jpg", "{A}/.well-known/lws-configuration/as"]
+      }
+    }
+  ]
+}

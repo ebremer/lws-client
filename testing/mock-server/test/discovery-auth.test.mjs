@@ -36,6 +36,7 @@ describe("storage description", () => {
     assert.equal(d.verificationMethod[0].id, `${base}/#webhook-key`);
     assert.equal(d.verificationMethod[0].publicKeyJwk.crv, "P-256");
     assert.deepEqual(d.authentication, [`${base}/#webhook-key`]);
+    assert.deepEqual(d.capability, [{ type: "MoveResource", appliesTo: ["DataResource", "Container"], preservesIdentifier: false }]);
   });
 
   test("HEAD, conditional GET and content negotiation", async () => {
@@ -71,12 +72,39 @@ describe("401 challenge", () => {
     test(`unauthenticated ${path} gets the LWS Bearer challenge`, async () => {
       const r = await fetch(`${base}${path}`);
       assert.equal(r.status, 401);
-      assert.equal(r.headers.get("www-authenticate"), `Bearer as_uri="${base}", realm="${base}/", error="invalid_token"`);
+      assert.equal(r.headers.get("www-authenticate"), `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource${path}", error="invalid_token"`);
       assert.equal(r.headers.get("link"), `<${base}/>; rel="https://www.w3.org/ns/lws#storage"`);
       assert.equal(r.headers.get("content-type"), "application/problem+json");
       assert.equal((await r.json()).status, 401);
     });
   }
+
+  test("the challenge names the protected resource metadata of the URL requested (RFC 9728)", async () => {
+    const r = await fetch(`${base}/root/a/b.txt?x=1`);
+    assert.equal(r.status, 401);
+    const metadataUrl = /resource_metadata="([^"]+)"/.exec(r.headers.get("www-authenticate"))[1];
+    assert.equal(metadataUrl, `${base}/.well-known/oauth-protected-resource/root/a/b.txt?x=1`);
+    const m = await fetch(metadataUrl);
+    assert.equal(m.status, 200);
+    assert.equal(m.headers.get("content-type"), "application/json");
+    const doc = await m.json();
+    assert.equal(doc.resource, `${base}/root/a/b.txt?x=1`);
+    assert.deepEqual(doc.authorization_servers, [base]);
+    assert.equal((await (await fetch(`${base}/.well-known/oauth-protected-resource`)).json()).resource, base);
+    assert.equal((await fetch(metadataUrl, { method: "POST" })).status, 405);
+  });
+
+  test("--legacy-challenge answers with as_uri and realm instead", async () => {
+    const legacy = await launch({ legacyChallenge: true });
+    try {
+      const r = await fetch(`${legacy.url}/root/`);
+      assert.equal(r.status, 401);
+      assert.equal(r.headers.get("www-authenticate"), `Bearer as_uri="${legacy.url}", realm="${legacy.url}/", error="invalid_token"`);
+      assert.equal(r.headers.get("link"), `<${legacy.url}/>; rel="https://www.w3.org/ns/lws#storage"`);
+    } finally {
+      await legacy.close();
+    }
+  });
 
   test("invalid tokens are rejected", async () => {
     for (const token of ["garbage", "a.b.c", `${signJwt({ alg: "ES256", typ: "at+jwt", kid: "as-key-1" }, { sub: "x" }, generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey)}`]) {

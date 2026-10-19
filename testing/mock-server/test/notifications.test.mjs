@@ -155,6 +155,36 @@ describe("webhook delivery", () => {
     }
   });
 
+  test("a move is one Move activity, for topics that covered the resource before or after", async () => {
+    const before = await startInbox();
+    const afterwards = await startInbox();
+    try {
+      const from = await container("move-from");
+      const to = await container("move-to");
+      const file = (await http(from, { method: "POST", headers: { "content-type": "text/plain", slug: "m.txt" }, body: "m" })).headers.get("location");
+      await subscribe({ type: "WebhookSubscription", topic: [from], inbox: before.url });
+      await subscribe({ type: "WebhookSubscription", topic: [to], inbox: afterwards.url });
+      const moved = await http(`${file}.meta`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json-patch+json" },
+        body: JSON.stringify([{ op: "replace", path: "/linkset/0/up/0/href", value: to }]),
+      });
+      assert.equal(moved.status, 200);
+      for (const inbox of [before, afterwards]) {
+        const [delivery] = await inbox.waitFor(1);
+        const activities = activitiesOf((await verifyDelivery(delivery, inbox.url)).notification);
+        assert.equal(activities.length, 1);
+        assert.deepEqual(activities[0].type, ["Move"]);
+        assert.equal(activities[0].object.id, `${to}m.txt`);
+        assert.equal(activities[0].origin, from);
+        assert.equal(activities[0].target, to);
+      }
+    } finally {
+      await before.close();
+      await afterwards.close();
+    }
+  });
+
   test("failed deliveries are retried", async () => {
     let calls = 0;
     const inbox = await startInbox({ status: 500 });

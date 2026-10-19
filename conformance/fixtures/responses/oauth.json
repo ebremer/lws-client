@@ -1,5 +1,5 @@
 {
-  "description": "Authorization server metadata (/.well-known/lws-configuration), metadata URL derivation (RFC 8414 section 3.1), token responses and realm containment checks.",
+  "description": "Authorization server metadata (/.well-known/lws-configuration), metadata URL derivation (RFC 8414 section 3.1), token responses, protected resource metadata (RFC 9728) with the origin and resource comparisons of the discovery checks (lws10-core 'Discovery Validation by a Client'), and the realm containment checks of the challenge of the drafts before 19 October 2026.",
   "metadata": {
     "issuer": "https://authorization.example",
     "grant_types_supported": ["urn:ietf:params:oauth:grant-type:token-exchange"],
@@ -26,6 +26,52 @@
     "expectedExp": 1735686300
   },
   "errorResponse": { "status": 400, "body": { "error": "invalid_request", "error_description": "resource is not a known storage" } },
+  "protectedResourceMetadata": {
+    "description": "The lws10-core example. 'authorizationServers' keeps the order of authorization_servers; unknown members are kept in the raw document.",
+    "body": {
+      "resource": "https://storage.example/storage_1/photos/img.jpg",
+      "authorization_servers": ["https://authorization.example", "https://backup-as.example/tenant"],
+      "bearer_methods_supported": ["header"],
+      "resource_name": "Photos"
+    },
+    "expected": {
+      "resource": "https://storage.example/storage_1/photos/img.jpg",
+      "authorizationServers": ["https://authorization.example", "https://backup-as.example/tenant"]
+    }
+  },
+  "protectedResourceMetadataInvalid": {
+    "description": "Each must be rejected: lws10-core makes authorization_servers REQUIRED with at least one issuer, and RFC 9728 makes resource REQUIRED.",
+    "noResource": { "authorization_servers": ["https://authorization.example"] },
+    "resourceNotAString": { "resource": ["https://storage.example/a"], "authorization_servers": ["https://authorization.example"] },
+    "noAuthorizationServers": { "resource": "https://storage.example/a" },
+    "emptyAuthorizationServers": { "resource": "https://storage.example/a", "authorization_servers": [] },
+    "authorizationServersNotAnArray": { "resource": "https://storage.example/a", "authorization_servers": "https://authorization.example" },
+    "notAnObject": ["https://storage.example/a"]
+  },
+  "originChecks": [
+    { "a": "https://storage.example/.well-known/oauth-protected-resource/a", "b": "https://storage.example/a", "sameOrigin": true },
+    { "a": "https://STORAGE.example/x", "b": "https://storage.example/y", "sameOrigin": true },
+    { "a": "HTTPS://storage.example/x", "b": "https://storage.example/y", "sameOrigin": true },
+    { "a": "https://storage.example:443/x", "b": "https://storage.example/y", "sameOrigin": true },
+    { "a": "http://storage.example:80/x", "b": "http://storage.example/y", "sameOrigin": true },
+    { "a": "http://storage.example/x", "b": "https://storage.example/y", "sameOrigin": false },
+    { "a": "https://storage.example:8443/x", "b": "https://storage.example/y", "sameOrigin": false },
+    { "a": "https://evil.example/storage.example/x", "b": "https://storage.example/y", "sameOrigin": false },
+    { "a": "https://storage.example.evil.example/x", "b": "https://storage.example/y", "sameOrigin": false },
+    { "a": "https://sub.storage.example/x", "b": "https://storage.example/y", "sameOrigin": false },
+    { "a": "http://127.0.0.1:8787/x", "b": "http://localhost:8787/y", "sameOrigin": false }
+  ],
+  "resourceChecks": [
+    { "requested": "https://storage.example/storage_1/photos/img.jpg", "resource": "https://storage.example/storage_1/photos/img.jpg", "identical": true },
+    { "requested": "https://storage.example/a?x=1", "resource": "https://storage.example/a?x=1", "identical": true },
+    { "requested": "https://storage.example/a", "resource": "https://STORAGE.example/a", "identical": true },
+    { "requested": "https://storage.example/a", "resource": "https://storage.example:443/a", "identical": true },
+    { "requested": "https://storage.example/a", "resource": "https://storage.example/a/", "identical": false },
+    { "requested": "https://storage.example/a/", "resource": "https://storage.example/a", "identical": false },
+    { "requested": "https://storage.example/a?x=1", "resource": "https://storage.example/a", "identical": false },
+    { "requested": "https://storage.example/A", "resource": "https://storage.example/a", "identical": false },
+    { "requested": "https://storage.example/storage_1/photos/img.jpg", "resource": "https://storage.example/storage_1/", "identical": false }
+  ],
   "realmChecks": [
     { "realm": "https://storage.example/storage_1", "url": "https://storage.example/storage_1", "contained": true },
     { "realm": "https://storage.example/storage_1", "url": "https://storage.example/storage_1/notes/a.txt", "contained": true },

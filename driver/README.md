@@ -63,7 +63,7 @@ Check an adapter with the mock server (Node 22+):
 ```sh
 node driver/adapters/check.mjs -- driver/adapters/go/bin/lws-driver-adapter-go
 # ...
-# go: 35 passed, 0 failed, 0 skipped
+# go: 37 passed, 0 failed, 0 skipped
 ```
 
 ## Run
@@ -122,7 +122,7 @@ given. Keep it on loopback, or behind the token and the target allow-list.
 **One per LWS operation**, each taking `client` and the operation's arguments of PROTOCOL.md §4:
 `discover_storage`, `get_storage_description`, `head`, `read`, `read_container`, `list_container`, `create`,
 `create_container`, `update`, `patch`, `delete`, `linkset_url`, `read_linkset`, `update_linkset`,
-`patch_linkset`, `subscribe`, `list_subscriptions`, `get_subscription`, `unsubscribe`,
+`patch_linkset`, `move`, `subscribe`, `list_subscriptions`, `get_subscription`, `unsubscribe`,
 `verify_notification`, `request_access`, `get_access_request`, `list_access_requests`,
 `cancel_access_request`, `grant_access`, `get_access_grant`, `list_access_grants`, `revoke_access_grant`,
 `read_type_index`, `list_types`, `search_types`, `search_all`, `accepted_query_formats`.

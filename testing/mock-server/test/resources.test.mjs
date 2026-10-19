@@ -51,7 +51,7 @@ describe("create", () => {
     assert.ok(r.headers.get("etag"));
     const linkset = await (await http(`${location}.meta`)).json();
     assert.deepEqual(linkset.linkset[0].describedby, [{ href: "https://example.org/shape", title: "Shape" }]);
-    assert.equal(linkset.linkset[0].up, undefined, "client-supplied up links are ignored");
+    assert.deepEqual(linkset.linkset[0].up, [{ href: c }], "the up link is the server's, not the one the client sent");
   });
 
   test("slugs are sanitised and made unique", async () => {

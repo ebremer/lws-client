@@ -3,9 +3,23 @@
   "cases": [
     {
       "name": "lws-challenge",
+      "headers": ["Bearer resource_metadata=\"https://storage.example/.well-known/oauth-protected-resource/storage_1/photos/img.jpg\",\n                error=\"invalid_token\""],
+      "expected": [
+        { "scheme": "Bearer", "params": { "resource_metadata": "https://storage.example/.well-known/oauth-protected-resource/storage_1/photos/img.jpg", "error": "invalid_token" } }
+      ]
+    },
+    {
+      "name": "lws-challenge-before-2026-10-19",
       "headers": ["Bearer as_uri=\"https://authorization.example\",\n                realm=\"https://storage.example/storage_1\",\n                error=\"invalid_token\""],
       "expected": [
         { "scheme": "Bearer", "params": { "as_uri": "https://authorization.example", "realm": "https://storage.example/storage_1", "error": "invalid_token" } }
+      ]
+    },
+    {
+      "name": "resource-metadata-and-legacy-parameters",
+      "headers": ["Bearer resource_metadata=\"https://s.example/.well-known/oauth-protected-resource/a\", as_uri=\"https://as.example\", realm=\"https://s.example/\""],
+      "expected": [
+        { "scheme": "Bearer", "params": { "resource_metadata": "https://s.example/.well-known/oauth-protected-resource/a", "as_uri": "https://as.example", "realm": "https://s.example/" } }
       ]
     },
     {

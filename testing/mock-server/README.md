@@ -1,7 +1,7 @@
 # LWS mock server
 
 A zero-dependency, in-memory [Linked Web Storage](https://www.w3.org/TR/lws10-core/) server for
-testing LWS clients. It implements the LWS 1.0 core protocol (editor's draft of 2026-10-05) plus the
+testing LWS clients. It implements the LWS 1.0 core protocol (Working Draft of 19 October 2026) plus the
 authentication, webhook notification, access request/grant and type index/search specifications, and
 it is the target of every `lws-client` interop test (see [`conformance/scenario.md`](../../conformance/scenario.md)).
 
@@ -25,6 +25,7 @@ node testing/mock-server/server.mjs --port 8787
 | `--base-url <url>` | `http://localhost:<port>` | Public base URL (origin only) used in every URL the server emits |
 | `--page-size <n>` | `5` | Page size for containers, the type index and search results |
 | `--no-auth` | off | Disable authentication; every request acts as `anonymous` |
+| `--legacy-challenge` | off | Answer `401` with the `as_uri`/`realm` challenge of the drafts before 19 October 2026 instead of `resource_metadata` |
 | `--verbose` | off | Log requests, token exchanges and webhook deliveries |
 
 Programmatic use (for tests):
@@ -37,7 +38,7 @@ console.log(server.url); // http://localhost:<port>
 await server.close();
 ```
 
-Run its own test suite with `npm test` (from this directory) — 102 tests covering every endpoint.
+Run its own test suite with `npm test` (from this directory) — 108 tests covering every endpoint.
 
 ## Layout
 
@@ -49,6 +50,7 @@ Run its own test suite with `npm test` (from this directory) — 102 tests cover
 | `{base}/notifications/` | `NotificationService` (`WebhookSubscription`) |
 | `{base}/access/requests/`, `{base}/access/grants/` | `AccessRequestService`, `AccessGrantService` |
 | `{base}/types/index`, `{base}/types/search` | `TypeIndexService`, `TypeSearchService` |
+| `{base}/.well-known/oauth-protected-resource{path}` | Protected resource metadata (RFC 9728) of the resource at `{base}{path}` |
 | `{base}` | Authorization server issuer |
 | `{base}/.well-known/lws-configuration` | Authorization server metadata (RFC 8414; also at `/.well-known/oauth-authorization-server`) |
 | `{base}/oauth/token`, `{base}/oauth/jwks` | Token endpoint (RFC 8693 token exchange), JWKS |
@@ -59,10 +61,15 @@ Run its own test suite with `npm test` (from this directory) — 102 tests cover
 
 * Everything under `/root/`, `/notifications/`, `/access/` and `/types/` requires a Bearer access
   token. Without a valid one the response is `401` with
-  `WWW-Authenticate: Bearer as_uri="{base}", realm="{base}/", error="invalid_token"` and
-  `Link: <{base}/>; rel="https://www.w3.org/ns/lws#storage"`. `OPTIONS` is never authenticated.
+  `WWW-Authenticate: Bearer resource_metadata="{base}/.well-known/oauth-protected-resource{path}", error="invalid_token"`
+  (`{path}` being the request's path and query) and `Link: <{base}/>; rel="https://www.w3.org/ns/lws#storage"`.
+  `OPTIONS` is never authenticated. With `--legacy-challenge` the challenge is
+  `Bearer as_uri="{base}", realm="{base}/", error="invalid_token"`, as in the drafts before 19 October 2026.
+* `GET {base}/.well-known/oauth-protected-resource{path}` (public) is the resource's protected resource
+  metadata: `{"resource": "{base}{path}", "authorization_servers": ["{base}"], …}`, the `resource` being the
+  URL requested, query included.
 * Token exchange (`POST /oauth/token`, form encoded): `grant_type` must be
-  `urn:ietf:params:oauth:grant-type:token-exchange`; `resource` is required and must equal the realm
+  `urn:ietf:params:oauth:grant-type:token-exchange`; `resource` is required and must equal the storage
   `{base}/` exactly (otherwise `invalid_target`); `subject_token` and `subject_token_type` are required.
   Errors are RFC 6749 §5.2 JSON (`invalid_request`, `invalid_target`, `unsupported_grant_type`).
 * Subject token types:
@@ -79,8 +86,8 @@ Run its own test suite with `npm test` (from this directory) — 102 tests cover
   * `urn:ietf:params:oauth:token-type:saml2` — **test mode**: base64url-encoded assertion, signature
     not verified; `NameID` becomes the subject, the `Recipient` the client.
 * Access tokens are ES256 `at+jwt` (RFC 9068) with `iss`, `sub`, `client_id`, `aud` (= `{base}/`),
-  `exp` (300 s), `iat` and `jti`. The storage validates signature, issuer, a single audience equal to
-  the realm and the time claims. Any valid token has full access (single tenant).
+  `exp` (300 s), `iat` and `jti`. The storage validates signature, issuer, an audience that includes
+  the storage and the time claims. Any valid token has full access (single tenant).
 
 ### Storage resources
 
@@ -89,9 +96,9 @@ Run its own test suite with `npm test` (from this directory) — 102 tests cover
   (with `type="application/linkset+json"`), `up`, `type` (`lws:DataResource` plus user types) and
   `https://www.w3.org/ns/lws#storage`. Single byte ranges → `206`/`416`. `If-None-Match` /
   `If-Modified-Since` → `304`.
-* Containers return the LWS container representation; `application/lws+json`, `application/ld+json`
-  (profile echoed) and `application/json` are equivalent and selected via `Accept` (`Vary: Accept`),
-  anything else → `406`. Item ids are path-absolute references (`/root/notes/a.txt`), as in the spec
+* Containers return the LWS container representation as `application/lws+json`, the one media type the
+  drafts require, and, as the same document, as `application/ld+json` (profile echoed) and `application/json`,
+  selected via `Accept` (`Vary: Accept`); anything else → `406`. Item ids are path-absolute references (`/root/notes/a.txt`), as in the spec
   examples, so clients must resolve them. Listings with more members than the page size are paginated
   with `?page=N` and `first`/`last`/`next`/`prev` links (relative references).
 * `POST` to a container creates a resource: `Link: <https://www.w3.org/ns/lws#Container>; rel="type"`
@@ -112,11 +119,32 @@ Run its own test suite with `npm test` (from this directory) — 102 tests cover
 ### Linksets
 
 `GET`/`HEAD` return `application/linkset+json` with a single context object whose `anchor` is the
-absolute resource URL and whose members are the user-managed relations; `Allow: GET, HEAD, PUT, PATCH`
-and `Accept-Patch: application/json-patch+json`. `PUT` (`application/linkset+json`) replaces and
-`PATCH` (JSON Patch on the linkset document) modifies the metadata; both are conditional (`412`) and
-the result must be a valid linkset for the same anchor (`422` otherwise). Server-managed relations are
-silently dropped. `type` relations in the linkset are the resource's user types.
+absolute resource URL, whose `up` is the resource's container (absent on the root), and whose other
+members are the user-managed relations; `Allow: GET, HEAD, PUT, PATCH` and
+`Accept-Patch: application/json-patch+json`. `PUT` (`application/linkset+json`) replaces and `PATCH`
+(JSON Patch on the linkset document) modifies the metadata; both are conditional (`412`) and the result
+must be a valid linkset for the same anchor (`422` otherwise). The other server-managed relations are
+silently dropped; a `PUT` without `up` keeps it. `type` relations in the linkset are the resource's
+user types.
+
+### Moving resources
+
+The storage description describes
+`{"type": "MoveResource", "appliesTo": ["DataResource", "Container"], "preservesIdentifier": false}`. A
+linkset update whose `up` names another container moves the resource, and a container with everything
+in it (lws10-core "Moving Resources"):
+
+* The destination must be an existing container of this storage, not the resource itself or below it,
+  without a member of the same name; a patch that removes `up`, an `up` on the root, or more than one
+  `up` target are refused too. Each → `409`.
+* The move is atomic. Paths are identifiers here, so the resource gets a new one: the answer is `200`
+  with the updated linkset (its `anchor` the new URL), `Content-Location` its new path
+  (`/root/archive/note.txt.meta`), and its `ETag`. Both containers' listings change.
+* Requests for the old URLs, the linkset's and those of a moved container's members included, get `301`
+  with the new `Location`.
+* Subscriptions whose topic covered the resource before or after the move get one `Move` activity
+  (`origin` the former container, `target` the new one, `object` the resource after the move); topics
+  that named the moved resource follow it.
 
 ### Notifications (Webhook suite)
 
@@ -125,8 +153,8 @@ silently dropped. `type` relations in the linkset are the resource's user types.
   `{"@context", "type", "subscription", "topic", "inbox", "expires"}`. Topics must be existing
   resources of this storage; `expires` defaults to 24 h. `GET /notifications/` lists the caller's
   subscriptions as an LWS container; `GET`/`DELETE` manage one subscription (private to its creator).
-* Every create (`Create`, `target` = container), content or linkset update (`Update`) and delete
-  (`Delete`, `origin` = former container) is delivered to the inboxes of subscriptions covering the
+* Every create (`Create`, `target` = container), content or linkset update (`Update`), move (`Move`,
+  see above) and delete (`Delete`, `origin` = former container) is delivered to the inboxes of subscriptions covering the
   resource (container topics are recursive). Several activities produced by one request (e.g. a
   recursive delete) are batched into one envelope with an `activity` array.
 * Deliveries are `POST`s with `Content-Type: application/lws+json`, `Content-Digest: sha-256=…`

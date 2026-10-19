@@ -17,7 +17,7 @@ class OperationCatalogTest {
     /** The operations of PROTOCOL.md section 4 that are tools: all but configure and shutdown. */
     static final List<String> PROTOCOL_OPERATIONS = List.of("discover_storage", "get_storage_description", "head", "read",
             "read_container", "list_container", "create", "create_container", "update", "patch", "delete", "linkset_url",
-            "read_linkset", "update_linkset", "patch_linkset", "subscribe", "list_subscriptions", "get_subscription",
+            "read_linkset", "update_linkset", "patch_linkset", "move", "subscribe", "list_subscriptions", "get_subscription",
             "unsubscribe", "verify_notification", "request_access", "get_access_request", "list_access_requests",
             "cancel_access_request", "grant_access", "get_access_grant", "list_access_grants", "revoke_access_grant",
             "read_type_index", "list_types", "search_types", "search_all", "accepted_query_formats");

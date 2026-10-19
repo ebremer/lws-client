@@ -101,7 +101,10 @@ export function createNotifications(app) {
 
   const covers = (topicPath, path) => topicPath === path || (topicPath.endsWith("/") && path.startsWith(topicPath));
 
-  /** Called for every resource change: events are [{kind, object, path, target?, origin?}]. */
+  /**
+   * Called for every resource change: events are [{kind, object, path, target?, origin?}]. A Move event has
+   * `paths`, the resource's paths before and after, and goes to every subscription whose topic covered either.
+   */
   function notify(events, agent) {
     if (events.length === 0) return;
     const actor = agent?.sub && agent.sub !== "anonymous" ? agent.sub : undefined;
@@ -110,7 +113,7 @@ export function createNotifications(app) {
         subscriptions.delete(sub.id);
         continue;
       }
-      const matched = events.filter((e) => sub.topicPaths.some((t) => covers(t, e.path)));
+      const matched = events.filter((e) => sub.topicPaths.some((t) => (e.paths ?? [e.path]).some((p) => covers(t, p))));
       if (matched.length) deliver(sub.inbox, matched.map((e) => toActivity(e, actor)), sub);
     }
   }
@@ -247,5 +250,12 @@ export function createNotifications(app) {
     await Promise.race([Promise.allSettled([...pending]), new Promise((r) => setTimeout(r, timeoutMs).unref())]);
   }
 
-  return { handle, notify, deliver, verificationMethod, keyId, drain, subscriptions };
+  /** After a move from `from` to `to`, topics that named the moved resource or lay below it follow it. */
+  function relocate(from, to) {
+    for (const sub of subscriptions.values()) {
+      sub.topicPaths = sub.topicPaths.map((t) => (t === from || (from.endsWith("/") && t.startsWith(from)) ? to + t.slice(from.length) : t));
+    }
+  }
+
+  return { handle, notify, relocate, deliver, verificationMethod, keyId, drain, subscriptions };
 }

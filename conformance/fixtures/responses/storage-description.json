@@ -1,5 +1,5 @@
 {
-  "description": "GET of a storage description (application/lws+cid). Based on the lws10-core Discovery example.",
+  "description": "GET of a storage description (application/lws+cid). Based on the lws10-core Discovery examples, the MoveResource capability included. 'moveCapabilities' are further storage descriptions' capability arrays with the MoveResource capability each describes (null: none).",
   "url": "https://storage.example/",
   "status": 200,
   "headers": { "content-type": "application/lws+cid", "etag": "\"sd-1\"" },
@@ -15,7 +15,8 @@
           "application/linkset+json": ["application/json-patch+json"]
         }
       },
-      { "type": "https://feature.example/ResumableUploads" }
+      { "type": "https://feature.example/ResumableUploads" },
+      { "type": "MoveResource", "appliesTo": ["DataResource", "Container"], "preservesIdentifier": true }
     ],
     "service": [
       { "type": "StorageRoot", "serviceEndpoint": "https://storage.example/root/" },
@@ -38,9 +39,37 @@
     "accessRequestService": "https://access.example/request/",
     "accessGrantService": "https://access.example/grant/",
     "serviceCount": 7,
-    "capabilityTypes": ["https://feature.example/PatchSupport", "https://feature.example/ResumableUploads"],
+    "capabilityTypes": ["https://feature.example/PatchSupport", "https://feature.example/ResumableUploads", "MoveResource"],
+    "moveCapability": { "appliesTo": ["DataResource", "Container"], "preservesIdentifier": true, "movesDataResources": true, "movesContainers": true },
     "customService": { "type": "DataSharingService", "id": "https://storage.example/#sharing", "serviceEndpoint": "https://storage.example/sharing/api" }
   },
+  "moveCapabilities": [
+    {
+      "name": "bare: data resources only, identifiers not promised",
+      "capability": [{ "type": "MoveResource" }],
+      "expected": { "appliesTo": ["DataResource"], "preservesIdentifier": null, "movesDataResources": true, "movesContainers": false }
+    },
+    {
+      "name": "containers only, identifiers not preserved",
+      "capability": [{ "type": "MoveResource", "appliesTo": ["Container"], "preservesIdentifier": false }],
+      "expected": { "appliesTo": ["Container"], "preservesIdentifier": false, "movesDataResources": false, "movesContainers": true }
+    },
+    {
+      "name": "full IRIs, a single string appliesTo and a type array",
+      "capability": [{ "type": ["https://www.w3.org/ns/lws#MoveResource"], "appliesTo": "lws:Container", "preservesIdentifier": true }],
+      "expected": { "appliesTo": ["lws:Container"], "preservesIdentifier": true, "movesDataResources": false, "movesContainers": true }
+    },
+    {
+      "name": "no MoveResource capability: the up link is not modifiable",
+      "capability": [{ "type": "https://feature.example/ResumableUploads" }],
+      "expected": null
+    },
+    {
+      "name": "no capability member",
+      "capability": null,
+      "expected": null
+    }
+  ],
   "invalid": {
     "description": "notStorage must be rejected (type is not Storage); for noRoot, storageRoot() must fail with a ProtocolError.",
     "notStorage": {

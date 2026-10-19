@@ -12,6 +12,8 @@ export const AS_CONTEXT = "https://www.w3.org/ns/activitystreams";
 export const TYPE_CONTAINER = `${LWS_NS}Container`;
 export const TYPE_DATA_RESOURCE = `${LWS_NS}DataResource`;
 export const REL_STORAGE = `${LWS_NS}storage`;
+/** The well-known prefix of protected resource metadata (RFC 9728 section 3). */
+export const WELL_KNOWN_PRM = "/.well-known/oauth-protected-resource";
 
 export const MEDIA = Object.freeze({
   LWS_JSON: "application/lws+json",

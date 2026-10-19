@@ -1,5 +1,5 @@
 {
-  "description": "Notification envelopes (lws10-core Notification Data Model). 'single' has one activity object, 'batch' an array. 'invalid' must be rejected (type is not Notification).",
+  "description": "Notification envelopes (lws10-core Notification Data Model). 'single' has one activity object, 'batch' an array, 'move' the Move activity of a resource moved between containers. 'invalid' must be rejected (type is not Notification).",
   "single": {
     "@context": ["https://www.w3.org/ns/lws/v1", "https://www.w3.org/ns/activitystreams"],
     "type": "Notification",
@@ -33,6 +33,38 @@
     "activities": [
       { "id": "a1b2c3d4-5678-9abc-def0-1234567890ab", "types": ["Create"], "isCreate": true, "objectId": "https://storage.example/alice/notes/meeting.txt", "target": "https://storage.example/alice/notes/" },
       { "id": "b2c3d4e5-6789-abcd-ef01-234567890abc", "types": ["Update"], "isUpdate": true, "objectId": "https://storage.example/alice/profile", "objectTypes": ["DataResource"] }
+    ]
+  },
+  "move": {
+    "@context": ["https://www.w3.org/ns/lws/v1", "https://www.w3.org/ns/activitystreams"],
+    "type": "Notification",
+    "storage": "https://storage.example/",
+    "activity": {
+      "id": "urn:uuid:3f2a9c1e-7d4b-4e8a-9b6c-2d1e0f9a8b7c",
+      "type": "Move",
+      "object": { "id": "https://storage.example/f8c3de3d", "type": "DataResource" },
+      "origin": "https://storage.example/1d4f8a02",
+      "target": "https://storage.example/c2a71f60",
+      "actor": "https://id.example/alice",
+      "published": "2026-10-19T12:00:00Z"
+    }
+  },
+  "moveExpected": {
+    "storage": "https://storage.example/",
+    "activities": [
+      {
+        "id": "urn:uuid:3f2a9c1e-7d4b-4e8a-9b6c-2d1e0f9a8b7c",
+        "types": ["Move"],
+        "isMove": true,
+        "isCreate": false,
+        "isDelete": false,
+        "objectId": "https://storage.example/f8c3de3d",
+        "objectTypes": ["DataResource"],
+        "origin": "https://storage.example/1d4f8a02",
+        "target": "https://storage.example/c2a71f60",
+        "actor": "https://id.example/alice",
+        "published": "2026-10-19T12:00:00Z"
+      }
     ]
   },
   "invalid": { "type": "Activity", "storage": "https://storage.example/", "activity": [] }

@@ -20,7 +20,6 @@ export class Resource {
     this.modified = new Date();
     this.linksetModified = this.modified;
     this.refreshEtag();
-    this.refreshLinksetEtag();
   }
 
   get path() {
@@ -35,8 +34,9 @@ export class Resource {
     this.etag = this.isContainer ? null : makeEtag(this.contentType, this.body);
   }
 
-  refreshLinksetEtag() {
-    this.linksetEtag = makeEtag(JSON.stringify(this.links));
+  /** The linkset shows the up link and the anchor as well as the user's links, so a move changes it too. */
+  get linksetEtag() {
+    return makeEtag(this.path, JSON.stringify(this.links));
   }
 
   setContent(contentType, body) {
@@ -49,7 +49,6 @@ export class Resource {
   setLinks(links) {
     this.links = links;
     this.linksetModified = new Date();
-    this.refreshLinksetEtag();
   }
 
   /** User-declared types (rel="type" metadata), resolved to absolute IRIs, intrinsic classes excluded. */
@@ -126,6 +125,8 @@ export function sanitizeSlug(raw) {
 export class Store {
   constructor() {
     this.root = new Resource({ name: "root/", isContainer: true });
+    /** Paths resources were moved away from, oldest first: [oldPath, resource]. */
+    this.moves = [];
   }
 
   /** Finds the resource for a URL path, or null. */
@@ -174,6 +175,41 @@ export class Store {
     container.children.set(name, resource);
     container.modified = new Date();
     return resource;
+  }
+
+  /** Whether `node` is `ancestor` or lies below it. */
+  static within(node, ancestor) {
+    for (let n = node; n; n = n.parent) if (n === ancestor) return true;
+    return false;
+  }
+
+  /**
+   * Moves a resource, with everything below it, into `destination` under the same name (lws10-core "Moving
+   * Resources"). Paths are identifiers here, so the identifiers change. The caller has checked that the move is
+   * allowed. Returns the resource's previous path.
+   */
+  move(resource, destination) {
+    const from = resource.path;
+    const now = new Date();
+    resource.parent.children.delete(resource.name);
+    resource.parent.modified = now;
+    resource.parent = destination;
+    destination.children.set(resource.name, resource);
+    destination.modified = now;
+    resource.linksetModified = now;
+    this.moves.push([from, resource]);
+    return from;
+  }
+
+  /** Where the resource that was at `path` (or, for a moved container, below it) is now, or null. */
+  relocated(path) {
+    for (let i = this.moves.length - 1; i >= 0; i--) {
+      const [from, resource] = this.moves[i];
+      if (this.resolve(resource.path) !== resource) continue;
+      if (path === from) return resource.path;
+      if (from.endsWith("/") && path.startsWith(from)) return resource.path + path.slice(from.length);
+    }
+    return null;
   }
 
   /** Removes a resource (and, for containers, everything below it). Returns removed resources, deepest first. */

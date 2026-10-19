@@ -158,6 +158,15 @@ async function drive(language) {
     await op("update_linkset", { linksetUrl: current.url, linkset: current.linkset, ifMatch: current.etag }, "MethodNotAllowedError 405");
     await op("read_linkset", { url: profile });
 
+    // Moving a data resource into another container, when the storage describes MoveResource for them.
+    const moves = description.moveCapability;
+    if (moves && hasType(moves.appliesTo, "DataResource")) {
+      const archive = (await op("create_container", { parent: container, slug: "archive" })).location;
+      const note = (await op("create", { container, body: { text: "Move me" }, contentType: "text/plain", slug: "move-me.txt" })).location;
+      const moved = await op("move", { url: note, destination: archive });
+      await op("read", { url: moved.location });
+    }
+
     // A create whose answer is lost: look before creating again.
     await task("client-no-blind-retry-of-create");
     await op("create", { container, body: { text: "maybe" }, contentType: "text/plain", slug: "lost.txt" }, "HttpError 503");
@@ -223,8 +232,8 @@ async function drive(language) {
       await op("cancel_access_request", { url: request });
     }
 
-    // The decoy names a realm that does not contain it; then the token expires.
-    await task("client-token-for-containing-realm");
+    // The decoy's 401 links to a storage whose root is on another origin; then the token expires.
+    await task("client-token-after-discovery-checks");
     // The root container lists the decoy first.
     const decoy = rootPage.items[0]?.id;
     if (decoy) {

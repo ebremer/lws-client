@@ -140,6 +140,13 @@ every link, one per relation type, with `params` holding its parameters other th
 {"status": 204, "etag": "\"4\"", "metadata": Metadata}
 ```
 
+**Moved**, the result of a move (`MoveResult`):
+
+```json
+{"status": 200, "location": "https://…/archive/a.txt", "linkset": "https://…/archive/a.txt.meta",
+ "identifierPreserved": false, "etag": "\"4\"", "metadata": Metadata}
+```
+
 **Created**, the result of a create (`CreateResult`):
 
 ```json
@@ -153,11 +160,15 @@ every link, one per relation type, with `params` holding its parameters other th
  "services": [{"id": "…", "types": ["NotificationService"], "serviceEndpoint": "https://…/notifications/",
                "subscriptionType": ["WebhookSubscription"]}],
  "verificationMethods": [{"id": "https://…/#key-1", "type": "JsonWebKey", "controller": "https://…/"}],
+ "moveCapability": {"appliesTo": ["DataResource", "Container"], "preservesIdentifier": true},
  "raw": { … the document … }}
 ```
 
 `storageRoot` is omitted when the description has none (the library's `storageRoot()` fails).
-`subscriptionType` is present for services that carry it.
+`subscriptionType` is present for services that carry it. `moveCapability` is the library's
+`moveCapability()`: omitted when the storage describes no `MoveResource` capability, `appliesTo` as the
+library reports it (`["DataResource"]` when the capability does not say), and `preservesIdentifier`
+omitted when the capability does not say.
 
 **Subscription**:
 
@@ -178,7 +189,7 @@ every link, one per relation type, with `params` holding its parameters other th
 |---|---|
 | `BadRequestError` … `InsufficientStorageError` | the status-specific errors: 400, 401 (`UnauthorizedError`), 403, 404, 405, 406, 409, 410, 412, 415, 422, 501, 507 |
 | `HttpError` | any other non-success status |
-| `AuthenticationError` | token exchange, realm check or authorization server metadata failures |
+| `AuthenticationError` | token exchange, discovery check (protected resource metadata, storage root), realm check or authorization server metadata failures |
 | `ProtocolError` | a response that breaks the specification |
 | `SignatureVerificationError` | a notification that fails verification |
 | `TransportError` | no response: connection refused, TLS failure, timeout |
@@ -206,6 +217,7 @@ every link, one per relation type, with `params` holding its parameters other th
 | `read_linkset` | `url` (the resource) | `{"url", "etag"?, "linkset" (the document), "allow", "acceptPatch"}` |
 | `update_linkset` | `linksetUrl`, `linkset` (a `{"linkset": [...]}` document), `ifMatch?` | Update |
 | `patch_linkset` | `linksetUrl`, `patch`, `ifMatch?` | Update |
+| `move` | `url` (the resource), `destination` (a container), `ifMatch?` (overrides the linkset's ETag) | Moved |
 | `subscribe` | `serviceUrl`, `topics` (URLs), `inbox`, `expires?` (RFC 3339) | Subscription |
 | `list_subscriptions` | `serviceUrl`, `limit?` | `{"items", "truncated"}` |
 | `get_subscription` | `url` | Subscription |

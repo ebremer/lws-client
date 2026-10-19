@@ -20,6 +20,7 @@ import {
   send,
   sendProblem,
   serializeLink,
+  WELL_KNOWN_PRM,
 } from "./util.mjs";
 
 const PROTECTED_PREFIXES = ["/root", "/notifications", "/access", "/types"];
@@ -30,6 +31,7 @@ const EXPOSED_HEADERS = [
   "Accept-Query",
   "Accept-Ranges",
   "Allow",
+  "Content-Location",
   "Content-Range",
   "ETag",
   "Last-Modified",
@@ -44,18 +46,16 @@ const EXPOSED_HEADERS = [
  * Creates the application state and request handler. `base` is assigned by startServer() once the
  * listening port is known.
  */
-export function createApp({ pageSize = 5, auth = true, verbose = false, log = console.log } = {}) {
+export function createApp({ pageSize = 5, auth = true, legacyChallenge = false, verbose = false, log = console.log } = {}) {
   const app = {
     base: "",
     pageSize,
     authEnabled: auth,
+    legacyChallenge,
     store: new Store(),
     log: verbose ? (msg) => log(`[lws-mock] ${msg}`) : null,
     get issuer() {
       return this.base;
-    },
-    get realm() {
-      return `${this.base}/`;
     },
     get storageId() {
       return `${this.base}/`;
@@ -77,6 +77,8 @@ export function createApp({ pageSize = 5, auth = true, verbose = false, log = co
       type: "Storage",
       verificationMethod: [vm],
       authentication: [vm.id],
+      // Moves change a resource's path, which is its identifier here (lws10-core "Moving Resources").
+      capability: [{ type: "MoveResource", appliesTo: ["DataResource", "Container"], preservesIdentifier: false }],
       service: [
         service("StorageRoot", ROOT_PATH),
         service("NotificationService", NOTIFICATIONS_PATH, { subscriptionType: ["WebhookSubscription"] }),
@@ -150,13 +152,14 @@ export function createApp({ pageSize = 5, auth = true, verbose = false, log = co
     if (path === "/.well-known/lws-configuration" || path === "/.well-known/oauth-authorization-server") {
       return app.auth.handleMetadata(req, res);
     }
+    if (path === WELL_KNOWN_PRM || path.startsWith(`${WELL_KNOWN_PRM}/`)) return app.auth.handleProtectedResourceMetadata(req, res, url);
     if (path === "/oauth/token") return app.auth.handleToken(req, res);
     if (path === "/oauth/jwks") return app.auth.handleJwks(req, res);
 
     const area = protectedArea(path);
     if (!area) throw new HttpError(404, `No resource at ${path}`);
     if (req.method === "OPTIONS") return send(req, res, 204, optionsFor(url));
-    const agent = app.authEnabled ? app.auth.authenticate(req) : { sub: "anonymous", clientId: null };
+    const agent = app.authEnabled ? app.auth.authenticate(req, url) : { sub: "anonymous", clientId: null };
     switch (area) {
       case "/root":
         if (path === "/root") throw new HttpError(404, `No resource at ${path}; the storage root is ${ROOT_PATH}`);
@@ -216,13 +219,13 @@ function listen(server, port, host) {
 
 /**
  * Starts the mock server.
- * @param {{port?: number, host?: string, baseUrl?: string, pageSize?: number, auth?: boolean, verbose?: boolean, log?: Function}} [options]
+ * @param {{port?: number, host?: string, baseUrl?: string, pageSize?: number, auth?: boolean, legacyChallenge?: boolean, verbose?: boolean, log?: Function}} [options]
  * @returns {Promise<{url: string, port: number, app: object, close: () => Promise<void>}>}
  */
 export async function startServer(options = {}) {
-  const { port = 8787, host, baseUrl, pageSize = 5, auth = true, verbose = false, log = console.log } = options;
+  const { port = 8787, host, baseUrl, pageSize = 5, auth = true, legacyChallenge = false, verbose = false, log = console.log } = options;
   if (!Number.isInteger(pageSize) || pageSize < 1) throw new Error("pageSize must be a positive integer");
-  const { app, handle } = createApp({ pageSize, auth, verbose, log });
+  const { app, handle } = createApp({ pageSize, auth, legacyChallenge, verbose, log });
   const servers = [];
   const primary = http.createServer(handle);
   primary.keepAliveTimeout = 5000;

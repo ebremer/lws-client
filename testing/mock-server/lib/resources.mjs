@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Storage resources under /root/: read, create, update, delete (lws10-core "Operations")
-// and linkset metadata resources (lws10-core "Metadata").
+// Storage resources under /root/: read, create, update, delete (lws10-core "Operations"),
+// linkset metadata resources (lws10-core "Metadata") and moves (lws10-core "Moving Resources").
 
 import { applyPatch, PatchError } from "./jsonpatch.mjs";
-import { sanitizeSlug } from "./store.mjs";
+import { sanitizeSlug, Store } from "./store.mjs";
 import {
   checkPreconditions,
   CONTAINER_MEDIA,
@@ -123,8 +123,10 @@ function mergeLinks(existing, added) {
   return merged;
 }
 
+/** The linkset of a resource: its up link, which the server manages and a move changes, then the user's links. */
 function linksetDocument(app, resource) {
-  return { linkset: [{ anchor: app.base + resource.path, ...structuredClone(resource.links) }] };
+  const up = resource.parent ? { up: [{ href: app.base + resource.parent.path }] } : {};
+  return { linkset: [{ anchor: app.base + resource.path, ...up, ...structuredClone(resource.links) }] };
 }
 
 /** Validates an application/linkset+json document describing `resource` and returns its user-managed relations. */
@@ -317,6 +319,35 @@ export function createResourceHandlers(app) {
     send(req, res, 200, { ...headers, "Content-Type": MEDIA.LINKSET_JSON }, linksetDocument(app, resource));
   }
 
+  /**
+   * Where a new linkset document puts the resource: null to leave it where it is, else the container to move it
+   * to. A patch must leave the one up link a non-root resource has; a full replacement without one keeps it.
+   */
+  function destinationOf(resource, doc, method) {
+    const conflict = (detail) => new HttpError(409, detail);
+    const up = doc.linkset[0].up;
+    if (up === undefined || (Array.isArray(up) && up.length === 0)) {
+      if (resource.parent && method === "PATCH") throw conflict("Every resource but the storage root has an up link");
+      return null;
+    }
+    if (!resource.parent) throw conflict("The storage root has no up link");
+    if (up.length !== 1) throw conflict("A resource has exactly one up link");
+    let href;
+    try {
+      href = new URL(up[0]?.href, absolute(resource));
+    } catch {
+      throw new HttpError(422, "The up link's href is not a valid URI reference");
+    }
+    if (href.href === absolute(resource.parent)) return null;
+    const destination = href.origin === new URL(app.base).origin && !href.search && !href.hash ? app.store.resolve(href.pathname) : null;
+    if (!destination?.isContainer) throw conflict(`The up link must name an existing container of this storage, not ${href.href}`);
+    if (resource.isContainer && Store.within(destination, resource)) {
+      throw conflict(`Cannot move a container into itself or one of its own descendants: ${destination.path} is inside ${resource.path}`);
+    }
+    if (destination.children.has(resource.name)) throw conflict(`${destination.path} already holds a resource named ${resource.name}`);
+    return destination;
+  }
+
   async function updateLinkset(req, res, resource, agent, method) {
     if (method === "PUT") {
       const ct = mediaTypeOf(req.headers["content-type"]);
@@ -336,9 +367,26 @@ export function createResourceHandlers(app) {
         throw patchErrorToHttp(e);
       }
     }
-    resource.setLinks(linksFromLinksetDocument(app, resource, doc));
-    app.notify([{ kind: "Update", object: objectOf(resource), path: resource.path }], agent);
-    send(req, res, 204, { ETag: resource.linksetEtag });
+    const links = linksFromLinksetDocument(app, resource, doc);
+    const destination = destinationOf(resource, doc, method);
+    resource.setLinks(links);
+    if (!destination) {
+      app.notify([{ kind: "Update", object: objectOf(resource), path: resource.path }], agent);
+      return send(req, res, 204, { ETag: resource.linksetEtag });
+    }
+    // A move: one atomic change of containment, announced as one Move activity, and answered with the linkset
+    // under the resource's new identifier, since paths are identifiers here.
+    const origin = absolute(resource.parent);
+    const from = app.store.move(resource, destination);
+    app.notify([{ kind: "Move", object: objectOf(resource), paths: [from, resource.path], origin, target: absolute(destination) }], agent);
+    app.notifications.relocate(from, resource.path);
+    send(
+      req,
+      res,
+      200,
+      { "Content-Type": MEDIA.LINKSET_JSON, "Content-Location": resource.linksetPath, ETag: resource.linksetEtag, Link: resourceLinks(app, resource) },
+      linksetDocument(app, resource),
+    );
   }
 
   async function handleLinkset(req, res, resource, agent) {
@@ -366,9 +414,22 @@ export function createResourceHandlers(app) {
     return resource ? { resource, linkset: false } : null;
   }
 
+  /** Where what was at `path` before a move is now, the linkset of a moved resource included, or null. */
+  function relocated(path) {
+    if (path.endsWith(".meta")) {
+      const target = app.store.relocated(path.slice(0, -5));
+      if (target) return `${target}.meta`;
+    }
+    return app.store.relocated(path);
+  }
+
   async function handle(req, res, url, agent) {
     const found = lookup(url.pathname);
-    if (!found) throw new HttpError(404, `No resource at ${url.pathname}`);
+    if (!found) {
+      const moved = relocated(url.pathname);
+      if (moved) return send(req, res, 301, { Location: app.base + moved + url.search });
+      throw new HttpError(404, `No resource at ${url.pathname}`);
+    }
     const { resource, linkset } = found;
     if (linkset) return handleLinkset(req, res, resource, agent);
     switch (req.method) {
