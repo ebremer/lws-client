@@ -17,7 +17,7 @@ import Foundation
 /// ``LWSError/invalidArgument(_:)``.
 ///
 /// Redirects are followed by the client itself (at most ``LWSClientOptions/maxRedirects``), authorizing every hop
-/// afresh for its own URL, so that an access token never leaves its realm. `POST` is never sent twice, except for
+/// afresh for its own URL, so that an access token never leaves its scope. `POST` is never sent twice, except for
 /// the single retry after a `401` that the authenticator handled (when nothing was created).
 public final class LWSClient: Sendable {
     /// The library version.
@@ -97,7 +97,7 @@ public final class LWSClient: Sendable {
             if response.status == 401, let authenticator = options.authenticator {
                 let retry = try await authenticator.handleChallenge(attempt, response: AuthResponse(url: url, status: 401, headers: response.headers))
                 if retry {
-                    attempt = try await prepare(method, url, headers, keepUserAuthorization: userAuth)
+                    attempt = try await prepare(method, url, headers, keepUserAuthorization: userAuth, retry: true)
                     response = try await dispatch(attempt, body, timeout)
                 }
             }
@@ -129,7 +129,10 @@ public final class LWSClient: Sendable {
         }
     }
 
-    private func prepare(_ method: String, _ url: URL, _ callHeaders: HTTPHeaders, keepUserAuthorization: Bool) async throws -> AuthRequest {
+    /// Builds an attempt; the retry after a handled 401 is authorized by the authenticator's `authorizeRetry`.
+    private func prepare(_ method: String, _ url: URL, _ callHeaders: HTTPHeaders, keepUserAuthorization: Bool, retry: Bool = false) async throws
+        -> AuthRequest
+    {
         var request = AuthRequest(method: method, url: url, headers: options.defaultHeaders)
         if let ua = options.userAgent, !request.headers.contains("User-Agent"), !callHeaders.contains("User-Agent") {
             request.headers.add("User-Agent", ua)
@@ -137,7 +140,9 @@ public final class LWSClient: Sendable {
         for name in callHeaders.names { request.headers.remove(name) }
         for f in callHeaders { request.headers.add(f.name, f.value) }
         if !keepUserAuthorization { request.headers.remove("Authorization") }
-        if let authenticator = options.authenticator { request = try await authenticator.authorize(request) }
+        if let authenticator = options.authenticator {
+            request = retry ? try await authenticator.authorizeRetry(request) : try await authenticator.authorize(request)
+        }
         return request
     }
 

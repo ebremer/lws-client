@@ -42,12 +42,17 @@ import Testing
     }
 
     @Test func challengeAccessors() {
-        let c = WWWAuthenticate.parse(#"Bearer as_uri="https://as.example", realm="https://s.example/", error="invalid_token", error_description="expired""#)
+        let metadata = "https://s.example/.well-known/oauth-protected-resource/a"
+        let c = WWWAuthenticate.parse(#"Bearer resource_metadata="\#(metadata)", error="invalid_token", error_description="expired""#)
         #expect(c.count == 1)
-        #expect(c[0].asURI == "https://as.example")
-        #expect(c[0].realm == "https://s.example/")
+        #expect(c[0].resourceMetadata == metadata)
         #expect(c[0].error == "invalid_token")
         #expect(c[0].errorDescription == "expired")
+        #expect(c[0].asURI == nil)
+        let legacy = WWWAuthenticate.parse(#"Bearer as_uri="https://as.example", realm="https://s.example/""#)
+        #expect(legacy[0].asURI == "https://as.example")
+        #expect(legacy[0].realm == "https://s.example/")
+        #expect(legacy[0].resourceMetadata == nil)
         #expect(WWWAuthenticate.parse("").isEmpty)
     }
 

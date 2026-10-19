@@ -55,6 +55,11 @@ final class Adapter {
                 let url = try Args.requiredURL(a, "linksetUrl")
                 return Results.update(try await client.patchLinkset(url, patch: try Args.patch(Args.get(a, "patch")), options: try ifMatch(a)))
             }),
+            ("move", { [unowned self] a in
+                let url = try Args.requiredURL(a, "url")
+                let destination = try Args.requiredURL(a, "destination")
+                return Results.moved(try await client.move(url, to: destination, options: MoveOptions(ifMatch: try Args.optionalString(a, "ifMatch"))))
+            }),
             ("subscribe", { [unowned self] in try await subscribe($0) }),
             ("list_subscriptions", { [unowned self] a in
                 try await items(client.listSubscriptions(try Args.requiredURL(a, "serviceUrl")), try Args.limit(a))

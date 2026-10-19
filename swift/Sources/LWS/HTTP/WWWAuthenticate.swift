@@ -18,9 +18,11 @@ public struct AuthChallenge: Sendable, Hashable {
         self.token68 = token68
     }
 
-    /// LWS: the authorization server issuer (`as_uri`).
+    /// LWS: the URL of the requested resource's protected resource metadata (`resource_metadata`, RFC 9728).
+    public var resourceMetadata: String? { parameters["resource_metadata"] }
+    /// LWS drafts before 19 October 2026: the authorization server issuer (`as_uri`).
     public var asURI: String? { parameters["as_uri"] }
-    /// LWS: the protection scope (`realm`).
+    /// LWS drafts before 19 October 2026: the protection scope (`realm`).
     public var realm: String? { parameters["realm"] }
     /// The `error` parameter (e.g. `invalid_token`).
     public var error: String? { parameters["error"] }

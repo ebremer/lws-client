@@ -1,10 +1,11 @@
 # LWS Client for Swift
 
 A client for the [W3C Linked Web Storage (LWS) Protocol 1.0](https://www.w3.org/TR/lws10-core/) and its companion
-specifications, as published by the LWS Working Group on 2026-10-05: discovery, resources and containers, linkset
-metadata, OAuth 2.0 token exchange with the OpenID Connect / SAML 2.0 / self-signed (controlled identifier,
-`did:key`) authentication suites, webhook notifications with RFC 9421 signature verification, access requests and
-grants, and the type index / type search services.
+specifications, as of the Working Draft of 19 October 2026 (`w3c/lws-protocol` 9a08ff6): discovery, resources and
+containers, linkset metadata, moving resources between containers, authorization server discovery through OAuth 2.0
+protected resource metadata (RFC 9728) and OAuth 2.0 token exchange with the OpenID Connect / SAML 2.0 / self-signed
+(controlled identifier, `did:key`) authentication suites, webhook notifications with RFC 9421 signature verification,
+access requests and grants, and the type index / type search services.
 
 * Swift 6 (language mode 6, strict concurrency); macOS 13, iOS 16, tvOS 16, watchOS 9, visionOS 1, and Linux
 * `async throws` operations that honour task cancellation; listings are lazy `AsyncSequence`s; options and models are
@@ -72,11 +73,12 @@ Runnable versions live in [`Examples/`](Examples): `Quickstart`, `SelfSignedAuth
 | Area | API |
 |---|---|
 | Client | `LWSClient(options: LWSClientOptions(transport:, authenticator:, userAgent:, defaultHeaders:, timeout:, maxRedirects:))`, `LWSClient(authenticator:)`, `withAuthenticator(_:)`; every operation takes options with `headers` and `timeout` |
-| Discovery | `discoverStorage(_:)`, `getStorageDescription(_:)` → `StorageDescription` (`storageRoot()`, `notificationService`, `typeSearchService`, `service(_:)`, `verificationMethod(_:)`, …) |
+| Discovery | `discoverStorage(_:)`, `getStorageDescription(_:)` → `StorageDescription` (`storageRoot()`, `notificationService`, `typeSearchService`, `service(_:)`, `verificationMethod(_:)`, `moveCapability` (`MoveCapability`: `appliesTo`, `preservesIdentifier`, `movesDataResources`, `movesContainers`), …) |
 | Read | `head`, `read` (`ReadOptions`: `accept`, `range` (`.bytes(0...99)`, `.from(n)`, `.suffix(n)`), `ifNoneMatch`, `ifModifiedSince`, `prefer`; a `304` is `notModified`), `readContainer`, `listContainer` (`PagedSequence`, an `AsyncSequence`) |
 | Write | `create(in:body:contentType:options:)`, `createText(in:text:)`, `createJSON(in:json:)`, `createJSON(in:value:)` (any `Encodable`), `createContainer(in:)` (`CreateOptions`: `slug`, `links`, `types`), `update` (`UpdateOptions`: `ifMatch`, `ifNoneMatch`, `links`, `setLinkset`), `patch` (`JSONPatch` or any advertised format), `delete` (`recursive`) |
 | Metadata | `linksetURL`, `readLinkset`, `readLinksetResource`, `updateLinkset`, `patchLinkset`; `Linkset` value (`links`, `targets`, `adding`, `removing`); `JSONPointer` |
-| Auth | `Authenticator`; `TokenExchangeAuthenticator` (`TokenExchangeOptions`: `allowInsecureHttp`, `authorizationServerFilter`, `transport`, `refreshMargin`, `timeout`); `BearerTokenAuthenticator` (a token or a supplier, optional realm) |
+| Move | `move(_:to:options:)` (`MoveOptions`: `ifMatch`) → `MoveResult` (`location`, `linkset`, `identifierPreserved`, `etag`, `document`) |
+| Auth | `Authenticator` (`authorize`, `handleChallenge`, `authorizeRetry`); `TokenExchangeAuthenticator` (`TokenExchangeOptions`: `allowInsecureHttp`, `authorizationServerFilter`, `transport`, `refreshMargin`, `timeout`; `accessToken(issuer:storage:)`, `clear()`); `BearerTokenAuthenticator` (a token or a supplier, optional realm); `ProtectedResourceMetadata`, `AuthorizationServerMetadata` |
 | Auth suites | `OpenIDCredentials`, `SAMLCredentials`, `SelfSignedCredentials.forAgent(_:key:keyID:)` / `.didKey(_:)` (ES256, EdDSA); `SigningKey` / `VerificationKey` (generate, JWK import and export), `DIDKey`, `ControlledIdentifierDocument`, `JWT` |
 | Notifications | `subscribe`, `listSubscriptions`, `getSubscription`, `unsubscribe`; `Notification.parse`; `WebhookVerifier` (RFC 9421 + RFC 9530) |
 | Access | `requestAccess`, `listAccessRequests`, `getAccessRequest`, `cancelAccessRequest`, `grantAccess`, `listAccessGrants`, `getAccessGrant`, `revokeAccessGrant`; `AccessRequest`, `AccessGrant`, `AccessPolicy`, `AccessTarget`, `Constraint` factories |
@@ -86,7 +88,7 @@ Runnable versions live in [`Examples/`](Examples): `Quickstart`, `SelfSignedAuth
 | Low level | `request(_:_:body:contentType:options:)` sends any method through the authentication and redirect pipeline |
 
 Constants are grouped in caseless enums: `Vocabulary` (namespaces, contexts, type matching), `LinkRelation`,
-`ResourceType`, `MediaType`, `ServiceType`, `SubscriptionType`, `TokenType`, `AccessAction`, `ConstraintOperand`,
+`ResourceType`, `MediaType`, `ServiceType`, `CapabilityType`, `SubscriptionType`, `TokenType`, `AccessAction`, `ConstraintOperand`,
 `ConstraintOperator`, `Prefer`, `ActivityType`. Every returned URL is absolute.
 
 ## Errors
@@ -97,7 +99,7 @@ Every error the client throws is an `LWSError`:
 |---|---|
 | `.badRequest`, `.unauthorized`, `.forbidden`, `.notFound`, `.methodNotAllowed`, `.notAcceptable`, `.conflict`, `.gone`, `.preconditionFailed`, `.unsupportedMediaType`, `.unprocessableContent`, `.notImplemented`, `.insufficientStorage` | the status of the same name; each carries the `HTTPError` (`status`, `method`, `url`, `headers`, `problem`, `body`, `challenges`, `allow`, `acceptPatch`, `acceptQuery`) |
 | `.http(HTTPError)` | any other error status (5xx: the LWS "unknown error") |
-| `.authentication(AuthenticationError)` (`message`, `error`, `errorDescription`, `status`) | realm, HTTPS, filter or issuer checks failed, or the token exchange was refused |
+| `.authentication(AuthenticationError)` (`message`, `error`, `errorDescription`, `status`) | a discovery check (protected resource metadata, storage root), the realm, HTTPS, filter or issuer checks failed, or the token exchange was refused |
 | `.protocolError(String)` | the server response violates the specification |
 | `.signatureVerification(String)` | a webhook delivery failed verification |
 | `.transport(TransportError)` (`message`, `isTimeout`, `underlying`) | no response: connection failure or timeout |
@@ -130,20 +132,45 @@ let agent = URL(string: "https://bot.example/id")!
 let cid = ControlledIdentifierDocument.create(agent: agent, key: key.publicKey, kid: "key-1")
 let bot = TokenExchangeAuthenticator(
     credentials: SelfSignedCredentials.forAgent(agent, key: key, keyID: "https://bot.example/id#key-1"),
-    options: TokenExchangeOptions(authorizationServerFilter: { asURI, _ in asURI.host?.hasSuffix(".example") == true }))
+    options: TokenExchangeOptions(authorizationServerFilter: { issuer, _ in issuer.host?.hasSuffix(".example") == true }))
 
 // Keep an identity across runs: persist key.jwk (secret) and reload it with SigningKey(jwk:).
 ```
 
-Security behaviour: the challenge `realm` must contain the request URL, the authorization server must use HTTPS
-(loopback hosts excepted, or `allowInsecureHttp` for tests) and pass the filter, and all of that is checked before a
-cached token is touched, so a decoy `401` cannot evict a working token. Metadata and token requests never follow
-redirects: a `3xx`, or a response from another URL than the one requested, is an authentication error, since a
-redirect would carry the subject token elsewhere. The metadata `issuer` must equal `as_uri`. Storage requests follow
-redirects in the client (at most 10), authorizing each hop for its own URL, so a token never leaves its realm; an
-explicit `Authorization` header survives same-origin redirects only. `POST` is never sent twice except for the one
-retry after a handled `401`. `TokenExchangeAuthenticator` is an actor: concurrent requests share one in-flight
-exchange per realm.
+The flow: a `401` names the resource's protected resource metadata (`WWW-Authenticate: Bearer
+resource_metadata="…"`, RFC 9728) and links to its storage (`rel="https://www.w3.org/ns/lws#storage"`). Before it
+asks for a token the authenticator checks, in this order, that the metadata URL is on the requested origin, that the
+metadata's `resource` is the requested URL itself, and that the storage description puts the storage root on the
+requested origin; the first of the metadata's `authorization_servers` that uses HTTPS (loopback hosts excepted, or
+`allowInsecureHttp` for tests) and passes the filter is the issuer, whose `issuer` metadata must match. The token is
+requested for the storage (`resource=<storage>`), cached per issuer and storage, and sent ahead to URLs inside the
+storage and its root (the longest scope wins). The retry of the request that drew the `401` carries it even outside
+that scope, as its URL has just passed the checks; a later `401` outside the scope runs the checks again and reuses
+the cached token without a second exchange. Storage descriptions are kept until `clear()`; protected resource
+metadata, which describes one resource, is read each time. The `as_uri`/`realm` challenge of the drafts before
+19 October 2026 is still followed: the realm must contain the request URL, and is the token's resource and scope.
+
+Security behaviour: every check comes before a cached token is touched, so a decoy `401` cannot evict a working
+token. Discovery and metadata requests carry no credentials, and they and the token request never follow
+redirects: a `3xx`, or a response from another URL than the one requested, is an authentication error. Storage
+requests follow redirects in the client (at most 10), authorizing each hop for its own URL, so a token never leaves
+its scope but in that retry; an explicit `Authorization` header survives same-origin redirects only. `POST` is never sent twice except
+for the one retry after a handled `401`. `TokenExchangeAuthenticator` is an actor: concurrent requests share one
+in-flight exchange per issuer and storage.
+
+## Moving resources
+
+```swift
+guard let move = storage.moveCapability, move.movesDataResources else { return }   // no MoveResource: not allowed
+let moved = try await client.move(note.location, to: archive)   // reads the linkset, patches its up link (If-Match)
+if !moved.identifierPreserved { print("now at", moved.location, "metadata at", moved.linkset) }
+```
+
+lws10-core moves a resource by a change of its `up` link: `move` reads the resource's linkset and sends a JSON Patch
+that tests the current `up` target and replaces it with the destination, conditional on the linkset's ETag
+(`MoveOptions.ifMatch` overrides it). A storage that keeps identifiers answers `204`; one that does not answers `200`
+with the linkset under the new identifier, which `MoveResult.location` reports. A refused move (a storage without
+`MoveResource`, a destination that is not a container, a container moved into itself) is `LWSError.conflict`.
 
 ## Webhooks
 
@@ -180,16 +207,17 @@ At the repository root (where `Package.swift` is):
 
 ```sh
 swift build                                          # library, tests, examples and the driver adapter
-swift test                                           # 84 tests (Swift Testing); the interop scenario is skipped
+swift test                                           # 95 tests (Swift Testing); the interop scenario is skipped
 LWS_TEST_SERVER=http://localhost:8787 swift test     # also runs ../conformance/scenario.md against the mock server
 ```
 
 Start the mock server first with `node testing/mock-server/server.mjs --port 8787` (Node 22+). The tests load the
 shared fixtures in [`../conformance/fixtures`](../conformance/fixtures) (Link and `WWW-Authenticate` parsing,
 structured fields, JSON Patch, type queries, did:key and JWT vectors, all 13 RFC 9421 webhook vectors, response
-models) and run every operation against an in-process fake transport, including the full
-`401 → metadata → token exchange → retry` flow and its security checks. The interop test receives the signed
-notification on a local socket inbox and verifies it.
+models, moves) and run every operation against an in-process fake transport, including the full
+`401 → protected resource metadata → storage description → AS metadata → token exchange → retry` flow with every
+case of `discovery.json` and its security checks. The interop test receives the signed notification on a local
+socket inbox and verifies it, and moves a resource.
 
 The [driver](../driver) adapter is the root package's `lws-driver-adapter-swift` product:
 

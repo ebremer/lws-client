@@ -3,10 +3,11 @@ import Foundation
 
 /// Where a subject token will be presented.
 public struct CredentialContext: Sendable {
-    /// The authorization server (`as_uri`).
+    /// The authorization server (its issuer).
     public let issuer: URL
-    /// The protection realm the access token is requested for.
-    public let realm: URL
+    /// The storage the access token is requested for (the `resource` of the token request; the realm of a challenge
+    /// of the drafts before 19 October 2026).
+    public let storage: URL
     /// The authorization server metadata; its ``AuthorizationServerMetadata/issuer`` is the audience of
     /// self-signed tokens.
     public let metadata: AuthorizationServerMetadata

@@ -9,6 +9,9 @@ public enum Vocabulary {
     public static let namespace = "https://www.w3.org/ns/lws#"
     /// The LWS JSON-LD context.
     public static let context = "https://www.w3.org/ns/lws/v1"
+    /// The LWS profile: the `profile` parameter of an RDF media type whose representation is RDF isomorphic to the
+    /// `application/lws+json` one (`text/turtle; profile="https://www.w3.org/ns/lws/v1"`).
+    public static let profile = "https://www.w3.org/ns/lws/v1"
     /// The W3C Controlled Identifiers JSON-LD context.
     public static let cidContext = "https://www.w3.org/ns/cid/v1"
     /// The Activity Streams 2.0 JSON-LD context.
@@ -17,6 +20,8 @@ public enum Vocabulary {
     public static let grantTypeTokenExchange = "urn:ietf:params:oauth:grant-type:token-exchange"
     /// The well-known path of LWS authorization server metadata.
     public static let wellKnownLWSConfiguration = "/.well-known/lws-configuration"
+    /// The well-known path of OAuth 2.0 protected resource metadata (RFC 9728).
+    public static let wellKnownOAuthProtectedResource = "/.well-known/oauth-protected-resource"
     /// The service type of an OpenID provider in a controlled identifier document.
     public static let openIDProviderService = namespace + "OpenIdProvider"
     /// The LWS ODRL-based access profile.
@@ -125,6 +130,12 @@ public enum ServiceType {
     public static let typeSearch = "TypeSearchService"
 }
 
+/// Storage description capability types (`capability[].type`).
+public enum CapabilityType {
+    /// Resources move between containers by a change of their `up` link (see ``MoveCapability``).
+    public static let moveResource = "MoveResource"
+}
+
 /// Notification subscription types.
 public enum SubscriptionType {
     /// The webhook subscription type.
@@ -197,4 +208,6 @@ public enum ActivityType {
     public static let update = "Update"
     /// A resource was deleted.
     public static let delete = "Delete"
+    /// A resource moved to another container.
+    public static let move = "Move"
 }

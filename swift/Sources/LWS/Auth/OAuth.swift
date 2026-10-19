@@ -52,6 +52,29 @@ public struct AuthorizationServerMetadata: Sendable {
     }
 }
 
+/// OAuth 2.0 protected resource metadata (RFC 9728), which the `resource_metadata` of a `401` names: the resource
+/// it describes and the authorization servers that issue tokens for it.
+public struct ProtectedResourceMetadata: Sendable {
+    /// The resource identifier (`resource`), as the document states it.
+    public let resource: String
+    /// The issuer identifiers of the authorization servers (`authorization_servers`), in order.
+    public let authorizationServers: [String]
+    /// The JSON document.
+    public let raw: JSONObject
+
+    /// Parses a protected resource metadata document.
+    /// - Throws: ``LWSError/protocolError(_:)`` when it is not an object, `resource` is not a string, or
+    ///   `authorization_servers` is not a non-empty array of strings (lws10-core makes it REQUIRED).
+    public static func parse(_ json: JSONValue) throws -> ProtectedResourceMetadata {
+        let o = try LWSJSON.object(json, "Protected resource metadata")
+        guard let resource = o.string("resource") else { throw LWSError.protocolError("Protected resource metadata has no resource") }
+        guard case .array(let servers)? = o["authorization_servers"], !servers.isEmpty, servers.allSatisfy({ $0.stringValue != nil }) else {
+            throw LWSError.protocolError("Protected resource metadata has no authorization_servers (a non-empty array of issuers)")
+        }
+        return ProtectedResourceMetadata(resource: resource, authorizationServers: servers.compactMap(\.stringValue), raw: o)
+    }
+}
+
 /// An access token issued by an authorization server.
 public struct AccessToken: Sendable, CustomStringConvertible {
     /// The lifetime assumed when neither `expires_in` nor a JWT `exp` is available, in seconds.

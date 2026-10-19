@@ -43,7 +43,7 @@ public enum LWSError: Error, Sendable, CustomStringConvertible, LocalizedError {
     case insufficientStorage(HTTPError)
     /// Any other error status.
     case http(HTTPError)
-    /// Obtaining an access token failed: realm, HTTPS, filter or issuer checks, or a refused token exchange.
+    /// Obtaining an access token failed: discovery, realm, HTTPS, filter or issuer checks, or a refused token exchange.
     case authentication(AuthenticationError)
     /// A server response violates the specification (a missing `Location`, a wrong media type, bad JSON, …).
     case protocolError(String)

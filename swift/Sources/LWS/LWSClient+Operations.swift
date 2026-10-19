@@ -2,7 +2,6 @@
 import Foundation
 
 extension LWSClient {
-    private static let acceptDescription = MediaType.lwsCID + ", " + MediaType.ldJSON + ";q=0.9, " + MediaType.json + ";q=0.8"
     private static let acceptLinkset = MediaType.linksetJSON + ", " + MediaType.json + ";q=0.5"
 
     // MARK: - Discovery
@@ -26,12 +25,9 @@ extension LWSClient {
     /// - Throws: ``LWSError/protocolError(_:)`` when the document is not a storage description.
     public func getStorageDescription(_ storageURL: URL, options: RequestOptions = RequestOptions()) async throws -> StorageDescription {
         let url = try URLs.requireHTTP(storageURL, "storageURL")
-        let r = try await call("GET", url, nil, ["Accept": Self.acceptDescription], options)
+        let r = try await call("GET", url, nil, ["Accept": StorageDescription.accept], options)
         try r.check()
-        if let ct = r.headers.first("content-type"), !HeaderLists.isJSON(ct), HeaderLists.essence(ct) != MediaType.lwsCID {
-            throw LWSError.protocolError("The storage description has the unexpected media type \(ct)")
-        }
-        return try StorageDescription.parse(LWSJSON.parse(r.body, "Storage description"), base: r.url)
+        return try StorageDescription.parse(contentType: r.headers.first("content-type"), body: r.body, url: r.url)
     }
 
     // MARK: - Reading
@@ -178,6 +174,26 @@ extension LWSClient {
     /// Patches a linkset with JSON Patch; ``JSONPointer`` escapes relation keys that are URIs.
     public func patchLinkset(_ linksetURL: URL, patch: JSONPatch, options: UpdateOptions = UpdateOptions()) async throws -> UpdateResult {
         try await self.patch(linksetURL, patch: patch, options: options)
+    }
+
+    // MARK: - Moving
+
+    /// Moves a resource, or a container with everything in it, into another container (lws10-core "Moving
+    /// Resources"): reads the resource's linkset, then patches its `up` link to `destinationURL`, conditional on the
+    /// linkset's entity tag (``MoveOptions/ifMatch`` overrides it). Whether the storage moves resources is
+    /// ``StorageDescription/moveCapability``: one that does not refuses, typically with ``LWSError/conflict(_:)``, as
+    /// it does a destination that is not a container or a container moved into itself or below.
+    /// - Throws: ``LWSError/protocolError(_:)`` when the linkset shows no `up` link of the resource (nothing is sent).
+    public func move(_ resourceURL: URL, to destinationURL: URL, options: MoveOptions = MoveOptions()) async throws -> MoveResult {
+        let resource = try URLs.requireHTTP(resourceURL, "resourceURL")
+        let destination = try URLs.requireHTTP(destinationURL, "destinationURL")
+        let doc = try await readLinkset(resource, options: RequestOptions(headers: options.headers, timeout: options.timeout))
+        let patch = try MoveResult.patch(doc.linkset, linksetURL: doc.url, resource: resource, destination: destination)
+        var headers: HTTPHeaders = ["Content-Type": MediaType.jsonPatch]
+        headers.set("If-Match", options.ifMatch ?? doc.etag)
+        let r = try await call("PATCH", doc.url, patch.data, headers, options)
+        try r.check()
+        return try MoveResult(resource: resource, linksetURL: r.url, status: r.status, headers: r.headers, body: r.body)
     }
 
     // MARK: - Notifications

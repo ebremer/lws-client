@@ -65,7 +65,7 @@ public struct Subscription: Sendable, CustomStringConvertible {
 }
 
 /// An LWS notification envelope: the storage it concerns and one or more Activity Streams activities
-/// (`Create`, `Update`, `Delete`, …). A single `activity` object is exposed as a one-element list.
+/// (`Create`, `Update`, `Delete`, `Move`, …). A single `activity` object is exposed as a one-element list.
 public struct Notification: Sendable {
     /// The storage the notification belongs to.
     public let storage: URL
@@ -107,13 +107,13 @@ public struct Activity: Sendable {
     public let id: String?
     /// The activity types (e.g. `Create`).
     public let types: [String]
-    /// The resource concerned.
+    /// The resource concerned (for a `Move`, as it is after the move).
     public let object: ActivityObject
     /// The agent that performed the change.
     public let actor: URL?
-    /// The container a resource was added to (`Create`).
+    /// The container a resource was added to (`Create`) or moved into (`Move`).
     public let target: URL?
-    /// The container a resource was removed from (`Delete`).
+    /// The container a resource was removed from (`Delete`) or moved out of (`Move`).
     public let origin: URL?
     /// The `published` value as sent.
     public let publishedRaw: String?
@@ -129,6 +129,8 @@ public struct Activity: Sendable {
     public var isUpdate: Bool { hasType(ActivityType.update) }
     /// Whether this is a `Delete` activity.
     public var isDelete: Bool { hasType(ActivityType.delete) }
+    /// Whether this is a `Move` activity: the resource left ``origin`` for ``target``.
+    public var isMove: Bool { hasType(ActivityType.move) }
 
     /// Whether the activity has `type` (`T`, `as:T` and the full IRI match).
     public func hasType(_ type: String) -> Bool {

@@ -29,6 +29,9 @@ public struct StorageDescription: Sendable, CustomStringConvertible {
     public var typeIndexService: Service? { service(ServiceType.typeIndex) }
     /// The type search service, if advertised.
     public var typeSearchService: Service? { service(ServiceType.typeSearch) }
+    /// The `MoveResource` capability: how the storage lets clients move resources between containers by changing
+    /// their `up` link. Nil when it describes none: then the `up` link is not modifiable.
+    public var moveCapability: MoveCapability? { capability(CapabilityType.moveResource).map { MoveCapability(raw: $0.raw) } }
 
     /// The storage root container URL.
     /// - Throws: ``LWSError/protocolError(_:)`` when the description has no `StorageRoot` service.
@@ -75,6 +78,18 @@ public struct StorageDescription: Sendable, CustomStringConvertible {
         var r = reference
         if !r.contains(":"), !r.hasPrefix("#"), !r.hasPrefix("/") { r = "#" + r }
         return URLs.resolve(r, against: id)
+    }
+
+    /// The `Accept` header of a storage description request (internal).
+    static let accept = MediaType.lwsCID + ", " + MediaType.ldJSON + ";q=0.9, " + MediaType.json + ";q=0.8"
+
+    /// Parses a storage description response retrieved from `url`, whose media type must be `application/lws+cid`
+    /// or JSON (internal).
+    static func parse(contentType: String?, body: Data, url: URL) throws -> StorageDescription {
+        if let ct = contentType, !HeaderLists.isJSON(ct), HeaderLists.essence(ct) != MediaType.lwsCID {
+            throw LWSError.protocolError("The storage description has the unexpected media type \(ct)")
+        }
+        return try parse(LWSJSON.parse(body, "Storage description"), base: url)
     }
 
     /// Parses a storage description; relative URLs are resolved against `base`.
@@ -153,6 +168,30 @@ public struct Capability: Sendable {
 
     /// An extra member of the capability object.
     public func property(_ name: String) -> JSONValue? { raw[name] }
+}
+
+/// The `MoveResource` capability of a storage description (lws10-core "Moving Resources"): the storage moves
+/// resources between containers when a client changes their `up` link.
+public struct MoveCapability: Sendable {
+    /// The types of resource it moves (`appliesTo`, as received); `["DataResource"]` when the capability does not
+    /// say, which means data resources only.
+    public let appliesTo: [String]
+    /// Whether a moved resource keeps its identifier (`preservesIdentifier`); nil when the capability does not say,
+    /// and then a client must not assume it does.
+    public let preservesIdentifier: Bool?
+    /// The capability object.
+    public let raw: JSONObject
+
+    init(raw: JSONObject) {
+        appliesTo = raw["appliesTo"] == nil ? ["DataResource"] : raw.strings("appliesTo")
+        preservesIdentifier = raw["preservesIdentifier"]?.boolValue
+        self.raw = raw
+    }
+
+    /// Whether it moves data resources.
+    public var movesDataResources: Bool { Vocabulary.hasType(appliesTo, ResourceType.dataResource) }
+    /// Whether it moves containers (with everything in them).
+    public var movesContainers: Bool { Vocabulary.hasType(appliesTo, ResourceType.container) }
 }
 
 /// A verification method of a controlled identifier document.

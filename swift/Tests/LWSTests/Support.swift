@@ -39,8 +39,8 @@ enum Fixtures {
         load(file)[member]!.arrayValue!.map { $0.stringValue! }
     }
 
-    static func `case`(_ file: String, _ name: String) -> JSONValue {
-        cases(file).first { $0["name"]?.stringValue == name }!
+    static func `case`(_ file: String, _ name: String, _ member: String = "cases") -> JSONValue {
+        cases(file, member).first { $0["name"]?.stringValue == name }!
     }
 }
 

@@ -86,10 +86,39 @@ import Testing
         #expect(s.capability("https://feature.example/PatchSupport")?.property("format") != nil)
         #expect(s.services(ServiceType.storageRoot).count == 1)
 
+        expectMoveCapability(e["moveCapability"]!, s.moveCapability)
+        #expect(s.capability(CapabilityType.moveResource)?.property("preservesIdentifier") == true)
+
         let invalid = f["invalid"]!
         #expect(kind(syncError { try StorageDescription.parse(invalid["notStorage"]!, base: url(f["url"]!.str)) }) == "protocolError")
         let noRoot = try StorageDescription.parse(invalid["noRoot"]!, base: url(f["url"]!.str))
         #expect(kind(syncError { try noRoot.storageRoot() }) == "protocolError")
+    }
+
+    @Test(arguments: Fixtures.names("responses/storage-description.json", "moveCapabilities"))
+    func moveCapabilities(name: String) throws {
+        let f = Fixtures.load("responses/storage-description.json")
+        let c = Fixtures.case("responses/storage-description.json", name, "moveCapabilities")
+        var body = f["body"]!.object
+        body["capability"] = c["capability"]!.isNull ? nil : c["capability"]!
+        let s = try StorageDescription.parse(.object(body), base: url(f["url"]!.str))
+        expectMoveCapability(c["expected"]!, s.moveCapability)
+    }
+
+    private func expectMoveCapability(_ expected: JSONValue, _ move: MoveCapability?) {
+        guard !expected.isNull else {
+            #expect(move == nil)
+            return
+        }
+        guard let move else {
+            Issue.record("no MoveResource capability")
+            return
+        }
+        #expect(move.appliesTo == expected["appliesTo"]!.strings)
+        #expect(move.preservesIdentifier == expected["preservesIdentifier"]!.boolValue)
+        #expect(move.movesDataResources == expected["movesDataResources"]!.boolValue)
+        #expect(move.movesContainers == expected["movesContainers"]!.boolValue)
+        #expect(Vocabulary.hasType(move.raw.strings("type"), CapabilityType.moveResource))
     }
 
     @Test func webhookStorageDescriptionKeys() throws {
@@ -156,6 +185,7 @@ import Testing
         let f = Fixtures.load("responses/notification.json")
         expectNotification(f["singleExpected"]!, try Notification.parse(f["single"]!))
         expectNotification(f["batchExpected"]!, try Notification.parse(f["batch"]!.serializedData()))
+        expectNotification(f["moveExpected"]!, try Notification.parse(f["move"]!))
         #expect(kind(syncError { try Notification.parse(f["invalid"]!) }) == "protocolError")
         #expect(kind(syncError { try Notification.parse(Data(#"{"type":"Notification","storage":"https://s.example/"}"#.utf8)) }) == "protocolError")
         #expect(kind(syncError { try Notification.parse(Data("not json".utf8)) }) == "protocolError")
@@ -177,9 +207,10 @@ import Testing
                 #expect(a.publishedRaw == published)
                 #expect(a.published == iso(published))
             }
-            if x["isCreate"] != nil { #expect(a.isCreate) }
-            if x["isUpdate"] != nil { #expect(a.isUpdate) }
-            if x["isDelete"] != nil { #expect(a.isDelete) }
+            if let v = x["isCreate"]?.boolValue { #expect(a.isCreate == v) }
+            if let v = x["isUpdate"]?.boolValue { #expect(a.isUpdate == v) }
+            if let v = x["isDelete"]?.boolValue { #expect(a.isDelete == v) }
+            if let v = x["isMove"]?.boolValue { #expect(a.isMove == v) }
             #expect(a.object.isDataResource)
         }
     }
@@ -317,27 +348,75 @@ import Testing
         #expect(t.isValid(at: now, margin: 30))
         #expect(!t.isValid(at: now.addingTimeInterval(3580), margin: 30))
 
+        let prm = f["protectedResourceMetadata"]!
+        let resource = try ProtectedResourceMetadata.parse(prm["body"]!)
+        #expect(resource.resource == prm["expected"]!["resource"]!.str)
+        #expect(resource.authorizationServers == prm["expected"]!["authorizationServers"]!.strings)
+        #expect(JSONValue.object(resource.raw) == prm["body"]!)
+        for invalid in f["protectedResourceMetadataInvalid"]!.object where invalid.key != "description" {
+            #expect(kind(syncError { try ProtectedResourceMetadata.parse(invalid.value) }) == "protocolError", "\(invalid.key)")
+        }
+        for c in f["originChecks"]!.array {
+            #expect(URLs.sameOrigin(url(c["a"]!.str), url(c["b"]!.str)) == c["sameOrigin"]!.boolValue, "\(c)")
+        }
+        for c in f["resourceChecks"]!.array {
+            #expect(URLs.isSameResource(c["resource"]!.str, url(c["requested"]!.str)) == c["identical"]!.boolValue, "\(c)")
+        }
         for c in f["realmChecks"]!.array {
             #expect(URLs.contains(realm: url(c["realm"]!.str), url(c["url"]!.str)) == c["contained"]!.boolValue, "\(c)")
         }
     }
 
+    // MARK: - Moving
+
+    @Test(arguments: Fixtures.names("move.json", "patches"))
+    func movePatches(name: String) throws {
+        let c = Fixtures.case("move.json", name, "patches")
+        let build = {
+            try MoveResult.patch(try Linkset.parse(c["linkset"]!), linksetURL: url(c["linksetUrl"]!.str), resource: url(c["resource"]!.str),
+                                 destination: url(c["destination"]!.str))
+        }
+        if c["expected"]!.isNull {
+            #expect(kind(syncError(of: build)) == "protocolError")
+            #expect(c["error"]?.stringValue == "ProtocolError")
+            return
+        }
+        #expect(try build().json == c["expected"]!)
+    }
+
+    @Test(arguments: Fixtures.names("move.json", "responses"))
+    func moveResponses(name: String) throws {
+        let c = Fixtures.case("move.json", name, "responses")
+        let body = c["body"]!.isNull ? Data() : c["body"]!.serializedData()
+        let m = try MoveResult(resource: url(c["resource"]!.str), linksetURL: url(c["linksetUrl"]!.str), status: Int(c["status"]!.intValue!),
+                               headers: headers(c["headers"]!), body: body)
+        let e = c["expected"]!
+        #expect(m.status == Int(c["status"]!.intValue!))
+        #expect(m.location.absoluteString == e["location"]!.str)
+        #expect(m.linkset.absoluteString == e["linkset"]!.str)
+        #expect(m.identifierPreserved == e["identifierPreserved"]!.boolValue)
+        #expect(m.etag == e["etag"]!.stringValue)
+        #expect((m.document != nil) == !c["body"]!.isNull)
+    }
+
     @Test func everyFixtureFileIsCovered() throws {
         let vectors = Fixtures.load("webhook/index.json")["vectors"]!.strings
         let covered = [
-            "did-key.json", "json-patch.json", "jwt.json", "link-headers.json", "structured-fields.json", "type-queries.json",
+            "did-key.json", "discovery.json", "json-patch.json", "move.json", "jwt.json", "link-headers.json", "structured-fields.json", "type-queries.json",
             "www-authenticate.json", "keys/ed25519.json", "keys/p256.json", "keys/p256-unlisted.json",
             "responses/access.json", "responses/container-page.json", "responses/linkset.json", "responses/notification.json",
             "responses/oauth.json", "responses/problem-details.json", "responses/storage-description.json", "responses/subscription.json",
             "responses/type-index.json", "webhook/index.json", "webhook/storage-description.json",
         ] + vectors.map { "webhook/" + $0 }
+        // Optional for clients: applying JSON Patch is the server's side.
+        let optional = ["json-patch-apply.json"]
         let root = Fixtures.directory.standardizedFileURL.path
         var all: [String] = []
         let e = FileManager.default.enumerator(atPath: root)!
         while let p = e.nextObject() as? String {
             if p.hasSuffix(".json") { all.append(p) }
         }
-        #expect(covered.sorted() == all.sorted())
+        #expect((covered + optional).sorted() == all.sorted())
         #expect(vectors.count == 13)
     }
 }

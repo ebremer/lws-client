@@ -34,6 +34,10 @@ private let mockServer = ProcessInfo.processInfo.environment["LWS_TEST_SERVER"]
         let grants = try #require(storage.accessGrantService)
         let typeIndex = try #require(storage.typeIndexService)
         let typeSearch = try #require(storage.typeSearchService)
+        let move = try #require(storage.moveCapability)
+        #expect(move.movesDataResources)
+        #expect(move.movesContainers)
+        #expect(move.preservesIdentifier == false)
 
         // 2. Create a container.
         let slug = "interop-swift-\(Int64(Date().timeIntervalSince1970 * 1000))"
@@ -116,7 +120,19 @@ private let mockServer = ProcessInfo.processInfo.environment["LWS_TEST_SERVER"]
         try await client.cancelAccessRequest(request)
         #expect(kind(await error { try await client.getAccessRequest(request) }) == "notFound")
 
-        // 13. Delete.
+        // 13. Move: the storage gives the moved resource a new URL.
+        let d = try await client.createContainer(in: c, options: CreateOptions(slug: "archive")).location
+        let m = try await client.createText(in: c, text: "Move me", options: CreateOptions(slug: "move-me.txt")).location
+        let moved = try await client.move(m, to: d)
+        #expect(moved.location.absoluteString == d.absoluteString + "move-me.txt")
+        #expect(!moved.identifierPreserved)
+        #expect(moved.linkset.absoluteString == moved.location.absoluteString + ".meta")
+        #expect(try await client.read(moved.location).text == "Move me")
+        #expect(try await client.listContainer(d).collect().map(\.id).contains(moved.location))
+        #expect(!(try await client.listContainer(c).collect().map(\.id).contains(m)))
+        #expect(kind(await error { try await client.move(c, to: d) }) == "conflict")
+
+        // 14. Delete.
         #expect(kind(await error { try await client.delete(c) }) == "conflict")
         try await client.delete(c, options: DeleteOptions(recursive: true))
         #expect(kind(await error { try await client.read(h) }) == "notFound")

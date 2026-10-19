@@ -166,3 +166,17 @@ public struct DeleteOptions: OperationOptions {
         self.timeout = timeout
     }
 }
+
+/// Options of ``LWSClient/move(_:to:options:)``; ``headers`` and ``timeout`` apply to the linkset's read and patch.
+public struct MoveOptions: OperationOptions {
+    /// The `If-Match` of the patch, instead of the entity tag of the linkset as read.
+    public var ifMatch: String?
+    public var headers: HTTPHeaders
+    public var timeout: TimeInterval?
+
+    public init(ifMatch: String? = nil, headers: HTTPHeaders = HTTPHeaders(), timeout: TimeInterval? = nil) {
+        self.ifMatch = ifMatch
+        self.headers = headers
+        self.timeout = timeout
+    }
+}

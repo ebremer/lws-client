@@ -5,7 +5,7 @@ import Foundation
 ///
 /// The client calls ``authorize(_:)`` before every request attempt (every redirect hop included, each for its own
 /// URL). When an attempt is answered `401 Unauthorized` it calls ``handleChallenge(_:response:)``; returning true
-/// makes it send the request once more, authorizing it again first.
+/// makes it send the request once more, authorized by ``authorizeRetry(_:)`` (by default ``authorize(_:)``).
 ///
 /// Provided implementations: ``TokenExchangeAuthenticator`` (the LWS OAuth 2.0 token exchange flow) and
 /// ``BearerTokenAuthenticator`` (a known access token). Others (cookies, DPoP, mTLS, …) implement this protocol.
@@ -15,6 +15,17 @@ public protocol Authenticator: Sendable {
 
     /// Reacts to a `401` response, e.g. by obtaining a token; returns whether to send the request again.
     func handleChallenge(_ request: AuthRequest, response: AuthResponse) async throws -> Bool
+
+    /// Returns the one retry of a request whose `401` ``handleChallenge(_:response:)`` handled, with credentials
+    /// added: those the challenge led to, which may go where ``authorize(_:)`` sends none.
+    func authorizeRetry(_ request: AuthRequest) async throws -> AuthRequest
+}
+
+extension Authenticator {
+    /// Authorizes the retry as any other attempt.
+    public func authorizeRetry(_ request: AuthRequest) async throws -> AuthRequest {
+        try await authorize(request)
+    }
 }
 
 /// A request attempt as an ``Authenticator`` sees it: method, target and headers.

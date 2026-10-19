@@ -86,12 +86,22 @@ enum Results {
         return .object(o)
     }
 
+    /// Moved: the result of a move.
+    static func moved(_ m: MoveResult) -> JSONValue {
+        var o: JSONObject = ["status": .int(Int64(m.status)), "location": .string(m.location.absoluteString),
+                             "linkset": .string(m.linkset.absoluteString), "identifierPreserved": .bool(m.identifierPreserved)]
+        put(&o, "etag", m.etag)
+        o["metadata"] = metadata(m.metadata)
+        return .object(o)
+    }
+
     /// Created: the result of a create.
     static func created(_ c: CreateResult) -> JSONValue {
         ["location": .string(c.location.absoluteString), "metadata": metadata(c.metadata)]
     }
 
-    /// Storage: a storage description; `storageRoot` is omitted when the library's `storageRoot()` fails.
+    /// Storage: a storage description; `storageRoot` is omitted when the library's `storageRoot()` fails, and
+    /// `moveCapability` when the storage describes none.
     static func storage(_ s: StorageDescription) -> JSONValue {
         var o: JSONObject = ["id": .string(s.id.absoluteString), "types": strings(s.types)]
         put(&o, "storageRoot", try? s.storageRoot())
@@ -110,6 +120,11 @@ enum Results {
             put(&method, "controller", vm.controller)
             return .object(method)
         })
+        if let move = s.moveCapability {
+            var capability: JSONObject = ["appliesTo": strings(move.appliesTo)]
+            if let preserves = move.preservesIdentifier { capability["preservesIdentifier"] = .bool(preserves) }
+            o["moveCapability"] = .object(capability)
+        }
         o["raw"] = .object(s.raw)
         return .object(o)
     }

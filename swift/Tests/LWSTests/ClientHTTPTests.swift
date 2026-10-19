@@ -68,7 +68,8 @@ import Testing
     @Test func discoverStorageFallsBackToGetAndAcceptsAnAnonymous401() async throws {
         server.on("HEAD", root) { _ in Respond.status(405, ("Allow", "GET")) }
         server.on("GET", root) { _ in
-            Respond.status(401, ("WWW-Authenticate", "Bearer realm=\"x\""), ("Link", "</>; rel=\"https://www.w3.org/ns/lws#storage\""))
+            Respond.status(401, ("WWW-Authenticate", "Bearer resource_metadata=\"/.well-known/oauth-protected-resource/root/\""),
+                           ("Link", "</>; rel=\"https://www.w3.org/ns/lws#storage\""))
         }
         server.on("GET", base + "/") { _ in Respond.json(200, Self.storageDescriptionJSON, contentType: "application/ld+json") }
         let s = try await client.discoverStorage(url(root))
@@ -356,6 +357,60 @@ import Testing
         #expect(patch.text.contains("/linkset/0/https:~1~1example.org~1rel~1reviewer/-"))
     }
 
+    // MARK: - Moving
+
+    @Test func moveReadsTheLinksetAndPatchesItsUpLink() async throws {
+        let note = root + "notes/a.txt"
+        let archive = root + "archive/"
+        server.on("HEAD", note) { _ in Respond.status(200, ("Link", "<a.txt.meta>; rel=\"linkset\"")) }
+        server.on("GET", note + ".meta") { _ in
+            Respond.json(200, #"{"linkset":[{"anchor":"/root/notes/a.txt","up":[{"href":"/root/notes/"}]}]}"#, contentType: "application/linkset+json",
+                         ("ETag", "\"ls-3\""))
+        }
+        server.on("PATCH", note + ".meta") { _ in
+            Respond.json(200, #"{"linkset":[{"anchor":"/root/archive/a.txt","up":[{"href":"/root/archive/"}]}]}"#, contentType: "application/linkset+json",
+                         ("Content-Location", "/root/archive/a.txt.meta"), ("ETag", "\"ls-4\""))
+        }
+        let m = try await client.move(url(note), to: url(archive))
+        #expect(m.status == 200)
+        #expect(m.location.absoluteString == archive + "a.txt")
+        #expect(m.linkset.absoluteString == archive + "a.txt.meta")
+        #expect(!m.identifierPreserved)
+        #expect(m.etag == "\"ls-4\"")
+        #expect(m.document?.contexts.first?.anchor == "/root/archive/a.txt")
+        #expect(server.requests.map(\.method) == ["HEAD", "GET", "PATCH"])
+        let patch = try #require(server.requests("PATCH", note + ".meta").first)
+        #expect(patch.header("Content-Type") == "application/json-patch+json")
+        #expect(patch.header("If-Match") == "\"ls-3\"")
+        #expect(try JSONValue(parsing: patch.body) == JSONPatch().test("/linkset/0/up/0/href", "/root/notes/").replace("/linkset/0/up/0/href", .string(archive)).json)
+
+        // ifMatch overrides the linkset's ETag; a 204 keeps the identifier.
+        server.on("PATCH", note + ".meta") { _ in Respond.status(204, ("ETag", "\"ls-5\"")) }
+        let kept = try await client.move(url(note), to: url(archive), options: MoveOptions(ifMatch: "\"mine\"", headers: ["X-Trace": "1"]))
+        #expect(kept.identifierPreserved)
+        #expect(kept.location.absoluteString == note)
+        #expect(kept.linkset.absoluteString == note + ".meta")
+        #expect(kept.etag == "\"ls-5\"")
+        #expect(kept.document == nil)
+        #expect(server.requests("PATCH", note + ".meta").last?.header("If-Match") == "\"mine\"")
+        #expect(server.requests.suffix(3).allSatisfy { $0.header("X-Trace") == "1" })
+    }
+
+    @Test func moveFailures() async throws {
+        let note = root + "notes/a.txt"
+        server.on("HEAD", note) { _ in Respond.status(200, ("Link", "<a.txt.meta>; rel=\"linkset\"")) }
+        server.on("GET", note + ".meta") { _ in Respond.json(200, #"{"linkset":[{"anchor":"/root/notes/a.txt"}]}"#, contentType: "application/linkset+json") }
+        // No up link: nothing is sent.
+        #expect(kind(await error { try await client.move(url(note), to: url(root + "archive/")) }) == "protocolError")
+        #expect(server.requests("PATCH", note + ".meta").isEmpty)
+        // A storage that refuses the move (no MoveResource, a container moved into itself, …).
+        server.on("GET", note + ".meta") { _ in Respond.json(200, #"{"linkset":[{"up":[{"href":"/root/notes/"}]}]}"#, contentType: "application/linkset+json") }
+        server.on("PATCH", note + ".meta") { _ in Respond.json(409, #"{"title":"Cannot move"}"#, contentType: "application/problem+json") }
+        #expect(kind(await error { try await client.move(url(note), to: url(root + "archive/")) }) == "conflict")
+        #expect(server.requests("PATCH", note + ".meta").first?.header("If-Match") == nil)
+        #expect(kind(await error { try await client.move(url(note), to: URL(string: "/root/archive/")!) }) == "invalidArgument")
+    }
+
     // MARK: - Notifications
 
     @Test func subscriptionLifecycle() async throws {
@@ -509,9 +564,10 @@ import Testing
     }
 
     @Test func unauthorizedCarriesTheChallenges() async throws {
-        server.on("GET", root) { _ in Respond.status(401, ("WWW-Authenticate", "Bearer as_uri=\"https://as.example\", realm=\"https://storage.example/\"")) }
+        let metadata = base + "/.well-known/oauth-protected-resource/root/"
+        server.on("GET", root) { _ in Respond.status(401, ("WWW-Authenticate", "Bearer resource_metadata=\"\(metadata)\", error=\"invalid_token\"")) }
         let e = await error { try await client.read(url(root)) }
-        #expect((e as? LWSError)?.httpError?.challenges.first?.asURI == "https://as.example")
+        #expect((e as? LWSError)?.httpError?.challenges.first?.resourceMetadata == metadata)
         #expect(kind(e) == "unauthorized")
         server.on("QUERY", base + "/s") { _ in Respond.status(415, ("Accept-Query", "application/lws-query+json")) }
         let u = await error { try await client.searchTypes(url(base + "/s"), query: .empty) }

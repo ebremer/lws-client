@@ -70,7 +70,7 @@ enum URLs {
         return h
     }
 
-    /// Whether two URLs share scheme, host and effective port.
+    /// Whether two URLs share scheme, host and effective port (scheme and host compared case-insensitively).
     static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
         a.scheme?.lowercased() == b.scheme?.lowercased() && host(a) == host(b) && effectivePort(a) == effectivePort(b)
     }
@@ -122,6 +122,14 @@ enum URLs {
         c.fragment = nil
         if c.percentEncodedPath.isEmpty, c.host != nil { c.percentEncodedPath = "/" }
         return c.string ?? withoutFragment(url.absoluteString)
+    }
+
+    /// Whether a protected resource metadata `resource` names the requested URL itself (lws10-core "Discovery
+    /// Validation by a Client"): identical once scheme and host are lower-cased and a default port is dropped, with no
+    /// other leniency (trailing slash, case of the path, percent-encoding).
+    static func isSameResource(_ resource: String, _ requested: URL) -> Bool {
+        guard let r = resolve(resource, against: nil) else { return false }
+        return canonical(r) == canonical(requested)
     }
 
     /// Compares two URI strings, ignoring one trailing slash.
