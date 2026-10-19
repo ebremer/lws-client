@@ -4,6 +4,8 @@ package com.ebremer.lws.kotlin
 import com.ebremer.lws.kotlin.http.Link
 import com.ebremer.lws.kotlin.internal.JsonAccess
 import com.ebremer.lws.kotlin.internal.Urls
+import com.ebremer.lws.kotlin.json.JsonPatch
+import com.ebremer.lws.kotlin.json.JsonPointer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -215,4 +217,27 @@ public class LinksetDocument(public val url: URI, public val linkset: Linkset, p
 
     /** Whether the linkset resource allows `PUT` (else update it with `PATCH`). */
     public val supportsPut: Boolean get() = allow.any { it.equals("PUT", ignoreCase = true) }
+
+    /**
+     * The JSON Patch that moves the resource into [destinationUrl] (lws10-core "Moving Resources", see
+     * [LwsClient.move]): a `test` that its `up` link still holds the target as read, and a `replace` of that target with
+     * the destination. The resource's link context is the first whose `anchor` resolves to [resourceUrl], or the only
+     * context when it has no anchor; its `up` link is the first `up` target.
+     *
+     * @throws ProtocolException when the linkset shows no `up` link of the resource
+     */
+    public fun movePatch(resourceUrl: URI, destinationUrl: URI): JsonPatch {
+        val contexts = linkset.contexts
+        val base = url.toString()
+        val resource = resourceUrl.toString()
+        var i = contexts.indexOfFirst { c -> c.anchor?.let { Urls.resolve(it, base) }?.let { Urls.sameResource(it, resource) } == true }
+        if (i < 0 && contexts.size == 1 && contexts[0].anchor == null) i = 0
+        if (i < 0) throw ProtocolException("The linkset $url does not describe $resourceUrl")
+        // The positions are those of the document as read, targets that are not links included.
+        val up = contexts[i].toJson()[LinkRelation.UP] as? JsonArray ?: JsonArray(emptyList())
+        val j = up.indexOfFirst { it is JsonObject && JsonAccess.str(it, "href") != null }
+        if (j < 0) throw ProtocolException("The linkset $url has no up link of $resourceUrl")
+        val path = JsonPointer.fromSegments("linkset", i, LinkRelation.UP, j, "href")
+        return JsonPatch().test(path, JsonAccess.str(up[j] as JsonObject, "href")!!).replace(path, destinationUrl.toString())
+    }
 }

@@ -160,7 +160,8 @@ public class InsufficientStorageException internal constructor(method: String, u
     HttpException(507, method, url, headers, body)
 
 /**
- * Authorization failed: the realm check, the authorization server's transport security or metadata, the
+ * Authorization failed: a discovery check (the protected resource metadata, the storage root, or the realm of a
+ * challenge of the drafts before 19 October 2026), the authorization server's transport security or metadata, the
  * credential provider, or the token exchange.
  *
  * @property oauthError the OAuth `error` of a token endpoint's error response (`invalid_grant`, …)

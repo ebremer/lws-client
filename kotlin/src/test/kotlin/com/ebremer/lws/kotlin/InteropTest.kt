@@ -25,6 +25,7 @@ import java.net.InetSocketAddress
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
@@ -50,6 +51,9 @@ class InteropTest {
         val grants = assertNotNull(storage.accessGrantService()).serviceEndpoint
         val typeIndex = assertNotNull(storage.typeIndexService()).serviceEndpoint
         val typeSearch = assertNotNull(storage.typeSearchService()).serviceEndpoint
+        val move = assertNotNull(storage.moveCapability())
+        assertTrue(move.movesDataResources && move.movesContainers)
+        assertEquals(false, move.preservesIdentifier)
         val root = storage.storageRoot()
 
         // 2. A container for this run.
@@ -134,7 +138,19 @@ class InteropTest {
         client.revokeAccessGrant(grantUrl)
         client.cancelAccessRequest(requestUrl)
 
-        // 13. Delete.
+        // 13. Move: the storage gives the moved resource a new URL; a container cannot move into its own descendant.
+        val d = client.createContainer(c, slug = "archive").location
+        val m = client.createText(c, "Move me", slug = "move-me.txt").location
+        val moved = client.move(m, d)
+        assertEquals(d.resolve("move-me.txt"), moved.location)
+        assertEquals(false, moved.identifierPreserved)
+        assertEquals(URI("${moved.location}.meta"), moved.linkset)
+        assertEquals("Move me", client.read(moved.location).text())
+        assertTrue(moved.location in client.listContainer(d).map { it.id }.toList())
+        assertFalse(m in client.listContainer(c).map { it.id }.toList())
+        assertFailsWith<ConflictException> { client.move(c, d) }
+
+        // 14. Delete.
         assertFailsWith<ConflictException> { client.delete(c) }
         client.delete(c, recursive = true)
         assertFailsWith<NotFoundException> { client.read(h) }

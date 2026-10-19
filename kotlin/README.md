@@ -1,10 +1,11 @@
 # LWS Client for Kotlin
 
 A client for the [W3C Linked Web Storage (LWS) Protocol 1.0](https://www.w3.org/TR/lws10-core/) and its companion
-specifications, as published by the LWS Working Group on 2026-10-05: discovery, resources and containers, linkset
-metadata, OAuth 2.0 token exchange with the OpenID Connect / SAML 2.0 / self-signed (controlled identifier,
-`did:key`) authentication suites, webhook notifications with RFC 9421 signature verification, access requests and
-grants, and the type index / type search services.
+specifications, as they stood on 2026-10-19 (the Working Draft of 19 October 2026, `w3c/lws-protocol` commit
+`9a08ff6`): discovery, resources and containers, moves between containers, linkset metadata, authorization server
+discovery through OAuth 2.0 protected resource metadata (RFC 9728) and OAuth 2.0 token exchange with the OpenID
+Connect / SAML 2.0 / self-signed (controlled identifier, `did:key`) authentication suites, webhook notifications with
+RFC 9421 signature verification, access requests and grants, and the type index / type search services.
 
 * Kotlin 2.2 or later on JDK 17 or later; depends on kotlinx-coroutines and kotlinx-serialization-json only
 * Operations are `suspend` functions, cancelled with the coroutine that calls them; options are named arguments
@@ -75,7 +76,15 @@ fun main() = runBlocking {
     client.listContainer(root).collect { item -> // follows rel="next" pages lazily
         println("${item.id} ${item.format}")
     }
-    client.delete(note)
+
+    // A move changes the note's up link; a storage that does not keep identifiers gives it a new URL.
+    if (storage.moveCapability()?.movesDataResources == true) {
+        val archive = client.createContainer(root, slug = "archive").location
+        val moved = client.move(note, archive)
+        client.delete(moved.location)
+    } else {
+        client.delete(note)
+    }
 }
 ```
 
@@ -96,6 +105,7 @@ signed notifications). Run them with `./gradlew -q quickstart --args=http://loca
 | Creating | `create`, `createText`, `createJson`, `createContainer` (`slug =`, `types =`, `links =`) |
 | Updating | `update`, `updateText`, `updateJson` (`ifMatch =`, `ifNoneMatch =`, `links =`, `setLinkset =`), `patch` (a `JsonPatch`, or bytes and a content type), `delete` (`ifMatch =`, `recursive =`) |
 | Linksets | `linksetUrl`, `readLinkset`, `readLinksetResource`, `updateLinkset`, `patchLinkset` |
+| Moving | `move(resource, destination)` (`ifMatch =`), a `MoveResult`; whether the storage allows it is `StorageDescription.moveCapability()` |
 | Notifications | `subscribe`, `listSubscriptions`, `getSubscription`, `unsubscribe`; `WebhookVerifier` |
 | Access | `requestAccess`, `listAccessRequests`, `getAccessRequest`, `cancelAccessRequest`, `grantAccess`, `listAccessGrants`, `getAccessGrant`, `revokeAccessGrant` |
 | Type index and search | `readTypeIndex`, `listTypes`, `searchTypes` (HTTP `QUERY`), `searchAll`, `acceptedQueryFormats` |
@@ -135,7 +145,7 @@ LwsException (sealed; a RuntimeException)
 │   ├── UnprocessableContentException  422
 │   ├── NotImplementedException        501
 │   └── InsufficientStorageException   507
-├── AuthenticationException       the token exchange failed: oauthError, oauthErrorDescription, status
+├── AuthenticationException       a discovery check or the token exchange failed: oauthError, oauthErrorDescription, status
 ├── ProtocolException             the server broke the specification (no Location, wrong media type, bad JSON)
 ├── SignatureVerificationException  a webhook delivery that does not verify
 └── TransportException            no response: refused, TLS, isTimeout
@@ -145,14 +155,43 @@ They are in `com.ebremer.lws.kotlin`. Arguments the caller gets wrong (a relativ
 in a `TypeQuery`, a header value with a line break) raise Kotlin's own `IllegalArgumentException`, before any
 request is sent. Cancelling the calling coroutine cancels the exchange in flight.
 
+## Moving resources
+
+LWS has no method for a move: a client changes the `up` link in the resource's linkset to the destination container,
+and the storage moves the resource (a container with everything in it) atomically. `move` reads the linkset, sends
+a JSON Patch that tests and replaces that link, conditional on the linkset's ETag, and reports where the resource is
+now:
+
+```kotlin
+val capability = storage.moveCapability()          // null: this storage moves nothing
+if (capability?.movesDataResources == true) {
+    val moved = client.move(note, archive)
+    println("${moved.location} ${moved.identifierPreserved}")  // a storage may give the resource a new URL
+}
+```
+
+`MoveCapability` has `appliesTo` (`["DataResource"]` when the storage does not say), `preservesIdentifier` (null
+when it does not say: then rely on `MoveResult.location`), `movesDataResources` and `movesContainers`. A refused
+move, such as a container into its own descendant, is a `ConflictException`. Notifications of a move are `Move`
+activities (`activity.isMove`, with `origin` and `target`).
+
 ## Authentication
 
-`TokenExchangeAuthenticator` runs the LWS flow: on a `401` with `WWW-Authenticate: Bearer as_uri="…", realm="…"` it
-checks that the request lies inside the realm and that the authorization server uses HTTPS (loopback hosts
-excepted), reads the server's metadata (never following a redirect), exchanges a subject token for an access
-token, and sends the request once more. Tokens are reused for every URL inside their realm until 30 seconds before
-they expire, and are never sent outside it, redirects included. Concurrent requests that meet the same challenge
-share one exchange.
+`TokenExchangeAuthenticator` runs the LWS flow. A `401` carries `WWW-Authenticate: Bearer resource_metadata="…"`
+and a `Link` to the storage that holds the resource; before it asks for a token, the authenticator checks that the
+protected resource metadata (RFC 9728) is on the requested origin, reads it and checks that it describes the URL
+requested, reads the storage description and checks that the storage root is on the requested origin too. Then it
+takes the first authorization server of the metadata that uses HTTPS (loopback hosts excepted) and that your
+`authorizationServerFilter` accepts, reads the server's metadata, exchanges a subject token for an access token for
+the storage, and sends the request once more. None of these requests follows a redirect, and a check that fails
+stops the flow before any credential is sent, without dropping a token that still works. Tokens are reused for
+every URL inside the storage and its root until 30 seconds before they expire, and are not sent ahead anywhere
+else, redirects included (the retry of a request whose own challenge passed the checks carries it). Concurrent
+requests that meet the same challenge share one exchange. Storage descriptions are cached until `clear()`.
+
+The `Bearer as_uri="…", realm="…"` challenge of the drafts before 19 October 2026 is still followed, for servers
+that have not moved to RFC 9728: the request must lie inside the realm, and the realm is the token's resource and
+scope.
 
 | Suite | Credentials |
 |---|---|
@@ -164,8 +203,9 @@ share one exchange.
 
 Keys round-trip as JWKs (`key.jwk()` and `SigningKey.fromJwk(jwk)`) and convert to and from JCA key pairs
 (`SigningKey.of(keyPair)`, `key.toKeyPair()`). Options of the flow: `allowInsecureHttp =` (testing only),
-`authorizationServerFilter =` (decide which servers may receive your credentials), `refreshMargin =`, `timeout =`,
-`transport =`, `clock =`. Keys, tokens and credentials stay out of `toString()`.
+`authorizationServerFilter =` (`{ issuer, storage -> … }`: decide which servers may receive your credentials),
+`refreshMargin =`, `timeout =`, `transport =`, `clock =`. A credential provider is asked with a `CredentialContext`
+of `issuer`, `storage` and the server's `metadata`. Keys, tokens and credentials stay out of `toString()`.
 
 ## Webhooks
 
@@ -201,7 +241,7 @@ The client follows redirects itself, authorizing each hop for its own URL, so a 
 
 ```sh
 cd kotlin
-./gradlew build                                       # tests (fixtures, HTTP, auth flow, webhook vectors), examples, jars
+./gradlew build                                       # tests (fixtures, HTTP, auth flow and discovery, moves, webhook vectors), examples, jars
 node ../testing/mock-server/server.mjs --port 8787 &
 LWS_TEST_SERVER=http://localhost:8787 ./gradlew test  # adds the cross-language interop scenario
 ./gradlew -q quickstart --args=http://localhost:8787/root/

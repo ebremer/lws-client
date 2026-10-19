@@ -7,6 +7,7 @@ import com.ebremer.lws.kotlin.http.HttpResponse
 import com.ebremer.lws.kotlin.http.HttpTransport
 import com.ebremer.lws.kotlin.internal.JsonAccess
 import kotlinx.serialization.json.JsonElement
+import java.net.URLDecoder
 import java.util.Collections
 
 /** A transport that answers with a handler and records every request. */
@@ -39,3 +40,7 @@ class FakeTransport(private val handler: suspend (HttpRequest) -> HttpResponse) 
 
 /** The body of a recorded request as text. */
 val HttpRequest.text: String? get() = body?.toString(Charsets.UTF_8)
+
+/** The body of a recorded request as an `application/x-www-form-urlencoded` form. */
+val HttpRequest.form: Map<String, String>
+    get() = text!!.split('&').associate { p -> p.substringBefore('=') to URLDecoder.decode(p.substringAfter('='), Charsets.UTF_8) }

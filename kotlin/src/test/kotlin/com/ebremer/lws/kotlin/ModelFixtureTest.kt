@@ -8,6 +8,7 @@ import com.ebremer.lws.kotlin.access.AccessTarget
 import com.ebremer.lws.kotlin.access.Constraint
 import com.ebremer.lws.kotlin.auth.AccessToken
 import com.ebremer.lws.kotlin.auth.AuthorizationServerMetadata
+import com.ebremer.lws.kotlin.auth.ProtectedResourceMetadata
 import com.ebremer.lws.kotlin.http.Headers
 import com.ebremer.lws.kotlin.internal.JsonAccess
 import com.ebremer.lws.kotlin.internal.Urls
@@ -16,10 +17,14 @@ import com.ebremer.lws.kotlin.notify.Subscription
 import com.ebremer.lws.kotlin.notify.WebhookSubscriptionRequest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestFactory
 import java.net.URI
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -65,6 +70,25 @@ class ModelFixtureTest {
         assertEquals(c.str("serviceEndpoint"), custom.serviceEndpoint.toString())
         assertNotNull(sd.capability("https://feature.example/PatchSupport"))
         assertTrue(sd.hasType("https://www.w3.org/ns/lws#Storage"))
+        assertMoveCapability(e.obj("moveCapability"), sd.moveCapability(), "body")
+    }
+
+    @Test
+    fun moveCapabilitiesFixture() {
+        for (c in Fixtures.load("responses/storage-description.json").arr("moveCapabilities").map { it.jsonObject }) {
+            val members = mapOf("id" to JsonPrimitive("https://storage.example/"), "type" to JsonPrimitive("Storage"))
+            val capability = c["capability"]?.takeIf { it != JsonNull }?.let { mapOf("capability" to it) } ?: emptyMap()
+            val move = StorageDescription.parse(JsonObject(members + capability)).moveCapability()
+            val x = c["expected"] as? JsonObject
+            if (x == null) assertNull(move, c.str("name")) else assertMoveCapability(x, move, c.str("name"))
+        }
+    }
+
+    private fun assertMoveCapability(x: JsonObject, move: MoveCapability?, name: String) {
+        assertNotNull(move, name)
+        assertEquals(x.strings("appliesTo"), move.appliesTo, name)
+        assertEquals((x["preservesIdentifier"] as? JsonPrimitive)?.booleanOrNull, move.preservesIdentifier, name)
+        assertEquals(listOf(x.bool("movesDataResources"), x.bool("movesContainers")), listOf(move.movesDataResources, move.movesContainers), name)
     }
 
     @Test
@@ -156,7 +180,7 @@ class ModelFixtureTest {
     @Test
     fun notificationFixture() {
         val f = Fixtures.load("responses/notification.json")
-        for (key in listOf("single", "batch")) {
+        for (key in listOf("single", "batch", "move")) {
             val n = Notification.parse(f.obj(key))
             val e = f.obj(key + "Expected")
             assertEquals(e.str("storage"), n.storage.toString())
@@ -170,6 +194,7 @@ class ModelFixtureTest {
                 if ("isCreate" in x) assertEquals(x.bool("isCreate"), a.isCreate)
                 if ("isUpdate" in x) assertEquals(x.bool("isUpdate"), a.isUpdate)
                 if ("isDelete" in x) assertEquals(x.bool("isDelete"), a.isDelete)
+                if ("isMove" in x) assertEquals(x.bool("isMove"), a.isMove)
                 if ("objectTypes" in x) assertEquals(x.strings("objectTypes"), a.`object`.types)
                 x.strOrNull("origin")?.let { assertEquals(it, a.origin.toString()) }
                 x.strOrNull("target")?.let { assertEquals(it, a.target.toString()) }
@@ -272,6 +297,49 @@ class ModelFixtureTest {
         val md = AuthorizationServerMetadata.parse(f.obj("metadata"), URI("https://authorization.example/.well-known/lws-configuration"))
         assertTrue(Urls.isHttp(md.tokenEndpoint.toString()))
         assertTrue(md.raw.isNotEmpty())
+    }
+
+    @Test
+    fun protectedResourceMetadataFixture() {
+        val f = Fixtures.load("responses/oauth.json")
+        val prm = f.obj("protectedResourceMetadata")
+        val parsed = ProtectedResourceMetadata.parse(prm.obj("body"))
+        assertEquals(prm.obj("expected").str("resource"), parsed.resource)
+        assertEquals(prm.obj("expected").strings("authorizationServers"), parsed.authorizationServers)
+        assertEquals(prm.obj("body"), parsed.raw)
+        for ((name, body) in f.obj("protectedResourceMetadataInvalid")) {
+            if (name != "description") assertFailsWith<ProtocolException>(name) { ProtectedResourceMetadata.parse(body) }
+        }
+        assertFailsWith<ProtocolException> { ProtectedResourceMetadata.parse(json("""{"resource":"https://s.example/a","authorization_servers":["https://as.example",1]}""")) }
+        // The comparisons of the discovery checks: the same origin, and the same resource.
+        for (c in f.arr("originChecks").map { it.jsonObject }) assertEquals(c.bool("sameOrigin"), Urls.sameOrigin(c.str("a"), c.str("b")), c.toString())
+        for (c in f.arr("resourceChecks").map { it.jsonObject }) assertEquals(c.bool("identical"), Urls.sameResource(c.str("requested"), c.str("resource")), c.toString())
+    }
+
+    @TestFactory
+    fun movePatchFixture(): List<DynamicTest> = Fixtures.cases("move.json", "patches") { case ->
+        val url = URI(case.str("linksetUrl"))
+        val doc = LinksetDocument(url, Linkset.parse(case.obj("linkset")), ResourceMetadata(url, 200, Headers.EMPTY))
+        val move = { doc.movePatch(URI(case.str("resource")), URI(case.str("destination"))) }
+        if (case["expected"] is JsonArray) {
+            assertEquals(case.arr("expected"), move().toJson())
+        } else {
+            assertEquals("ProtocolError", case.str("error"))
+            assertFailsWith<ProtocolException> { move() }
+        }
+    }
+
+    @TestFactory
+    fun moveResponseFixture(): List<DynamicTest> = Fixtures.cases("move.json", "responses") { case ->
+        val body = case["body"]?.takeIf { it != JsonNull }
+        val metadata = metadata(case.str("linksetUrl"), case.longOrNull("status")!!.toInt(), case.obj("headers"))
+        val r = MoveResult.fromResponse(URI(case.str("resource")), metadata, body?.let { JsonAccess.encode(it).toByteArray() } ?: ByteArray(0))
+        val x = case.obj("expected")
+        assertEquals(listOf(x.str("location"), x.str("linkset")), listOf(r.location.toString(), r.linkset.toString()))
+        assertEquals(x.bool("identifierPreserved"), r.identifierPreserved)
+        assertEquals(x.strOrNull("etag"), r.etag)
+        assertEquals(case.longOrNull("status")!!.toInt(), r.status)
+        assertEquals(body, r.document?.toJson())
     }
 
     @Test

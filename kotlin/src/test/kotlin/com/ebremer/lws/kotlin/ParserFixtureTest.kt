@@ -96,6 +96,7 @@ class ParserFixtureTest {
             assertTrue(challenges[i].isScheme(exp.str("scheme")))
             assertEquals(exp.obj("params").mapValues { it.value.str }, challenges[i].params)
             assertEquals(exp.strOrNull("token68"), challenges[i].token68)
+            assertEquals(exp.obj("params").strOrNull("resource_metadata"), challenges[i].resourceMetadata)
         }
     }
 
@@ -105,6 +106,8 @@ class ParserFixtureTest {
         assertTrue(ch.isScheme("bearer"))
         assertEquals(listOf("https://as.example", "https://s.example/", "invalid_token", "expired"), listOf(ch.asUri, ch.realm, ch.error, ch.errorDescription))
         assertEquals("https://as.example", ch.param("AS_URI"))
+        val rm = WwwAuthenticate.parse("Bearer resource_metadata=\"https://s.example/.well-known/oauth-protected-resource/a\", error=\"invalid_token\"").single()
+        assertEquals(listOf("https://s.example/.well-known/oauth-protected-resource/a", null, null, "invalid_token"), listOf(rm.resourceMetadata, rm.asUri, rm.realm, rm.error))
     }
 
     private fun bare(v: SfBareItem): JsonObject = JsonObject(

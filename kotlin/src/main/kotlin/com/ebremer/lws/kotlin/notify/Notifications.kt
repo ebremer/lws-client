@@ -83,7 +83,11 @@ public class ActivityObject(public val id: URI, public val types: List<String> =
     override fun toString(): String = id.toString()
 }
 
-/** One activity of a notification: `Create`, `Update` or `Delete` of a resource. */
+/**
+ * One activity of a notification: `Create`, `Update`, `Delete` or `Move` of a resource. A `Move` (from a storage that
+ * allows moves) has the container the resource left as [origin], the one it joined as [target], and the resource as
+ * it is after the move as its object.
+ */
 public class Activity(
     public val id: String?,
     public val types: List<String>,
@@ -101,6 +105,8 @@ public class Activity(
     public val isUpdate: Boolean get() = hasType(ActivityType.UPDATE)
 
     public val isDelete: Boolean get() = hasType(ActivityType.DELETE)
+
+    public val isMove: Boolean get() = hasType(ActivityType.MOVE)
 
     /** Whether the activity has a type (`Update`, `as:Update` and the full Activity Streams IRI are equal). */
     public fun hasType(type: String): Boolean =

@@ -10,10 +10,15 @@ package com.ebremer.lws.kotlin
 public object Vocabulary {
     public const val LWS_NS: String = "https://www.w3.org/ns/lws#"
     public const val LWS_CONTEXT: String = "https://www.w3.org/ns/lws/v1"
+
+    /** The LWS profile: the `profile` parameter of an RDF media type whose representation is the LWS one. */
+    public const val LWS_PROFILE: String = "https://www.w3.org/ns/lws/v1"
+
     public const val CID_CONTEXT: String = "https://www.w3.org/ns/cid/v1"
     public const val ACTIVITYSTREAMS_CONTEXT: String = "https://www.w3.org/ns/activitystreams"
     public const val GRANT_TYPE_TOKEN_EXCHANGE: String = "urn:ietf:params:oauth:grant-type:token-exchange"
     public const val WELL_KNOWN_LWS_CONFIGURATION: String = "/.well-known/lws-configuration"
+    public const val WELL_KNOWN_OAUTH_PROTECTED_RESOURCE: String = "/.well-known/oauth-protected-resource"
     public const val OPENID_PROVIDER_SERVICE: String = "https://www.w3.org/ns/lws#OpenIdProvider"
     public const val ACCESS_PROFILE: String = "https://www.w3.org/ns/lws#AccessProfile"
     public const val PUBLIC_AGENT: String = "http://xmlns.com/foaf/0.1/Agent"
@@ -84,6 +89,11 @@ public object ServiceType {
     public const val TYPE_SEARCH: String = "TypeSearchService"
 }
 
+/** Capability types of a storage description (`capability[].type`). */
+public object CapabilityType {
+    public const val MOVE_RESOURCE: String = "MoveResource"
+}
+
 /** Notification subscription types. */
 public object SubscriptionType {
     public const val WEBHOOK: String = "WebhookSubscription"
@@ -133,4 +143,5 @@ public object ActivityType {
     public const val CREATE: String = "Create"
     public const val UPDATE: String = "Update"
     public const val DELETE: String = "Delete"
+    public const val MOVE: String = "Move"
 }

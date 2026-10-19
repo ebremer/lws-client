@@ -18,9 +18,9 @@ object Fixtures {
 
     fun load(name: String): JsonObject = Json.parseToJsonElement(File(dir, name).readText()).jsonObject
 
-    /** One dynamic test per case of a fixture's `cases` array, named after the case. */
-    fun cases(name: String, test: (JsonObject) -> Unit): List<DynamicTest> =
-        load(name)["cases"]!!.jsonArray.map { c ->
+    /** One dynamic test per case of a fixture's `cases` array (or another array of named cases), named after the case. */
+    fun cases(name: String, key: String = "cases", test: (JsonObject) -> Unit): List<DynamicTest> =
+        load(name)[key]!!.jsonArray.map { c ->
             val case = c.jsonObject
             DynamicTest.dynamicTest(case["name"]!!.jsonPrimitive.content) { test(case) }
         }

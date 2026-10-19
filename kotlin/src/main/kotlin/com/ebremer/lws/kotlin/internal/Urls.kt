@@ -179,8 +179,8 @@ internal object Urls {
     fun query(url: String): String = parse(url).query?.let { "?$it" } ?: ""
 
     /**
-     * Whether [url] is logically contained in [realm]: same origin, and the path equals the realm path or lies
-     * beneath it (the realm path is treated as a directory).
+     * Whether [url] is logically contained in [realm] (a realm, or the scope of a token): same origin, and the path
+     * equals the realm path or lies beneath it (the realm path is treated as a directory).
      */
     fun contains(realm: String, url: String): Boolean {
         if (!sameOrigin(realm, url)) return false
@@ -218,6 +218,12 @@ internal object Urls {
         if (port != null && port != defaultPort(scheme)) authority += ":$port"
         return scheme + "://" + authority + c.path.ifEmpty { "/" } + (c.query?.let { "?$it" } ?: "")
     }
+
+    /**
+     * Whether two URLs identify the same resource: equal once scheme and host are lower-cased and default ports
+     * dropped, and nothing else (no trailing slash, case or percent-encoding leniency).
+     */
+    fun sameResource(a: String, b: String): Boolean = canonical(a) == canonical(b)
 
     /** Compares two URI strings, ignoring one trailing slash on each. */
     fun equalsIgnoringTrailingSlash(a: String, b: String): Boolean = a.removeSuffix("/") == b.removeSuffix("/")

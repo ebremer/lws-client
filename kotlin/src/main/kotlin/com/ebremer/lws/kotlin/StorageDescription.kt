@@ -54,6 +54,12 @@ public class StorageDescription(
 
     public fun typeSearchService(): Service? = service(ServiceType.TYPE_SEARCH)
 
+    /**
+     * The storage's `MoveResource` capability, or null when it describes none: then the `up` link is not modifiable,
+     * and resources cannot be moved.
+     */
+    public fun moveCapability(): MoveCapability? = capability(CapabilityType.MOVE_RESOURCE)?.let { MoveCapability.parse(it.raw) }
+
     public fun hasType(type: String): Boolean = Vocabulary.hasType(types, type)
 
     /**
@@ -149,6 +155,42 @@ public class Capability(public val id: URI?, public val types: List<String>, pub
     public fun hasType(type: String): Boolean = Vocabulary.hasType(types, type)
 
     public fun property(name: String): JsonElement? = raw[name]
+}
+
+/**
+ * A storage's `MoveResource` capability (lws10-core "Storage Description Capabilities"): which resources can move
+ * between containers by a change of their `up` link ([LwsClient.move]), and whether they keep their identifiers.
+ *
+ * @property appliesTo the types of resource it applies to, as received (`["DataResource"]` when it does not say)
+ * @property preservesIdentifier whether a moved resource keeps its URL; null when it does not say, and then a client
+ *     must not assume so, and takes the URL from the answer to the move
+ * @property raw the capability object
+ */
+public class MoveCapability(
+    public val appliesTo: List<String>,
+    public val preservesIdentifier: Boolean? = null,
+    public val raw: JsonObject = JsonObject(emptyMap()),
+) {
+    /** Whether data resources can be moved. */
+    public val movesDataResources: Boolean get() = Vocabulary.hasType(appliesTo, ResourceType.DATA_RESOURCE)
+
+    /** Whether containers can be moved, with everything in them. */
+    public val movesContainers: Boolean get() = Vocabulary.hasType(appliesTo, ResourceType.CONTAINER)
+
+    override fun toString(): String = "MoveCapability(appliesTo=$appliesTo, preservesIdentifier=$preservesIdentifier)"
+
+    public companion object {
+        /**
+         * Reads a `MoveResource` capability object. Without `appliesTo` (or with one that is neither a string nor an
+         * array) it applies to data resources only.
+         */
+        public fun parse(capability: JsonObject): MoveCapability {
+            val appliesTo = capability["appliesTo"]
+            val stated = appliesTo is JsonArray || (appliesTo is JsonPrimitive && appliesTo.isString)
+            val types = if (stated) JsonAccess.strings(appliesTo) else listOf("DataResource")
+            return MoveCapability(types, JsonAccess.bool(capability, "preservesIdentifier"), capability)
+        }
+    }
 }
 
 /** A verification method of a controlled identifier document (`JsonWebKey` with `publicKeyJwk`). */

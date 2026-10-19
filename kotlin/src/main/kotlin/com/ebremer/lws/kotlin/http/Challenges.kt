@@ -24,10 +24,16 @@ public class AuthChallenge(public val scheme: String, params: Map<String, String
     /** A parameter by name (case-insensitive), or null. */
     public fun param(name: String): String? = params[name.lowercase()]
 
-    /** The LWS `as_uri` parameter: the authorization server to obtain a token from. */
+    /**
+     * The `resource_metadata` parameter (RFC 9728): the URL of the requested resource's protected resource metadata,
+     * which names the authorization servers.
+     */
+    public val resourceMetadata: String? get() = params["resource_metadata"]
+
+    /** The `as_uri` parameter of the drafts before 19 October 2026: the authorization server to obtain a token from. */
     public val asUri: String? get() = params["as_uri"]
 
-    /** The `realm` parameter: the protection space the token is for. */
+    /** The `realm` parameter: the protection space (the storage, in the LWS challenge of the drafts before 19 October 2026). */
     public val realm: String? get() = params["realm"]
 
     /** The `error` parameter (`invalid_token`, …). */
@@ -46,7 +52,7 @@ public class AuthChallenge(public val scheme: String, params: Map<String, String
 
 /**
  * Parses `WWW-Authenticate` fields (RFC 9110 section 11.6.1), including several challenges in one field value
- * (`Bearer as_uri="…", realm="…", DPoP algs="ES256"`).
+ * (`Bearer resource_metadata="…", error="invalid_token", DPoP algs="ES256"`).
  */
 public object WwwAuthenticate {
     private const val TOKEN = "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"

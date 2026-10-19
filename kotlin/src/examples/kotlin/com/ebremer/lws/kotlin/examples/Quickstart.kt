@@ -55,6 +55,13 @@ fun main(args: Array<String>) = runBlocking {
         println("  ${item.id} ${item.format}")
     }
 
+    // A move changes the note's up link; a storage that does not keep identifiers gives it a new URL.
+    if (storage.moveCapability()?.movesDataResources == true) {
+        val archive = client.createContainer(folder, slug = "archive").location
+        val moved = client.move(note, archive)
+        println("Moved to ${moved.location} (identifier kept: ${moved.identifierPreserved})")
+    }
+
     client.delete(folder, recursive = true) // Depth: infinity
     println("Deleted $folder")
 }

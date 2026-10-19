@@ -50,7 +50,7 @@ import kotlin.time.Duration.Companion.seconds
  * [IllegalArgumentException] before any request is sent.
  *
  * Redirects are followed by the client itself (at most [maxRedirects]), authorizing every hop afresh for its own
- * URL, so that an access token never leaves its realm. `POST` is never sent twice, except for the single retry after
+ * URL, so that an access token never leaves its scope. `POST` is never sent twice, except for the single retry after
  * a `401` that the authenticator handled (when nothing was created). Instances are immutable and safe to share.
  *
  * @param authenticator how requests are authenticated (null: anonymous)
@@ -386,6 +386,39 @@ public class LwsClient(
     ): UpdateResult = patch(linksetUrl, patch, ifMatch, headers = headers, timeout = timeout)
 
     // ------------------------------------------------------------------------------------------------
+    // Moving
+
+    /**
+     * Moves a resource, or a container with everything in it, into another container (lws10-core "Moving Resources"):
+     * reads the resource's linkset and patches its `up` link to [destinationUrl] (JSON Patch, see
+     * [LinksetDocument.movePatch]), conditional on the linkset's ETag. The resource may get a new URL,
+     * [MoveResult.location]. Whether the storage allows moves, and of what, is [StorageDescription.moveCapability]; a
+     * storage that does not refuses the patch.
+     *
+     * @param destinationUrl the container to move the resource into
+     * @param ifMatch the ETag the linkset must still have (default: its ETag as read)
+     * @throws ProtocolException when the linkset shows no `up` link of the resource
+     * @throws ConflictException when the storage refuses the move (it allows none of the kind, the destination is not a
+     *     container, or a container would move into itself)
+     */
+    public suspend fun move(
+        resourceUrl: URI,
+        destinationUrl: URI,
+        ifMatch: String? = null,
+        headers: Map<String, String> = emptyMap(),
+        timeout: Duration? = null,
+    ): MoveResult {
+        val resource = Urls.requireHttp(resourceUrl, "resourceUrl")
+        val destination = Urls.requireHttp(destinationUrl, "destinationUrl")
+        val doc = readLinkset(resource, headers, timeout)
+        val patch = doc.movePatch(resource, destination)
+        val h = Headers.of("Content-Type" to MediaType.JSON_PATCH).with("If-Match", ifMatch ?: doc.etag)
+        val r = call("PATCH", doc.url, patch.encode().toByteArray(Charsets.UTF_8), h, headers, timeout)
+        check(r)
+        return MoveResult.fromResponse(resource, metadata(r), r.body)
+    }
+
+    // ------------------------------------------------------------------------------------------------
     // Notifications
 
     /**
@@ -577,7 +610,7 @@ public class LwsClient(
             var attempt = prepare(m, u, h, userAuth)
             var response = dispatch(attempt, b, limit)
             if (response.status == 401 && authenticator != null && authenticator.handleChallenge(attempt, AuthResponse(u, 401, response.headers))) {
-                attempt = prepare(m, u, h, userAuth)
+                attempt = prepare(m, u, h, userAuth, attempt)
                 response = dispatch(attempt, b, limit)
             }
             val answer = Answer(m, u, response.status, response.headers, response.body)
@@ -603,13 +636,21 @@ public class LwsClient(
         }
     }
 
-    private suspend fun prepare(method: String, url: URI, callHeaders: Headers, keepUserAuthorization: Boolean): AuthRequest {
+    /** The request of one attempt, authorized; [challenged] is the request a handled `401` answered, for its retry. */
+    private suspend fun prepare(
+        method: String,
+        url: URI,
+        callHeaders: Headers,
+        keepUserAuthorization: Boolean,
+        challenged: AuthRequest? = null,
+    ): AuthRequest {
         var h = defaultHeaders
         if (userAgent != null && "User-Agent" !in h && "User-Agent" !in callHeaders) h = h.with("User-Agent", userAgent)
         h = h.merge(callHeaders)
         if (!keepUserAuthorization) h = h.without("Authorization")
         val request = AuthRequest(method, url, h)
-        return authenticator?.authorize(request) ?: request
+        val a = authenticator ?: return request
+        return if (challenged == null) a.authorize(request) else a.authorizeRetry(request, challenged)
     }
 
     private suspend fun dispatch(attempt: AuthRequest, body: ByteArray?, timeout: Duration?): HttpResponse =
@@ -689,7 +730,7 @@ public class LwsClient(
         public const val VERSION: String = "0.1.0"
         public const val DEFAULT_USER_AGENT: String = "lws-client-kotlin/$VERSION"
 
-        private const val ACCEPT_DESCRIPTION = "${MediaType.LWS_CID}, ${MediaType.LD_JSON};q=0.9, ${MediaType.JSON};q=0.8"
+        internal const val ACCEPT_DESCRIPTION: String = "${MediaType.LWS_CID}, ${MediaType.LD_JSON};q=0.9, ${MediaType.JSON};q=0.8"
         private const val ACCEPT_LINKSET = "${MediaType.LINKSET_JSON}, ${MediaType.JSON};q=0.5"
         private val REDIRECTS = setOf(301, 302, 303, 307, 308)
         private val SAFE_METHODS = setOf("GET", "HEAD", "OPTIONS", "QUERY")

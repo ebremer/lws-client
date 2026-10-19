@@ -271,6 +271,53 @@ class ClientHttpTest {
     }
 
     @Test
+    fun moveReadsTheLinksetAndPatchesItsUpLink() = runTest {
+        var refuse = false
+        val client = client { r ->
+            when (r.method to r.url.toString()) {
+                "HEAD" to S + "alice/notes/list.txt" -> response(r, 200, "Link" to "<list.txt.meta>; rel=\"linkset\"")
+                "HEAD" to S + "alice/b.txt" -> response(r, 200, "Link" to "<b.txt.meta>; rel=\"linkset\"")
+                "GET" to S + "alice/b.txt.meta" -> response(r, 200, "Content-Type" to "application/linkset+json", body = json("""{"linkset":[{"anchor":"/alice/b.txt"}]}"""))
+                "GET" to S + "alice/notes/list.txt.meta" -> response(
+                    r, 200, "Content-Type" to "application/linkset+json", "ETag" to "\"meta-v3\"",
+                    body = json("""{"linkset":[{"anchor":"/alice/notes/list.txt","up":[{"href":"/alice/notes/"}]}]}"""),
+                )
+                "PATCH" to S + "alice/notes/list.txt.meta" -> when {
+                    refuse -> response(r, 409, "Content-Type" to "application/problem+json", body = json("""{"title":"Cannot move a container into itself"}"""))
+                    r.headers["if-match"] != "\"meta-v3\"" -> response(r, 412)
+                    else -> response(
+                        r, 200, "Content-Type" to "application/linkset+json", "Content-Location" to "/alice/archive/list.txt.meta", "ETag" to "\"meta-v4\"",
+                        body = json("""{"linkset":[{"anchor":"/alice/archive/list.txt","up":[{"href":"/alice/archive/"}]}]}"""),
+                    )
+                }
+                else -> response(r, 404)
+            }
+        }
+        val moved = client.move(s("alice/notes/list.txt"), s("alice/archive/"))
+        assertEquals(listOf<Any?>(200, s("alice/archive/list.txt"), s("alice/archive/list.txt.meta"), false, "\"meta-v4\""),
+            listOf(moved.status, moved.location, moved.linkset, moved.identifierPreserved, moved.etag))
+        assertEquals(s("alice/archive/"), moved.document?.contexts?.single()?.targets("up")?.single()?.href?.let { s(it.removePrefix("/")) })
+        assertEquals(listOf("HEAD", "GET", "PATCH"), t.methods)
+        assertEquals(listOf("application/json-patch+json", "\"meta-v3\""), listOf(t.last.headers["content-type"], t.last.headers["if-match"]))
+        assertEquals(
+            """[{"op":"test","path":"/linkset/0/up/0/href","value":"/alice/notes/"},""" +
+                """{"op":"replace","path":"/linkset/0/up/0/href","value":"https://storage.example/alice/archive/"}]""",
+            t.last.text,
+        )
+        // ifMatch overrides the linkset's ETag; a refused move is the storage's error.
+        assertFailsWith<PreconditionFailedException> { client.move(s("alice/notes/list.txt"), s("alice/archive/"), ifMatch = "\"stale\"") }
+        assertEquals("\"stale\"", t.last.headers["if-match"])
+        refuse = true
+        assertEquals("Cannot move a container into itself", assertFailsWith<ConflictException> { client.move(s("alice/notes/list.txt"), s("alice/notes/")) }.problem?.title)
+        // A linkset without the resource's up link: nothing is patched.
+        t.requests.clear()
+        assertFailsWith<ProtocolException> { client.move(s("alice/b.txt"), s("alice/archive/")) }
+        assertEquals(listOf("HEAD", "GET"), t.methods)
+        assertFailsWith<IllegalArgumentException> { client.move(s("alice/b.txt"), URI("archive/")) }
+        assertEquals(2, t.requests.size)
+    }
+
+    @Test
     fun subscriptions() = runTest {
         val sd = Fixtures.load("responses/storage-description.json")
         val sub = Fixtures.load("responses/subscription.json")

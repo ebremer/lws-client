@@ -7,6 +7,7 @@ import com.ebremer.lws.kotlin.http.LinkHeader
 import com.ebremer.lws.kotlin.internal.Dates
 import com.ebremer.lws.kotlin.internal.HeaderLists
 import com.ebremer.lws.kotlin.internal.JsonAccess
+import com.ebremer.lws.kotlin.internal.Urls
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -150,6 +151,57 @@ public class UpdateResult(public val status: Int, public val metadata: ResourceM
     public val body: ByteArray get() = content.copyOf()
 
     override fun toString(): String = "${metadata.url} ($status)"
+}
+
+/**
+ * The result of a move ([LwsClient.move]): where the resource and its linkset are now. A storage that keeps identifiers
+ * answers `204` (or `200` with the linkset); one that does not answers `200` with the linkset under the resource's new
+ * identifier, and the linkset's new URL as `Content-Location`.
+ *
+ * @property status the status of the answer to the patch
+ * @property location the resource after the move (absolute)
+ * @property linkset its linkset resource after the move (absolute)
+ * @property identifierPreserved whether [location] is the URL the resource had
+ * @property metadata the metadata of the answer
+ * @property document the linkset in a `200`'s body, if there was one
+ */
+public class MoveResult(
+    public val status: Int,
+    public val location: URI,
+    public val linkset: URI,
+    public val identifierPreserved: Boolean,
+    public val metadata: ResourceMetadata,
+    public val document: Linkset? = null,
+) {
+    /** The linkset's new ETag. */
+    public val etag: String? get() = metadata.etag
+
+    override fun toString(): String = "$location ($status)"
+
+    public companion object {
+        /**
+         * Reads the answer to the patch that moved [resourceUrl]; [metadata] is the answer's, its URL the linkset's.
+         * The new identifier is the anchor of the first context with an `up` link in a `200`'s linkset, resolved against
+         * `Content-Location` (the linkset's new URL); without one, the identifier is kept.
+         *
+         * @throws ProtocolException when a `200` has a JSON body that is not a linkset, or a URL in it does not resolve
+         */
+        public fun fromResponse(resourceUrl: URI, metadata: ResourceMetadata, body: ByteArray = ByteArray(0)): MoveResult {
+            val contentLocation = metadata.header("content-location")?.let {
+                Urls.resolveUri(it, metadata.url) ?: throw ProtocolException("Invalid Content-Location header: $it")
+            }
+            val linkset = contentLocation ?: metadata.url
+            val hasLinkset = metadata.status == 200 && String(body, Charsets.UTF_8).isNotBlank() &&
+                HeaderLists.isJson(metadata.contentType ?: MediaType.LINKSET_JSON)
+            val document = if (hasLinkset) Linkset.parse(JsonAccess.parse(body, "The linkset")) else null
+            val anchor = document?.contexts?.firstOrNull { it.targets(LinkRelation.UP).isNotEmpty() }?.anchor
+            val location = anchor?.let {
+                Urls.resolveUri(it, linkset) ?: throw ProtocolException("Invalid anchor in the linkset from ${metadata.url}: $it")
+            } ?: resourceUrl
+            val preserved = Urls.sameResource(location.toString(), resourceUrl.toString())
+            return MoveResult(metadata.status, location, linkset, preserved, metadata, document)
+        }
+    }
 }
 
 /** A byte range to read (`Range: bytes=…`): `ByteRange.of(0, 1023)`, `ByteRange.from(1024)`, `ByteRange.last(500)`. */

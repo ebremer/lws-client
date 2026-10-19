@@ -25,6 +25,7 @@ import com.ebremer.lws.kotlin.InsufficientStorageException
 import com.ebremer.lws.kotlin.Linkset
 import com.ebremer.lws.kotlin.LwsClient
 import com.ebremer.lws.kotlin.MethodNotAllowedException
+import com.ebremer.lws.kotlin.MoveResult
 import com.ebremer.lws.kotlin.NotAcceptableException
 import com.ebremer.lws.kotlin.NotFoundException
 import com.ebremer.lws.kotlin.NotImplementedException
@@ -323,6 +324,15 @@ fun updateResult(u: UpdateResult): JsonObject = members("status" to u.status, "e
 
 fun createdResult(c: CreateResult): JsonObject = members("location" to c.location, "metadata" to metadataResult(c.metadata))
 
+fun movedResult(m: MoveResult): JsonObject = members(
+    "status" to m.status,
+    "location" to m.location,
+    "linkset" to m.linkset,
+    "identifierPreserved" to m.identifierPreserved,
+    "etag" to m.etag,
+    "metadata" to metadataResult(m.metadata),
+)
+
 fun serviceResult(s: Service): JsonObject = members(
     "id" to s.id,
     "types" to s.types,
@@ -342,6 +352,7 @@ fun storageResult(s: StorageDescription): JsonObject {
         "storageRoot" to root,
         "services" to s.services.map(::serviceResult),
         "verificationMethods" to s.verificationMethods.map { members("id" to it.id, "type" to it.type, "controller" to it.controller) },
+        "moveCapability" to s.moveCapability()?.let { members("appliesTo" to it.appliesTo, "preservesIdentifier" to it.preservesIdentifier) },
         "raw" to s.raw,
     )
 }
@@ -443,6 +454,7 @@ class Adapter {
         },
         "update_linkset" to op { updateLinkset(it) },
         "patch_linkset" to op { a -> updateResult(client.patchLinkset(a.url("linksetUrl"), patchOf(a.raw("patch")), ifMatch = a.optStr("ifMatch"))) },
+        "move" to op { a -> movedResult(client.move(a.url("url"), a.url("destination"), ifMatch = a.optStr("ifMatch"))) },
         "subscribe" to op { subscribe(it) },
         "list_subscriptions" to op { a -> listing(client.listSubscriptions(a.url("serviceUrl")), a.limit()) },
         "get_subscription" to op { a -> subscriptionResult(client.getSubscription(a.url("url"))) },
